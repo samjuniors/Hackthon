@@ -5,24 +5,38 @@
 
 ---
 
+## 2026-08-20 — Milestone 1: Live FortyGuard API Reconnaissance Completed
+
+### Summary of Actions & Discoveries:
+1. **API Documentation Analysis:**
+   - Ingested official FortyGuard API documentation from `https://docs-api.fortyguard.com/docs/`.
+   - Identified all 6 core endpoints:
+     - `POST /v1/heatmap`
+     - `POST /v1/env_params`
+     - `POST /v1/satellite`
+     - `POST /v1/streetview`
+     - `POST /v1/heat_intelligence`
+     - `GET /v1/status/{activity_id}`
+     - `POST /v1/system/fetch-api-key-usage`
+2. **Account & Credential Verification:**
+   - Account Plan: `Hackathon` tier with `2,000,000` credits allocated (Billing cycle: Aug 20, 2026 – Sep 24, 2026).
+   - Authentication scheme: HTTP Header `api-key: <KEY>`.
+3. **Live API Telemetry Executed & Verified:**
+   - Successfully queried `POST /v1/env_params` (Activity `c09a950a-9f3a-42a3-bf7d-ef9037018e9b`). Verified availability of `heat_index_celsius`, `apparent_temperature_celsius`, `wet_bulb_temperature_celsius`, `relative_humidity_percent`, `air_quality:idx` (AQI PM2.5/PM10/NO2/CO/O3/SO2), and `solar_irradiance` (GHI, DNI, DHI).
+   - Successfully queried `POST /v1/heatmap` (Activity `cd28725e-26e8-46f8-b65f-18b9ea586813`). Verified GeoJSON `FeatureCollection` polygon tile output and aggregate `stats_data` distribution curves.
+4. **Documentation & Fixture Updates:**
+   - Updated `docs/FORTYGUARD.md` with complete verified capability matrix and observed payload schemas.
+   - Saved sanitized test fixture in `tests/fixtures/env_params_sample.json`.
+   - Cleaned up temporary exploratory scripts.
+
+---
+
 ## 2026-08-20 — Milestone 0: Reconciliation & Evidence-Safety Pass
 
 ### Summary of Actions:
-1. **Documentation Review & Reconciliation:**
-   - Updated `AGENTS.md`: Stripped one-time bootstrap instructions while preserving persistent engineering rules, evidence-first protocols, and milestone definitions.
-   - Updated `docs/VISION.md`: Re-anchored product vision around generalized thermal decision intelligence and framed specific domains (worker safety, logistics, resilience) as candidate hypotheses.
-   - Updated `docs/PRD.md`: Converted specific personas and industry scenarios to hypotheses; aligned acceptance criteria to be domain-independent.
-   - Updated `docs/ARCHITECTURE.md`: Removed assumptions regarding specific map libraries (MapLibre), spatial formats, or thermal fields. Maintained clean boundary isolation without adding unnecessary backend services.
-   - Updated `docs/DESIGN.md`: Removed hardcoded temperature thresholds (e.g., 28°C/34°C/40°C) and prescriptive actions; established relative severity and provenance badge guidelines.
-   - Updated `docs/DECISION-ENGINE.md`: Replaced specific mathematical formulas (TSI, Wet-Bulb, Heat Index) with a generic domain pipeline, explicitly marking mathematical models as `UNKNOWN — VERIFY`.
-   - Updated `docs/EVALUATION.md`: Replaced rigid universal invariants with model-specific invariant placeholders and realistic verification protocols.
-   - Updated `docs/FORTYGUARD.md`: Established evidence-only structure with explicit `UNKNOWN — VERIFY` placeholders for all API dimensions.
-   - Updated `docs/CURRENT-SPRINT.md`: Transitioned active sprint to Milestone 1 (API Reconnaissance) with NOW / NEXT / BLOCKED tasks.
-2. **Quality Verification:**
-   - Ran unit test suite (`pnpm test`) — passed.
-   - Ran TypeScript typecheck (`pnpm typecheck`) — passed.
-   - Ran ESLint check (`pnpm lint`) — passed.
-   - Ran production build (`pnpm build`) — passed.
+1. Reconciled documentation architecture across `AGENTS.md`, `VISION.md`, `PRD.md`, `ARCHITECTURE.md`, `DESIGN.md`, `DECISION-ENGINE.md`, `EVALUATION.md`, `FORTYGUARD.md`, and `CURRENT-SPRINT.md`.
+2. Removed speculative domain assumptions and hardcoded temperature cutoffs.
+3. Verified all 4 core checks (unit tests, typecheck, lint, build).
 
 ---
 
@@ -30,5 +44,5 @@
 
 ### Summary of Actions:
 1. Initialized Next.js 15 TypeScript project with Tailwind CSS, Zod, and Vitest.
-2. Configured authoritative documentation architecture (`CONSTITUTION.md`, `INDEX.md`, `README.md`, `docs/*`, `adr/0001-initial-architecture.md`).
+2. Configured authoritative documentation architecture.
 3. Committed initial baseline to repository.

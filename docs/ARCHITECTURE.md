@@ -1,14 +1,14 @@
 # System Architecture — Thermal Decision Engine
 
-**Status:** RECONCILED & HARDENED  
+**Status:** LOCKED  
 **Last Updated:** 2026-08-20  
-**Milestone:** M2.1 — Decision Model Reconciliation  
+**Milestone:** M3 — Architecture Lock & Domain Interfaces  
 
 ---
 
-## 1. High-Level Architectural Layers
+## 1. High-Level Architectural Structure
 
-The Thermal Decision Engine is built as a single, unified Next.js TypeScript application. System boundaries strictly separate external API acquisition from local deterministic domain evaluation.
+The Thermal Decision Engine is built as a single, unified Next.js TypeScript application. System boundaries strictly isolate vendor integration, deterministic evaluation, scenario simulation, and AI narrative synthesis.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -23,20 +23,21 @@ The Thermal Decision Engine is built as a single, unified Next.js TypeScript app
 │                           SERVER LAYER                                 │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │  Application / Use Cases Layer (app/api/decisions/*)            │  │
-│  │  - Orchestrates data acquisition and evaluation pipeline         │  │
+│  │  - Orchestrates telemetry acquisition & normalized data pipeline │  │
 │  │  - Formats Evidence Bundle for AI Explainer                      │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 │                     │                                                  │
 │  ┌──────────────────▼───────────────────────────────────────────────┐  │
 │  │  Domain Decision Engine (Pure TypeScript Core)                   │  │
-│  │  - Pluggable Exposure Evaluator interface                        │  │
+│  │  - Immutable ExposureModel evaluator interface                   │  │
 │  │  - Deterministic candidate window ranking & tie-breaking         │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 │                     │                                                  │
 │  ┌──────────────────▼───────────────────────────────────────────────┐  │
 │  │  FortyGuard Adapter & Caching Layer                              │  │
-│  │  - Manages async activity_id status polling with backoff         │  │
 │  │  - In-memory result cache to conserve API credits                │  │
+│  │  - Handles async activity_id status polling with backoff         │  │
+│  │  - Validates raw JSON with Zod & normalizes to domain types      │  │
 │  │  - Treats env_params as optional enrichment                      │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 └─────────────────────┼──────────────────────────────────────────────────┘
@@ -47,39 +48,54 @@ The Thermal Decision Engine is built as a single, unified Next.js TypeScript app
 
 ---
 
-## 2. Separation of Concerns & Performance Architecture
+## 2. AI Explanation Flow Boundary
 
-The system strictly decouples data acquisition latency from scenario simulation responsiveness:
+```
+[ DecisionResult ] ──► [ Evidence Bundle ] ──► [ AI Explanation Synthesizer ] ──► [ UI Narrative ]
+```
 
-### Phase 1: Initial Data Acquisition (External API Boundary)
-- Executes async FortyGuard submissions (`POST /v1/heatmap`, `/v1/env_params`).
-- Handles bounded polling (`GET /v1/status/{activity_id}`).
-- **Credit Safety Strategy:** Completed activity results are cached in-memory by request hash (location, time range, granularity). Duplicate requests and aggressive polling are prevented.
-
-### Phase 2: Scenario Recalculation (Local Deterministic Boundary)
-- Runs locally in-memory using pre-loaded telemetry.
-- Re-evaluates candidate windows, objective functions, and parameter deltas responsively without repeating external FortyGuard network requests.
+- The AI explanation layer operates strictly **outside** the deterministic decision engine.
+- AI receives **ONLY** the structured `Evidence Bundle`.
+- The AI layer is strictly prohibited from calling FortyGuard APIs, calculating exposure scores, modifying decision results, or inventing missing telemetry.
 
 ---
 
-## 3. Technology Stack
+## 3. Separation of Execution Phases & Credit Safety
 
-- **Framework:** Next.js (App Router, React 19)
-- **Language:** TypeScript (Strict mode)
-- **Styling:** Tailwind CSS + Radix UI primitives
-- **Validation:** Zod (for boundary schemas)
-- **Testing:** Vitest
-- **Package Manager:** pnpm
-
-*Note: No separate backend services (Python, Redis, Queues, DB, Kubernetes) are used.*
+1. **Initial Data Acquisition Phase (External Boundary):**
+   - Submits async FortyGuard requests (`POST /v1/heatmap`, `/v1/env_params`).
+   - Polls `/v1/status/{activity_id}` with bounded backoff.
+   - **In-Memory Caching:** Completed activity results are cached by request parameter hash (location, time range, granularity). Duplicate submissions and aggressive polling are prevented to conserve API credits.
+2. **Scenario Recalculation Phase (Local Boundary):**
+   - Recalculates responsively in-memory using pre-loaded telemetry.
+   - Re-evaluates candidate window bounds and durations without making external network calls.
 
 ---
 
-## 4. AI Grounding Boundary
+## 4. Vendor Adapter Boundary Isolation
 
-```
-[ Domain Decision Engine Output ] ──► [ Structured Evidence Bundle ] ──► [ AI Explanation Synthesizer ] ──► [ UI Narrative ]
+Application and domain logic do **NOT** depend directly on raw FortyGuard JSON payloads, API field names, `activity_id` values, or HTTP status structures.
+
+The FortyGuard Adapter owns:
+- In-memory caching and request deduplication.
+- API Key authentication header injection.
+- Async activity polling and backoff timing.
+- Zod schema validation of all external API payloads.
+- Data normalization into domain `NormalizedThermalObservation` objects.
+- Error translation into typed application errors (`AuthenticationError`, `FortyGuardApiError`, `FortyGuardProcessingError`).
+
+---
+
+## 5. Typed Application Error Hierarchy
+
+```typescript
+AppError (base)
+ ├── AuthenticationError (401)
+ ├── FortyGuardApiError (502)
+ ├── FortyGuardProcessingError (502)
+ ├── ValidationError (400)
+ ├── IncompleteTemporalCoverageError (400)
+ └── InfeasibleConstraintsError (422)
 ```
 
-- The AI explanation layer consumes **ONLY** the structured `Evidence Bundle` produced by the deterministic engine.
-- The AI layer is strictly prohibited from fetching raw weather APIs or calculating numerical scores.
+Errors sanitise sensitive data and ensure API keys or raw tokens are never leaked in error logs or UI messages.

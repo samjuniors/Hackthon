@@ -2,48 +2,45 @@
 
 **Status:** RECONCILED & HARDENED  
 **Last Updated:** 2026-08-20  
-**Milestone:** M2.1 — Decision Model Reconciliation  
+**Milestone:** M3 — Architecture Lock & Domain Interfaces  
 
 ---
 
-## 1. Quality & Verification Strategy
+## 1. Quality & Test Strategy
 
-The Thermal Decision Engine uses a structured verification test matrix covering timestamp alignment, candidate window generation, deterministic tie-breaking, schema validation, scenario recalculation, and AI grounding.
+The Thermal Decision Engine utilizes a comprehensive automated test matrix covering adapter payload validation, data normalization, candidate window generation, deterministic tie-breaking, and AI grounding protocols.
 
-> **Important Operational & Non-Medical Disclaimer:**  
+> **Non-Medical Disclaimer:**  
 > The decision engine provides modeled operational guidance derived from available thermal and environmental telemetry inputs. It is strictly decision support and does **NOT** constitute medical advice or occupational safety certification.
 
 ---
 
-## 2. Hardened Test Matrix
+## 2. Milestone 3 Hardened Test Matrix
 
-### 2.1 Timezone & Temporal Alignment Tests
-- **Timezone Conversion:** All external FortyGuard API timestamps are correctly converted to UTC for candidate window generation and rendered in local time for display.
-- **Timestamp Alignment:** Forecast timestamps match expected intervals without gaps or silent assumptions.
-- **Unit Conversion:** Verified handling of temperature (°C) and duration (hours) units.
+### 2.1 Adapter Response & Normalization Tests
+- **Zod Schema Parsing:** Verifies that raw FortyGuard responses (e.g. `tests/fixtures/env_params_sample.json`) parse correctly or throw typed `FortyGuardApiError` on invalid structures.
+- **Data Normalization:** Raw payload structures are normalized into `NormalizedThermalObservation` objects with correct `OBSERVED` vs `DERIVED` lineage tags.
+- **Timezone Conversion:** All timestamps are converted to UTC for domain calculations and formatted with location local offset (`metadata.timezone_offset_hours`) for display.
 
-### 2.2 Deterministic Candidate Window & Ranking Tests
+### 2.2 Candidate Window & Deterministic Ranking Tests
 - **Candidate Window Generation:** Correct sliding window generation across permissible time bounds ($[T_{\text{start}}, T_{\text{end}}]$ with duration $d$ and step `CandidateWindowStep = DATA_RESOLUTION`).
-- **Constraint Filtering:** Candidate windows breaching user bounds are correctly marked infeasible.
-- **Deterministic Ranking & Tie-Breaking:** Feasible candidate windows are ordered from lowest to highest exposure. Equal exposure scores break ties deterministically (e.g. by earlier start timestamp).
-- **Identical Input Guarantee:** Identical inputs and constraints always produce identical candidate window rankings (`Input(A) == Input(B) => Result(A) == Result(B)`).
+- **Constraint Filtering:** Windows breaching user constraints are marked infeasible and appended to `rejectedWindows`.
+- **Deterministic Exposure Model Contract:** The `ExposureModel` contract evaluates candidate windows deterministically. (Note: Tests verify contract interfaces, NOT unverified scientific formulas).
+- **Deterministic Tie-Breaking:** Windows with identical exposure scores break ties deterministically by earlier start timestamp ($t_i < t_j$).
+- **Identical Input Guarantee:** Identical inputs and constraints always produce identical window rankings.
 
-### 2.3 Boundary & Resilient Failure Tests
-- **Missing Telemetry Fields:** Handling `null` values in FortyGuard payload arrays gracefully.
-- **Optional `env_params` Fallback:** Core decision ranking functions cleanly even if `/v1/env_params` telemetry is omitted or fails.
-- **Incomplete Temporal Coverage:** Informative error handling when requested forecast time range exceeds available FortyGuard data.
-- **Malformed Response & API Failure:** Zod schemas reject invalid responses and trigger graceful fallback states.
+### 2.3 Boundary & Failure Mode Tests
+- **Incomplete Temporal Coverage:** Returns `IncompleteTemporalCoverageError` when requested operating window exceeds FortyGuard forecast lead time (+12h).
+- **Infeasible Constraints:** Returns `InfeasibleConstraintsError` when duration exceeds permissible window bounds.
+- **API Failure Resilience:** Adapter handles HTTP 4xx/5xx errors and poll timeouts by throwing typed `FortyGuardApiError` or `FortyGuardProcessingError` without leaking secrets.
 
-### 2.4 Scenario Recalculation & Provenance Tests
-- **Local Scenario Recalculation:** Adjusting duration or time bounds re-evaluates candidate rankings responsively using cached telemetry without re-querying external APIs.
-- **Provenance Classification:** Verifying that direct point API readings are tagged `OBSERVED`, tile aggregations are tagged `DERIVED`, scenario inputs are tagged `ASSUMED`, and narrative outputs are tagged `AI_GENERATED_EXPLANATION`.
-
-### 2.5 AI Grounding Tests
-- **Evidence Bundle Isolation:** The AI Explanation Synthesizer receives structured `Evidence Bundles` only. Tests confirm no invented numbers or ungrounded health claims.
+### 2.4 Provenance & AI Grounding Tests
+- **Lineage Classification:** Verifies point API telemetry is tagged `OBSERVED`, tile averages are tagged `DERIVED`, scenario parameters are tagged `ASSUMED`, and narrative outputs are tagged `AI_GENERATED_EXPLANATION`.
+- **Evidence Bundle Isolation:** AI Explanation Synthesizer tests confirm that explanations cite ONLY metrics present in the structured `Evidence Bundle`.
 
 ---
 
-## 3. Milestone Verification Checklist
+## 3. Continuous Verification Pipeline
 
 Before declaring any milestone or vertical slice complete, verify:
 - [ ] TypeScript typecheck passes (`pnpm typecheck`)

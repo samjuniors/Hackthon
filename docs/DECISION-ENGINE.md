@@ -2,7 +2,7 @@
 
 **Status:** RECONCILED & HARDENED  
 **Last Updated:** 2026-08-20  
-**Milestone:** M2.1 — Decision Model Reconciliation  
+**Milestone:** M3 — Architecture Lock & Domain Interfaces  
 
 - **Product Direction:** `LOCKED`
 - **MVP Scope Boundary:** `LOCKED`
@@ -13,110 +13,71 @@
 
 ## 1. Decision Model Architecture & Deterministic Guarantees
 
-The Decision Engine is a pure mathematical domain service responsible for evaluating candidate operating windows, computing modeled thermal exposure, enforcing operational constraints, and ranking candidate options.
+The Decision Engine is a pure mathematical domain service responsible for generating candidate operating windows, computing modeled thermal exposure via a versioned exposure model interface, and ranking candidate options.
 
 **Fundamental Guarantees:**
-1. **100% Deterministic Execution:** Identical inputs and constraints always produce identical decision rankings. Tie-breaking is deterministic (e.g., earlier start time breaks equal exposure ties).
-2. **Zero LLM Calculation:** The LLM NEVER computes scores, generates candidate windows, or evaluates mathematical formulas.
-3. **Strict Provenance Alignment:** Direct API payload readings are tagged `OBSERVED`. Aggregated metrics (e.g., tile averages) are tagged `DERIVED`. Derived metrics must NEVER be tagged `OBSERVED`.
+1. **100% Deterministic Execution:** Identical inputs and constraints always produce identical decision rankings. Ties are broken deterministically by earlier start timestamp.
+2. **Zero LLM Calculation:** The LLM NEVER computes scores, generates candidate windows, or evaluates mathematical formulas. It synthesizes narrative explanations strictly from verified `Evidence Bundle` outputs.
+3. **Strict Data Provenance Alignment:**
+   - `OBSERVED`: Direct raw API payload readings (e.g. point telemetry).
+   - `DERIVED`: Aggregated or computed metrics (e.g. tile average temperature `average_temperature`). Derived metrics must NEVER be labeled `OBSERVED`.
+   - `PREDICTED`: Verified FortyGuard forecast series (+12h horizon).
+   - `ASSUMED`: User-specified scenario parameters.
+   - `AI_GENERATED_EXPLANATION`: Grounded LLM narrative outputs.
 4. **No Medical / Safety Certification Claims:** Outputs represent *modeled thermal exposure* and relative operational burden.
 
 ---
 
-## 2. Conceptual Decision Pipeline
+## 2. Gate 0: Heatmap Temporal Model Evidence (`VERIFIED`)
 
-```
-              [ USER CONSTRAINTS ]
-(Location, Date, Duration d, Allowed Window [T_start, T_end])
-                       │
-                       ▼
-          [ FORTYGUARD OBSERVATIONS ]
-  (Heatmap tiles, Env Params: Wet-Bulb, Heat Index, Solar)
-                       │
-                       ▼
-         [ VALIDATION / NORMALIZATION ]
- (Timezone alignment, UTC/Local conversion, boundary checks)
-                       │
-                       ▼
-         [ DERIVED THERMAL FEATURES ]
- (Tile average/max extraction, temporal feature aggregation)
-                       │
-                       ▼
-             [ CANDIDATE WINDOWS ]
-   (Generate sliding windows W_i with step CandidateWindowStep = DATA_RESOLUTION)
-                       │
-                       ▼
-             [ CONSTRAINT FILTER ]
- (Discard candidate windows violating mandatory user bounds)
-                       │
-                       ▼
-           [ EXPOSURE EVALUATION ]
- (Evaluate exposure score via interface evaluateExposure(observations, window, modelConfig))
-                       │
-                       ▼
-                 [ RANKING ]
- (Order feasible candidate windows from lowest to highest exposure; deterministic tie-breaking)
-                       │
-                       ▼
-           [ RECOMMENDED WINDOW ]
-  (Primary recommendation W* + secondary ranked candidate windows)
-                       │
-                       ▼
-              [ EVIDENCE BUNDLE ]
- (Structured object containing observed, derived, model config, and candidate metrics)
-                       │
-                       ▼
-            [ AI EXPLANATION LAYER ]
-  (Narrative synthesis grounded strictly in the Evidence Bundle)
-```
+Based on verified FortyGuard documentation and live API payload observations:
+1. **Timestamps in `/v1/heatmap`:** For single-hour queries (`filter_type: 1`), `/v1/heatmap` returns GeoJSON tile features representing a single 1-hour temporal snapshot. For multi-hour/multi-day queries (`filter_type: 2, 3, 4`), FortyGuard returns aggregate analytics (`analytic_type`: `tcm`, `exceedance`, `persistence`).
+2. **Multiple Temporal Observations:** Generating discrete hourly time-series across a forecast horizon involves requesting discrete hourly snapshots or evaluating multi-hour window analytics.
+3. **Forecast Horizon:** Up to +12 hours past current time with 1-hour temporal resolution.
+4. **Candidate Window Step:** `CandidateWindowStep = DATA_RESOLUTION` (1-hour step for hourly forecast endpoints).
+5. **Timestamp Alignment:** All external timestamps are normalized to UTC for calculation, and converted to local time using FortyGuard timezone metadata (`metadata.timezone`, `metadata.timezone_offset_hours`) for UI display.
 
 ---
 
-## 3. Mathematical Optimization Contract & Model Interface
+## 3. Exposure Model Interface (`GATE 1` — No Arbitrary Weights)
 
-### 3.1 Optimization Problem
-Given permissible window $[T_{\text{start}}, T_{\text{end}}]$, duration $d$, step size `CandidateWindowStep = DATA_RESOLUTION`, and candidate windows $W_i = [t_i, t_i + d]$:
+Arbitrary user-configurable metric weights are removed from the public model configuration. Exposure models follow an immutable, versioned abstraction:
+
+```typescript
+export interface ExposureModel {
+  readonly modelVersion: string;
+  readonly requiredInputs: readonly string[];
+  evaluate(observations: NormalizedThermalObservation[], window: CandidateWindow): ExposureResult;
+  explain?(result: ExposureResult): string[];
+}
+```
+
+- Exposure Function Formula Status: `PROVISIONAL — MODEL TO BE DEFINED`.
+- Evaluation Interface: `evaluateExposure(observations, window, modelConfig)`.
+
+---
+
+## 4. Optimization Problem & Deterministic Ranking
+
+Given permissible operating window $[T_{\text{start}}, T_{\text{end}}]$, duration $d$, step size `CandidateWindowStep = DATA_RESOLUTION`, and candidate windows $W_i = [t_i, t_i + d]$:
 
 $$\text{Select } W^* = \arg\min_{W_i \in \mathcal{W}_{\text{feasible}}} E(W_i)$$
 
 Where:
-- $E(W_i)$ is the deterministic exposure score computed via the exposure model interface.
-- Formula Status: `PROVISIONAL — MODEL TO BE DEFINED`.
-
-### 3.2 Model Interface Signature (Pure TypeScript Contract)
-
-```typescript
-export interface ModelConfig {
-  modelVersion: string;
-  metricWeights?: Record<string, number>;
-}
-
-export interface ExposureResult {
-  exposureScore: number;
-  metricBreakdown: Record<string, number>;
-}
-
-export type ExposureEvaluator = (
-  observations: NormalizedTelemetry[],
-  window: CandidateWindow,
-  config: ModelConfig
-) => ExposureResult;
-```
-
----
-
-## 4. Temporal Resolution & Timezone Alignment
-
-- **Step Size:** `CandidateWindowStep = DATA_RESOLUTION` (aligned to FortyGuard temporal data intervals, e.g. 1-hour hourly intervals for forecast/historical endpoints).
-- **Timezone Safety:**
-  - All external FortyGuard API timestamps are converted and normalized to UTC for internal calculations.
-  - User-facing UI displays local time using the location's verified timezone metadata (`metadata.timezone`, `metadata.timezone_offset_hours`).
-  - Interval boundaries are strictly defined (inclusive start timestamp, exclusive end timestamp).
+- $E(W_i)$ is the exposure score evaluated deterministically by the active `ExposureModel`.
+- Deterministic Tie-Breaking: If $E(W_i) == E(W_j)$, the window with the earlier start timestamp $t_i < t_j$ is ranked higher.
 
 ---
 
 ## 5. Integration Dependency Resolution (`/v1/env_params`)
 
-- **Dependency:** `/v1/env_params` requires a `temperature` input parameter.
+- **API Requirement:** `/v1/env_params` requires a `temperature` parameter input.
 - **Status:** `UNKNOWN — VERIFY` (The semantic correctness of supplying heatmap tile averages as `env_params` temperature input is unconfirmed).
 - **Domain Adapter Architecture:** The FortyGuard adapter treats `/v1/env_params` as an **optional enrichment layer**. If `/v1/env_params` is unavailable or fails, core candidate window ranking operates on verified thermal heatmap telemetry without blocking execution.
+
+---
+
+## 6. What-If Scenario Scope
+
+- **Supported Parameters:** Operation duration $d$, permissible time bounds $[T_{\text{start}}, T_{\text{end}}]$, location selection.
+- **Excluded from MVP:** Mitigation factors ($M$), shade/cooling multipliers (deferred to future work due to lack of validated scientific mapping).

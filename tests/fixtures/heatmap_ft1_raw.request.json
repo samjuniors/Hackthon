@@ -1,0 +1,414 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "baseline single-hour",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -74.01074049942717,
+                  40.70920675530004
+                ],
+                [
+                  -74.00125950057283,
+                  40.70920675530004
+                ],
+                [
+                  -74.00125950057283,
+                  40.716393244699965
+                ],
+                [
+                  -74.01074049942717,
+                  40.716393244699965
+                ],
+                [
+                  -74.01074049942717,
+                  40.70920675530004
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "date_time": {
+      "start_date": "2026-08-20",
+      "start_time": "13:00",
+      "filter_type": 1
+    },
+    "granularity": 60
+  },
+  "intendedUtcHour": "2026-08-20T13:00:00.000Z",
+  "activityId": "4882bfbe-8047-4932-8793-07740d7902f1",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 521
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 485
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 764
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 698
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 735
+    },
+    {
+      "attempt": 6,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 486
+    },
+    {
+      "attempt": 7,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1175
+    },
+    {
+      "attempt": 8,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 501
+    },
+    {
+      "attempt": 9,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 752
+    },
+    {
+      "attempt": 10,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 499
+    },
+    {
+      "attempt": 11,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 501
+    },
+    {
+      "attempt": 12,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 751
+    },
+    {
+      "attempt": 13,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 758
+    },
+    {
+      "attempt": 14,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 512
+    },
+    {
+      "attempt": 15,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 488
+    },
+    {
+      "attempt": 16,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 753
+    },
+    {
+      "attempt": 17,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 757
+    },
+    {
+      "attempt": 18,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 754
+    },
+    {
+      "attempt": 19,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 507
+    },
+    {
+      "attempt": 20,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 498
+    },
+    {
+      "attempt": 21,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 641
+    },
+    {
+      "attempt": 22,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 754
+    },
+    {
+      "attempt": 23,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 502
+    },
+    {
+      "attempt": 24,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1180
+    },
+    {
+      "attempt": 25,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 837
+    },
+    {
+      "attempt": 26,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 490
+    },
+    {
+      "attempt": 27,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 890
+    },
+    {
+      "attempt": 28,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 495
+    },
+    {
+      "attempt": 29,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 486
+    },
+    {
+      "attempt": 30,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 891
+    },
+    {
+      "attempt": 31,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 746
+    },
+    {
+      "attempt": 32,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 627
+    },
+    {
+      "attempt": 33,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 511
+    },
+    {
+      "attempt": 34,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1422
+    },
+    {
+      "attempt": 35,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 493
+    },
+    {
+      "attempt": 36,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 498
+    },
+    {
+      "attempt": 37,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 634
+    },
+    {
+      "attempt": 38,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 483
+    },
+    {
+      "attempt": 39,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 493
+    },
+    {
+      "attempt": 40,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 566
+    },
+    {
+      "attempt": 41,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 495
+    },
+    {
+      "attempt": 42,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1311
+    },
+    {
+      "attempt": 43,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 505
+    },
+    {
+      "attempt": 44,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 556
+    },
+    {
+      "attempt": 45,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1016
+    },
+    {
+      "attempt": 46,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1196
+    },
+    {
+      "attempt": 47,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 959
+    },
+    {
+      "attempt": 48,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 711
+    },
+    {
+      "attempt": 49,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 485
+    },
+    {
+      "attempt": 50,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 500
+    },
+    {
+      "attempt": 51,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1078
+    },
+    {
+      "attempt": 52,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 482
+    },
+    {
+      "attempt": 53,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 500
+    },
+    {
+      "attempt": 54,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 831
+    },
+    {
+      "attempt": 55,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 857
+    },
+    {
+      "attempt": 56,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 505
+    },
+    {
+      "attempt": 57,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 489
+    },
+    {
+      "attempt": 58,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 504
+    },
+    {
+      "attempt": 59,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 985
+    },
+    {
+      "attempt": 60,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 905
+    }
+  ],
+  "capturedAt": "2026-08-20T11:15:10.372Z"
+}

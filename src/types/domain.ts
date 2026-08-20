@@ -1,4 +1,4 @@
-import { DataProvenance } from './provenance';
+import { type DataProvenance } from './provenance';
 
 export interface LocationPoint {
   latitude: number;

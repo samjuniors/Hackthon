@@ -1,0 +1,9 @@
+{
+  "endpoint": "/v1/system/fetch-api-key-usage",
+  "method": "POST",
+  "requestBody": {
+    "api_key": "<REDACTED>"
+  },
+  "httpStatus": 200,
+  "capturedAt": "2026-08-20T11:09:01.288Z"
+}

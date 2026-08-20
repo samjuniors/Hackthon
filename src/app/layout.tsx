@@ -12,10 +12,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // `dark` is applied unconditionally: the Decision Workspace is a dark-canvas
+    // operational surface. Colours resolve from the `.dark` token block in globals.css.
     <html lang="en" className="dark">
-      <body className="antialiased bg-slate-950 text-slate-100 min-h-screen">
-        {children}
-      </body>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

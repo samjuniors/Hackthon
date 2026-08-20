@@ -1,0 +1,10 @@
+{
+  "__submitOnly": {
+    "error": false,
+    "status_code": 200,
+    "message": "Heatmap Submitted Successfully",
+    "data": {
+      "activity_id": "4882bfbe-8047-4932-8793-07740d7902f1"
+    }
+  }
+}

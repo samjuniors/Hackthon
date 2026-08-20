@@ -1,4 +1,4 @@
-import { LocationPoint, PolygonAOI, NormalizedThermalObservation } from './domain';
+import { type LocationPoint, type PolygonAOI, type NormalizedThermalObservation } from './domain';
 
 export interface FortyGuardHeatmapRequest {
   polygon_aoi: PolygonAOI;

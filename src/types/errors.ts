@@ -48,3 +48,9 @@ export class InfeasibleConstraintsError extends AppError {
     super(message, 'INFEASIBLE_CONSTRAINTS', 422);
   }
 }
+
+export class OutsideCoverageError extends AppError {
+  constructor(message = 'Target location point lies outside FortyGuard spatial tile coverage') {
+    super(message, 'OUTSIDE_COVERAGE', 404);
+  }
+}

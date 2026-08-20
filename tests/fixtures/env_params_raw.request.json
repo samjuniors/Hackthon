@@ -1,0 +1,33 @@
+{
+  "endpoint": "/v1/env_params",
+  "gate": "baseline env_params at a known reference temperature",
+  "requestBody": {
+    "latitude": 40.7128,
+    "longitude": -74.006,
+    "temperature": 32,
+    "date_time": {
+      "start_date": "2026-08-20",
+      "start_time": "13:00",
+      "filter_type": 1
+    },
+    "analysis": [
+      "heat_index_celsius",
+      "apparent_temperature_celsius",
+      "wet_bulb_temperature_celsius",
+      "relative_humidity_percent",
+      "solar_irradiance"
+    ]
+  },
+  "intendedUtcHour": "2026-08-20T13:00:00.000Z",
+  "activityId": "d55a59a9-5aff-45fc-8645-36a5276f74ea",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Failed",
+      "elapsedMs": 774
+    }
+  ],
+  "capturedAt": "2026-08-20T11:14:47.846Z"
+}

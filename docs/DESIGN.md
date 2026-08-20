@@ -2,13 +2,13 @@
 
 **Status:** RECONCILED & HARDENED  
 **Last Updated:** 2026-08-20  
-**Milestone:** M2.1 — Decision Model Reconciliation  
+**Milestone:** M3.6 — Location-Specific Thermal Baseline Correction  
 
 ---
 
 ## 1. Design Paradigm: Decision Workspace
 
-The interface is designed as an operational **Decision Workspace**, distinct from a passive weather dashboard. Every visual component directly supports answering the primary user question: *"When should this operation occur at the selected location to minimize modeled thermal exposure?"*
+The interface is designed as an operational **Decision Workspace**. Every visual component supports answering the primary user question: *"When should an operation at this location be scheduled to minimize modeled thermal exposure?"*
 
 ---
 
@@ -18,17 +18,17 @@ The interface is designed as an operational **Decision Workspace**, distinct fro
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        THERMAL DECISION ENGINE                          │
 ├────────────────────────────────────┬────────────────────────────────────┤
-│ 1. Location & Operating Area       │ 2. Operation Parameters            │
-│    (Coordinates / Polygon AOI)     │    (Duration, Allowed Time Bounds) │
+│ 1. Selected Operational Location   │ 2. Operation Parameters            │
+│    (Coordinates + Selected Tile ID)│    (Duration, Allowed Time Bounds) │
 ├────────────────────────────────────┴────────────────────────────────────┤
 │ 3. Spatial Thermal Context Map                                          │
-│    (FortyGuard GeoJSON Heatmap Overlay + Tile Temperature Breakdown)    │
+│    (FortyGuard GeoJSON Tile Overlay + Highlighted Selected Tile)        │
 ├────────────────────────────────────┬────────────────────────────────────┤
 │ 4. Candidate Time Windows          │ 5. Recommended Operating Window    │
-│    (Timeline chart / Ranked list)  │    (Optimal start time + exposure)   │
+│    (Timeline chart / Ranked list)  │    (Optimal start time + mean temp) │
 ├────────────────────────────────────┼────────────────────────────────────┤
 │ 6. Verified Evidence Drawer        │ 7. What-If Comparison Sandbox      │
-│    (Telemetry, tile stats, provenance)│ (Local responsive duration slider) │
+│    (Hourly tile temps + provenance)│    (Local responsive duration slider)│
 ├────────────────────────────────────┴────────────────────────────────────┤
 │ 8. Grounded AI Explanation Panel                                        │
 │    (Narrative synthesis citing verified Evidence Bundle only)           │
@@ -42,20 +42,9 @@ The interface is designed as an operational **Decision Workspace**, distinct fro
 | Lineage Tag | Definition | Visual Style |
 | :--- | :--- | :--- |
 | `OBSERVED` | Direct FortyGuard point telemetry reading | Blue / Cyan outline badge |
-| `DERIVED` | Tile aggregation or computed metric (e.g. tile avg temp) | Indigo / Purple badge |
+| `DERIVED` | Tile average temperature associated with selected location | Indigo / Purple badge |
 | `PREDICTED` | FortyGuard forecast interval (+12h horizon) | Amber / Orange badge |
-| `ASSUMED` | User scenario input parameter (duration, time bounds) | Slate / Dashed border badge |
+| `ASSUMED` | User scenario input parameter (duration, bounds) | Slate / Dashed border badge |
 | `AI EXPLAIN` | Grounded LLM narrative synthesis | Emerald / Green badge |
 
 *Provenance Guardrail:* Derived tile aggregations must NEVER be labeled `OBSERVED`.
-
----
-
-## 4. Relative Thermal Severity Palette
-
-Instead of universal hardcoded medical danger thresholds, the visual system uses relative severity levels configured by operational context:
-
-- **Nominal / Low Exposure:** `Teal / Emerald`
-- **Moderate Exposure:** `Amber / Yellow`
-- **Elevated Exposure:** `Orange / Coral`
-- **High Exposure:** `Crimson / Red`

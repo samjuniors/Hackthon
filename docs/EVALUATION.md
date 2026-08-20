@@ -2,39 +2,39 @@
 
 **Status:** RECONCILED & HARDENED  
 **Last Updated:** 2026-08-20  
-**Milestone:** M3.5 — Exposure Model & Evidence Gate  
+**Milestone:** M3.6 — Location-Specific Thermal Baseline Correction  
 
 ---
 
 ## 1. Quality & Verification Strategy
 
-The Thermal Decision Engine uses a structured test matrix covering baseline exposure evaluation (`v1.0.0-spatial-thermal-baseline`), candidate window generation, deterministic tie-breaking, schema validation, and AI grounding protocols.
+The Thermal Decision Engine uses a structured test matrix covering point-to-tile spatial mapping, mean window exposure evaluation (`v1.0.0-spatial-thermal-baseline`), candidate window generation, deterministic tie-breaking, schema validation, and boundary error handling.
 
 > **Non-Medical Disclaimer:**  
 > The decision engine provides modeled operational guidance derived from available thermal and environmental telemetry inputs. It is strictly decision support and does **NOT** constitute medical advice or occupational safety certification.
 
 ---
 
-## 2. Hardened Test Matrix
+## 2. Hardened Test Matrix for Slice 1
 
-### 2.1 Baseline Exposure Evaluator Tests (`v1.0.0-spatial-thermal-baseline`)
-- **Deterministic Exposure Computation:** Verifies that `evaluateBaselineExposure` produces exact, reproducible exposure scores $E(W_i)$ from normalized tile telemetry.
-- **Model Version Reproducibility:** Verifies that results carry `modelVersion: 'v1.0.0-spatial-thermal-baseline'`.
-- **Zero Arbitrary Weights:** Tests confirm that score calculation relies strictly on verified primary tile temperatures and does not use arbitrary weight multipliers.
+### 2.1 Spatial Point-to-Tile Mapping Tests
+- **Deterministic Point-in-Polygon Check:** Verifies that user coordinates $(lat, lon)$ map deterministically to the containing FortyGuard GeoJSON tile feature `tile_id`.
+- **Location Outside Coverage:** Throws `ValidationError` when user coordinates fall outside the returned heatmap polygon bounds, refusing to fall back silently to the hottest tile.
 
-### 2.2 Candidate Window & Deterministic Ranking Tests
-- **Candidate Window Generation:** Sliding window generation across permissible bounds $[T_{\text{start}}, T_{\text{end}}]$ with duration $d$ and step `CandidateWindowStep = DATA_RESOLUTION` (1h).
-- **Deterministic Tie-Breaking:** Candidate windows with identical exposure scores break ties deterministically by earlier start timestamp ($t_i < t_j$).
-- **Identical Input Guarantee:** Identical inputs and constraints always produce identical window rankings.
+### 2.2 Location-Specific Baseline Evaluator Tests (`v1.0.0-spatial-thermal-baseline`)
+- **Mean Temperature Calculation:** Verifies that exposure score $E(W_i) = \frac{1}{n} \sum_{t \in W_i} T(\text{location}, t)$ computes the exact mean `average_temperature` across window duration $d$.
+- **Zero AOI Maximum Leakage:** Confirms that the exposure score uses ONLY the selected location's tile temperature, NOT the AOI-wide maximum.
+- **Model Version Tagging:** Verifies that exposure outputs carry `modelVersion: 'v1.0.0-spatial-thermal-baseline'`.
 
-### 2.3 Temporal Alignment & Boundary Tests
-- **Timezone Conversion:** Timestamps are normalized to UTC for calculation and formatted with location local offset (`metadata.timezone_offset_hours`) for display.
-- **Incomplete Hourly Coverage:** Returns `IncompleteTemporalCoverageError` when requested operating window exceeds available FortyGuard forecast lead time (+12h).
-- **Missing Telemetry Handling:** Handles missing or null tile parameters gracefully without throwing uncaught exceptions.
+### 2.3 Candidate Window & Deterministic Ranking Tests
+- **Candidate Window Generation:** Generates valid candidate operating windows $W_i = [t_i, t_i + d]$ across permissible bounds $[T_{\text{start}}, T_{\text{end}}]$ with step `CandidateWindowStep = DATA_RESOLUTION` (1h).
+- **Deterministic Tie-Breaking:** Candidate windows with identical mean temperatures break ties deterministically by earlier start timestamp ($t_i < t_j$).
+- **No Feasible Window:** Throws `InfeasibleConstraintsError` when duration $d$ exceeds permissible window bounds.
 
-### 2.4 Provenance & Evidence Bundle Tests
-- **Data Lineage Classification:** Verifies point API telemetry is tagged `OBSERVED`, tile averages are tagged `DERIVED`, scenario parameters are tagged `ASSUMED`, and narrative outputs are tagged `AI_GENERATED_EXPLANATION`.
-- **Evidence Bundle Integrity:** Confirms that supporting telemetry (`wet_bulb_temperature_celsius`, `solar_irradiance`, `relative_humidity_percent`) is correctly attached to the `Evidence Bundle`.
+### 2.4 Temporal Boundary & API Failure Tests
+- **Incomplete Forecast Coverage:** Throws `IncompleteTemporalCoverageError` when requested operating window extends beyond verified FortyGuard +12-hour forecast lead time.
+- **Malformed Tile Response:** Zod schema rejects invalid payload structures and throws `FortyGuardApiError`.
+- **API Processing Error:** Poll timeout or status `Failed` throws typed `FortyGuardProcessingError`.
 
 ---
 

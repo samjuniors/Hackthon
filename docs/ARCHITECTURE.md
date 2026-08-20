@@ -1,21 +1,21 @@
 # System Architecture — Thermal Decision Engine
 
-**Status:** LOCKED  
+**Status:** RECONCILED & HARDENED  
 **Last Updated:** 2026-08-20  
-**Milestone:** M2 — Product Lock  
+**Milestone:** M2.1 — Decision Model Reconciliation  
 
 ---
 
 ## 1. High-Level Architectural Layers
 
-The Thermal Decision Engine is built as a single, unified Next.js TypeScript application. System boundaries are strictly layered to isolate external API integration, deterministic domain logic, scenario simulation, and AI narrative synthesis.
+The Thermal Decision Engine is built as a single, unified Next.js TypeScript application. System boundaries strictly separate external API acquisition from local deterministic domain evaluation.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                              FRONTEND UI                               │
 │  ┌─────────────────────────┐         ┌──────────────────────────────┐  │
 │  │   Decision Workspace    │ ◄─────► │  Scenario / What-If Sandbox  │  │
-│  │   (8-Section Layout)    │         │  (Client-Side Simulation)    │  │
+│  │   (8-Section Layout)    │         │  (Local Responsive Engine)   │  │
 │  └───────────┬─────────────┘         └──────────────┬───────────────┘  │
 └──────────────┼──────────────────────────────────────┼──────────────────┘
                │ (Type-Safe RPC / Internal API Routes)│
@@ -23,21 +23,21 @@ The Thermal Decision Engine is built as a single, unified Next.js TypeScript app
 │                           SERVER LAYER                                 │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │  Application / Use Cases Layer (app/api/decisions/*)            │  │
-│  │  - Orchestrates telemetry fetch, caching, and evaluation         │  │
+│  │  - Orchestrates data acquisition and evaluation pipeline         │  │
 │  │  - Formats Evidence Bundle for AI Explainer                      │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 │                     │                                                  │
 │  ┌──────────────────▼───────────────────────────────────────────────┐  │
 │  │  Domain Decision Engine (Pure TypeScript Core)                   │  │
-│  │  - Deterministic candidate window generation & ranking           │  │
-│  │  - Objective function evaluation & constraint filtering          │  │
+│  │  - Pluggable Exposure Evaluator interface                        │  │
+│  │  - Deterministic candidate window ranking & tie-breaking         │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 │                     │                                                  │
 │  ┌──────────────────▼───────────────────────────────────────────────┐  │
-│  │  FortyGuard API Adapter                                          │  │
+│  │  FortyGuard Adapter & Caching Layer                              │  │
 │  │  - Manages async activity_id status polling with backoff         │  │
-│  │  - Strict Zod boundary validation & data normalization           │  │
-│  │  - Sources env_params temperature input from heatmap tile data   │  │
+│  │  - In-memory result cache to conserve API credits                │  │
+│  │  - Treats env_params as optional enrichment                      │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 └─────────────────────┼──────────────────────────────────────────────────┘
                       │
@@ -47,22 +47,18 @@ The Thermal Decision Engine is built as a single, unified Next.js TypeScript app
 
 ---
 
-## 2. Component Layer Responsibilities
+## 2. Separation of Concerns & Performance Architecture
 
-1. **UI Layer (`src/app/*`, `src/components/*`):**
-   - Renders the Decision Workspace (Location selector, operational parameters, spatial thermal map, candidate windows, recommended window, evidence drawer, what-if sandbox, AI explanation panel).
-   - Manages interactive slider state for instant client-side scenario re-evaluation.
-2. **Application / Use Cases Layer (`src/app/api/*`):**
-   - Coordinates multi-step FortyGuard requests (Heatmap fetch $\to$ Temperature extraction $\to$ Environmental Parameters fetch $\to$ Decision Engine evaluation).
-   - Passes *structured decision outputs and evidence bundles* (never raw unvalidated payloads) to the AI Explanation Synthesizer.
-3. **Domain Decision Engine (`src/lib/decision-engine/*`):**
-   - Pure TypeScript core with zero I/O side effects.
-   - Evaluates objective functions, candidate windows, and what-if scenario deltas deterministically.
-4. **FortyGuard Adapter (`src/lib/fortyguard/*`):**
-   - Injects server-side API keys (`FORTYGUARD_API_KEY`).
-   - Polls `/v1/status/{activity_id}` until `Completed`.
-   - Validates external payloads against Zod schemas.
-   - Resolves the `/v1/env_params` temperature input dependency by piping `/v1/heatmap` tile temperature averages into environmental parameter requests.
+The system strictly decouples data acquisition latency from scenario simulation responsiveness:
+
+### Phase 1: Initial Data Acquisition (External API Boundary)
+- Executes async FortyGuard submissions (`POST /v1/heatmap`, `/v1/env_params`).
+- Handles bounded polling (`GET /v1/status/{activity_id}`).
+- **Credit Safety Strategy:** Completed activity results are cached in-memory by request hash (location, time range, granularity). Duplicate requests and aggressive polling are prevented.
+
+### Phase 2: Scenario Recalculation (Local Deterministic Boundary)
+- Runs locally in-memory using pre-loaded telemetry.
+- Re-evaluates candidate windows, objective functions, and parameter deltas responsively without repeating external FortyGuard network requests.
 
 ---
 
@@ -79,7 +75,7 @@ The Thermal Decision Engine is built as a single, unified Next.js TypeScript app
 
 ---
 
-## 4. AI Grounding & Information Flow Boundary
+## 4. AI Grounding Boundary
 
 ```
 [ Domain Decision Engine Output ] ──► [ Structured Evidence Bundle ] ──► [ AI Explanation Synthesizer ] ──► [ UI Narrative ]

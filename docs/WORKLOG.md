@@ -5,38 +5,34 @@
 
 ---
 
-## 2026-08-20 — Milestone 1: Live FortyGuard API Reconnaissance Completed
+## 2026-08-20 — Milestone 2.1: Adversarial Decision-Model Correction & Scope Hardening
 
-### Summary of Actions & Discoveries:
-1. **API Documentation Analysis:**
-   - Ingested official FortyGuard API documentation from `https://docs-api.fortyguard.com/docs/`.
-   - Identified all 6 core endpoints:
-     - `POST /v1/heatmap`
-     - `POST /v1/env_params`
-     - `POST /v1/satellite`
-     - `POST /v1/streetview`
-     - `POST /v1/heat_intelligence`
-     - `GET /v1/status/{activity_id}`
-     - `POST /v1/system/fetch-api-key-usage`
-2. **Account & Credential Verification:**
-   - Account Plan: `Hackathon` tier with `2,000,000` credits allocated (Billing cycle: Aug 20, 2026 – Sep 24, 2026).
-   - Authentication scheme: HTTP Header `api-key: <KEY>`.
-3. **Live API Telemetry Executed & Verified:**
-   - Successfully queried `POST /v1/env_params` (Activity `c09a950a-9f3a-42a3-bf7d-ef9037018e9b`). Verified availability of `heat_index_celsius`, `apparent_temperature_celsius`, `wet_bulb_temperature_celsius`, `relative_humidity_percent`, `air_quality:idx` (AQI PM2.5/PM10/NO2/CO/O3/SO2), and `solar_irradiance` (GHI, DNI, DHI).
-   - Successfully queried `POST /v1/heatmap` (Activity `cd28725e-26e8-46f8-b65f-18b9ea586813`). Verified GeoJSON `FeatureCollection` polygon tile output and aggregate `stats_data` distribution curves.
-4. **Documentation & Fixture Updates:**
-   - Updated `docs/FORTYGUARD.md` with complete verified capability matrix and observed payload schemas.
-   - Saved sanitized test fixture in `tests/fixtures/env_params_sample.json`.
-   - Cleaned up temporary exploratory scripts.
+### Summary of Actions & Decisions:
+1. **Strategic Product Alignment:**
+   - Evaluated M1 FortyGuard evidence (verified GeoJSON heatmaps, wet-bulb temp, heat index, solar GHI/DNI).
+   - Adversarially rejected "worker safety" and medical advice as the hard product boundary due to lack of medical validation.
+   - Reframed product abstraction around *heat-exposed operations decision intelligence*.
+   - Selected *outdoor field operations* as the primary demonstration scenario for judging.
+2. **Decision Engine & Model Contract Corrections:**
+   - Abstracted exposure function formula to `PROVISIONAL — MODEL TO BE DEFINED`. Replaced hardcoded formulas with pluggable interface `evaluateExposure(observations, window, modelConfig)`.
+   - Corrected Data Provenance rules: Direct API readings are `OBSERVED`; tile aggregations (e.g. `average_temperature`) are `DERIVED`. Derived metrics must NEVER be labeled `OBSERVED`.
+   - Set temporal step size to `CandidateWindowStep = DATA_RESOLUTION` with explicit UTC/local timezone handling and deterministic tie-breaking.
+   - Decoupled `INITIAL DATA ACQUISITION` (async FortyGuard polling & caching) from `SCENARIO RECALCULATION` (fast local in-memory re-evaluation).
+3. **Integration & Scope Hardening:**
+   - Re-examined `/v1/env_params` temperature input dependency. Marked semantic relationship as `UNKNOWN — VERIFY`. Configured adapter to treat `/v1/env_params` as an optional enrichment layer rather than a blocking dependency.
+   - Removed unvalidated mitigation factors ($M$), shade multipliers, satellite/streetview segmentation, PDF report generators, routing algorithms, user accounts, and external DB dependencies from core MVP scope.
+   - Defined Slice 1 scope: **ONE location/AOI + MULTIPLE candidate time windows**.
+4. **Documentation Architecture Updates:**
+   - Updated `docs/PRD.md`, `docs/VISION.md`, `docs/DECISION-ENGINE.md`, `docs/ARCHITECTURE.md`, `docs/DESIGN.md`, `docs/EVALUATION.md`, `docs/CURRENT-SPRINT.md`, and `docs/adr/0002-thermal-operations-decision-model.md`.
 
 ---
 
-## 2026-08-20 — Milestone 0: Reconciliation & Evidence-Safety Pass
+## 2026-08-20 — Milestone 1: Live FortyGuard API Reconnaissance
 
 ### Summary of Actions:
-1. Reconciled documentation architecture across `AGENTS.md`, `VISION.md`, `PRD.md`, `ARCHITECTURE.md`, `DESIGN.md`, `DECISION-ENGINE.md`, `EVALUATION.md`, `FORTYGUARD.md`, and `CURRENT-SPRINT.md`.
-2. Removed speculative domain assumptions and hardcoded temperature cutoffs.
-3. Verified all 4 core checks (unit tests, typecheck, lint, build).
+1. Ingested official documentation and verified subscription tier (`Hackathon` with 2,000,000 credits).
+2. Executed live API calls to `/v1/env_params` and `/v1/heatmap`. Verified GeoJSON polygon output, wet-bulb temp, heat index, and solar irradiance.
+3. Updated `docs/FORTYGUARD.md` and saved test fixture `tests/fixtures/env_params_sample.json`.
 
 ---
 
@@ -44,5 +40,4 @@
 
 ### Summary of Actions:
 1. Initialized Next.js 15 TypeScript project with Tailwind CSS, Zod, and Vitest.
-2. Configured authoritative documentation architecture.
-3. Committed initial baseline to repository.
+2. Established core documentation architecture.

@@ -1,32 +1,32 @@
-# Current Sprint — Milestone 2: Product Lock & Domain Model
+# Current Sprint — Milestone 2: Product & Decision Model Contract Lock
 
-**Status:** ACTIVE  
-**Current Milestone:** M2 — Product Lock  
+**Status:** ACTIVE (M2.1 Reconciled & Hardened)  
+**Current Milestone:** M2 — Product Lock & Decision Model Contract  
 **Submission Deadline:** 2026-08-30  
 **Last Updated:** 2026-08-20  
 
 ---
 
 ## 🎯 Sprint Goal
-Lock the primary hackathon use case, domain decision logic, and acceptance criteria based on verified FortyGuard API capabilities (GeoJSON Heatmaps, Environmental Parameters, Wet Bulb, Heat Index, Air Quality, and Solar Irradiance).
+Lock the product abstraction, decision model contract, and provenance guardrails prior to implementation.
 
 ---
 
 ## 📋 Task Breakdown
 
-### Milestone 1: API Reconnaissance (`COMPLETED`)
-- [x] Obtain API credentials and documentation portal link.
-- [x] Extract all official endpoint specifications and schemas.
-- [x] Verify account tier (`Hackathon` with 2,000,000 credits).
-- [x] Execute live `POST /v1/env_params` query and verify response schema.
-- [x] Execute live `POST /v1/heatmap` query and verify GeoJSON polygon output.
-- [x] Document verified capability matrix in [docs/FORTYGUARD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/FORTYGUARD.md).
+### NOW (Milestone 2.1 Reconciliation — `COMPLETED`)
+- [x] Reconcile [docs/PRD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/PRD.md) (Core user question, 6 MVP capabilities, non-medical disclaimer).
+- [x] Reconcile [docs/VISION.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/VISION.md) (Broad heat-exposed operations abstraction, outdoor field ops demo).
+- [x] Reconcile [docs/ARCHITECTURE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/ARCHITECTURE.md) (Decouple data acquisition from local scenario recalculation, credit safety caching).
+- [x] Reconcile [docs/DECISION-ENGINE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DECISION-ENGINE.md) (Abstract exposure evaluator contract `PROVISIONAL`, `CandidateWindowStep = DATA_RESOLUTION`, strict provenance).
+- [x] Reconcile [docs/DESIGN.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DESIGN.md) (8-section Decision Workspace, provenance badges).
+- [x] Reconcile [docs/EVALUATION.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/EVALUATION.md) (Hardened test matrix, deterministic tie-breaking).
+- [x] Resolve `/v1/env_params` temperature input dependency (marked `UNKNOWN — VERIFY`; adapter treats `/v1/env_params` as optional enrichment).
 
-### Milestone 2: Product Lock (`IN PROGRESS`)
-- [ ] Select primary vertical use case from candidate hypotheses:
-  - Option A: Outdoor Worker Thermal Safety & Work-Rest Optimization (leveraging Wet Bulb Temp, Heat Index, Solar GHI/DNI).
-  - Option B: Thermal-Aware Route & Time-Window Logistics (leveraging GeoJSON heatmaps, exceedance, persistence).
-  - Option C: Urban Heat Resilience & Microclimate Intervention Sandbox (leveraging heatmaps, segmentation, and env params).
-- [ ] Update [docs/PRD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/PRD.md) with locked use case and workflows.
-- [ ] Formalize deterministic decision formulas in [docs/DECISION-ENGINE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DECISION-ENGINE.md).
-- [ ] Prepare for Milestone 3 (Architecture Lock & FortyGuard Adapter implementation).
+### NEXT (Milestone 3 — Architecture Lock & Domain Interfaces)
+- [ ] Define normalized FortyGuard TypeScript/Zod schemas.
+- [ ] Define core domain model interfaces (`ExposureEvaluator`, `EvidenceBundle`, `CandidateWindow`).
+- [ ] Design Vertical Slice 1 execution flow (Single location + multiple candidate time windows).
+
+### 🚧 BLOCKED
+- **Production Feature Implementation:** Feature coding is strictly blocked until Milestone 2 review is complete and Milestone 3 architecture lock is approved.

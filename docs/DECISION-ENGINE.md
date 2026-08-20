@@ -1,19 +1,25 @@
 # Decision Engine Model — Thermal Decision Engine
 
-**Status:** LOCKED  
+**Status:** RECONCILED & HARDENED  
 **Last Updated:** 2026-08-20  
-**Milestone:** M2 — Product Lock  
+**Milestone:** M2.1 — Decision Model Reconciliation  
+
+- **Product Direction:** `LOCKED`
+- **MVP Scope Boundary:** `LOCKED`
+- **FortyGuard API Capabilities:** `VERIFIED`
+- **Thermal Exposure Function:** `PROVISIONAL — MODEL TO BE DEFINED`
 
 ---
 
-## 1. Decision Model Architecture & Deterministic Guarantee
+## 1. Decision Model Architecture & Deterministic Guarantees
 
 The Decision Engine is a pure mathematical domain service responsible for evaluating candidate operating windows, computing modeled thermal exposure, enforcing operational constraints, and ranking candidate options.
 
-**Fundamental Principles:**
-1. **100% Deterministic Execution:** Identical inputs and constraints always produce identical decision rankings and exposure scores.
-2. **Zero LLM Calculation:** The LLM NEVER computes scores, filters candidate windows, or evaluates mathematical formulas. It synthesizes explanations strictly from verified decision outputs.
-3. **No Unsubstantiated Safety Claims:** All output metrics measure *modeled thermal exposure* and relative operational burden. The engine does not issue medical safety certifications.
+**Fundamental Guarantees:**
+1. **100% Deterministic Execution:** Identical inputs and constraints always produce identical decision rankings. Tie-breaking is deterministic (e.g., earlier start time breaks equal exposure ties).
+2. **Zero LLM Calculation:** The LLM NEVER computes scores, generates candidate windows, or evaluates mathematical formulas.
+3. **Strict Provenance Alignment:** Direct API payload readings are tagged `OBSERVED`. Aggregated metrics (e.g., tile averages) are tagged `DERIVED`. Derived metrics must NEVER be tagged `OBSERVED`.
+4. **No Medical / Safety Certification Claims:** Outputs represent *modeled thermal exposure* and relative operational burden.
 
 ---
 
@@ -29,27 +35,27 @@ The Decision Engine is a pure mathematical domain service responsible for evalua
                        │
                        ▼
          [ VALIDATION / NORMALIZATION ]
-     (Zod schema parsing, null handling, unit alignment)
+ (Timezone alignment, UTC/Local conversion, boundary checks)
                        │
                        ▼
          [ DERIVED THERMAL FEATURES ]
- (Composite thermal stress index, spatial peak temperature extraction)
+ (Tile average/max extraction, temporal feature aggregation)
                        │
                        ▼
              [ CANDIDATE WINDOWS ]
-   (Generate sliding intervals W_i of duration d across window)
+   (Generate sliding windows W_i with step CandidateWindowStep = DATA_RESOLUTION)
                        │
                        ▼
              [ CONSTRAINT FILTER ]
- (Discard candidate windows violating mandatory user thresholds)
+ (Discard candidate windows violating mandatory user bounds)
                        │
                        ▼
            [ EXPOSURE EVALUATION ]
- (Calculate integrated modeled thermal exposure for each candidate window)
+ (Evaluate exposure score via interface evaluateExposure(observations, window, modelConfig))
                        │
                        ▼
                  [ RANKING ]
- (Order feasible candidate windows from lowest to highest exposure)
+ (Order feasible candidate windows from lowest to highest exposure; deterministic tie-breaking)
                        │
                        ▼
            [ RECOMMENDED WINDOW ]
@@ -57,7 +63,7 @@ The Decision Engine is a pure mathematical domain service responsible for evalua
                        │
                        ▼
               [ EVIDENCE BUNDLE ]
- (Structured telemetry, tile stats, calculation steps, lineage tags)
+ (Structured object containing observed, derived, model config, and candidate metrics)
                        │
                        ▼
             [ AI EXPLANATION LAYER ]
@@ -66,46 +72,51 @@ The Decision Engine is a pure mathematical domain service responsible for evalua
 
 ---
 
-## 3. Optimization Problem Formulation
+## 3. Mathematical Optimization Contract & Model Interface
 
-Given:
-- Location / Area of Interest $L$
-- Operation Duration $d$ (e.g. 3 hours)
-- Permissible Time Window $[T_{\text{start}}, T_{\text{end}}]$
-- Temporal step size $\Delta t$ (e.g. 1 hour)
-- Operational Constraints $C$
+### 3.1 Optimization Problem
+Given permissible window $[T_{\text{start}}, T_{\text{end}}]$, duration $d$, step size `CandidateWindowStep = DATA_RESOLUTION`, and candidate windows $W_i = [t_i, t_i + d]$:
 
-The set of candidate operating windows $\mathcal{W}$ consists of all intervals $W_i = [t_i, t_i + d]$ such that $T_{\text{start}} \le t_i$ and $t_i + d \le T_{\text{end}}$.
+$$\text{Select } W^* = \arg\min_{W_i \in \mathcal{W}_{\text{feasible}}} E(W_i)$$
 
-The Decision Engine evaluates the Modeled Thermal Exposure $E(W_i)$ for each candidate window $W_i$:
+Where:
+- $E(W_i)$ is the deterministic exposure score computed via the exposure model interface.
+- Formula Status: `PROVISIONAL — MODEL TO BE DEFINED`.
 
-$$E(W_i) = \int_{t_i}^{t_i + d} \text{ThermalStressIndex}(L, t) \, dt$$
+### 3.2 Model Interface Signature (Pure TypeScript Contract)
 
-The recommended window $W^*$ is selected by:
+```typescript
+export interface ModelConfig {
+  modelVersion: string;
+  metricWeights?: Record<string, number>;
+}
 
-$$W^* = \arg\min_{W_i \in \mathcal{W}_{\text{feasible}}} E(W_i)$$
+export interface ExposureResult {
+  exposureScore: number;
+  metricBreakdown: Record<string, number>;
+}
 
-Where $\mathcal{W}_{\text{feasible}} = \{ W_i \in \mathcal{W} \mid \text{Satisfies}(W_i, C) \}$.
-
-*Note: "Optimal" is defined strictly relative to the candidate set $\mathcal{W}$ and active constraints $C$.*
-
----
-
-## 4. Integration Dependency Resolution (`/v1/env_params` Temperature Input)
-
-- **Verified API Requirement:** The FortyGuard `/v1/env_params` endpoint requires a `temperature` parameter in the request body (`latitude`, `longitude`, `temperature`, `date_time`).
-- **Sourcing Protocol:**
-  1. Primary Source: Temperature values supplied to `/v1/env_params` are extracted from the corresponding `/v1/heatmap` tile data (`average_temperature` or `max_temperature`) for the specified location and timestamp.
-  2. Fallback Source: Observed baseline location telemetry or user-provided site baseline measurement.
-- **Data Lineage:** The temperature input to `/v1/env_params` is tagged as `OBSERVED` (if from raw observation) or `DERIVED` (if from tile aggregation).
+export type ExposureEvaluator = (
+  observations: NormalizedTelemetry[],
+  window: CandidateWindow,
+  config: ModelConfig
+) => ExposureResult;
+```
 
 ---
 
-## 5. What-If Scenario Calculation Protocol
+## 4. Temporal Resolution & Timezone Alignment
 
-When a user adjusts a parameter in the What-If Sandbox (e.g., duration $d \to d'$, constraint threshold $C \to C'$, or applying a mitigation factor $M$):
-1. The engine re-evaluates the candidate set $\mathcal{W}'$.
-2. Re-calculates exposure $E(W_i)'$ incorporating the delta parameter or mitigation scalar.
-3. Computes the Scenario Delta:
-   $$\Delta E = E(W^*_{\text{new}})' - E(W^*_{\text{baseline}})$$
-4. Returns the updated candidate ranking and side-by-side scenario comparison in $< 100\text{ ms}$.
+- **Step Size:** `CandidateWindowStep = DATA_RESOLUTION` (aligned to FortyGuard temporal data intervals, e.g. 1-hour hourly intervals for forecast/historical endpoints).
+- **Timezone Safety:**
+  - All external FortyGuard API timestamps are converted and normalized to UTC for internal calculations.
+  - User-facing UI displays local time using the location's verified timezone metadata (`metadata.timezone`, `metadata.timezone_offset_hours`).
+  - Interval boundaries are strictly defined (inclusive start timestamp, exclusive end timestamp).
+
+---
+
+## 5. Integration Dependency Resolution (`/v1/env_params`)
+
+- **Dependency:** `/v1/env_params` requires a `temperature` input parameter.
+- **Status:** `UNKNOWN — VERIFY` (The semantic correctness of supplying heatmap tile averages as `env_params` temperature input is unconfirmed).
+- **Domain Adapter Architecture:** The FortyGuard adapter treats `/v1/env_params` as an **optional enrichment layer**. If `/v1/env_params` is unavailable or fails, core candidate window ranking operates on verified thermal heatmap telemetry without blocking execution.

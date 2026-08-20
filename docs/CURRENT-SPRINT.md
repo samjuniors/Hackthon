@@ -1,30 +1,30 @@
-# Current Sprint — Milestone 3 Approval & Final Evidence Gate
+# Current Sprint — Milestone 3.5: Exposure Model & Evidence Gate
 
-**Status:** ACTIVE (M3 Approved & Hourly Forecast Contract Verified)  
-**Current Milestone:** M3 Approval — Evidence Gate  
+**Status:** ACTIVE (M3.5 Exposure Model Locked)  
+**Current Milestone:** M3.5 — Exposure Model & Evidence Gate  
 **Submission Deadline:** 2026-08-30  
 **Last Updated:** 2026-08-20  
 
 ---
 
 ## 🎯 Sprint Goal
-Verify the exact hourly forecast retrieval contract and validate architectural readiness before beginning Milestone 4 (Vertical Slice 1 Execution).
+Finalize the scientific data contract, `env_params` semantics, exposure model selection (`v1.0.0-spatial-thermal-baseline`), and Strategy A temporal acquisition prior to Milestone 4 (Vertical Slice 1 Execution).
 
 ---
 
 ## 📋 Task Breakdown
 
-### Milestone 3 Final Evidence Gate (`COMPLETED`)
-- [x] **Hourly Forecast Verification:** Tested live forecast requests for single-hour (`filter_type: 1`) and multi-hour range (`filter_type: 2`).
-- [x] **Contract Confirmation:** Confirmed request parameters (`start_date`, `start_time`, `filter_type`), tile temperature outputs (`average_temperature`, `min_temperature`, `max_temperature`), and 2,000 credit per-call parameters.
-- [x] **Architecture Readiness:** Verified that current Next.js system architecture, domain interfaces, and adapter caching strategy remain 100% valid.
-- [x] **Documentation Updates:** Updated [docs/FORTYGUARD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/FORTYGUARD.md), [docs/WORKLOG.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/WORKLOG.md), and [docs/CURRENT-SPRINT.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/CURRENT-SPRINT.md).
+### Milestone 3.5 Evidence Gate (`COMPLETED`)
+- [x] **`env_params` Semantics Verification:** Verified live that `/v1/env_params` accepts reference temperature anchor and forecast timestamps, returning non-linear physics parameters (wet-bulb, heat index, solar GHI/DNI).
+- [x] **Exposure Model Strategy Evaluation:** Evaluated 6 model candidates. Rejected arbitrary metric weighting formulas. Selected **Primary Spatial Tile Temperature Metric + Supporting Telemetry Evidence (`v1.0.0-spatial-thermal-baseline`)**.
+- [x] **Temporal Acquisition Strategy:** Locked **Strategy A (Hourly Snapshots Downloaded Once & Local Window Evaluation)** for credit efficiency and responsive local what-if simulation.
+- [x] **Documentation Synchronization:** Updated [docs/FORTYGUARD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/FORTYGUARD.md), [docs/DECISION-ENGINE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DECISION-ENGINE.md), [docs/EVALUATION.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/EVALUATION.md), [docs/WORKLOG.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/WORKLOG.md), and [docs/CURRENT-SPRINT.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/CURRENT-SPRINT.md).
 
-### NEXT (Milestone 4 — Vertical Slice 1 Implementation)
+### NEXT (Milestone 4 — Vertical Slice 1 Execution)
 - [ ] Implement FortyGuard Adapter (`src/lib/fortyguard/adapter.ts`) with Zod validation, async polling, and caching.
-- [ ] Implement baseline `ExposureModel` evaluator shell (`src/lib/decision-engine/evaluator.ts`).
+- [ ] Implement baseline `v1.0.0-spatial-thermal-baseline` exposure evaluator (`src/lib/decision-engine/evaluator.ts`).
 - [ ] Implement decision pipeline orchestrator for single location + candidate time windows (`src/lib/decision-engine/pipeline.ts`).
 - [ ] Build end-to-end Slice 1 API route and Decision Workspace UI.
 
 ### 🚧 BLOCKED
-- **Vertical Slice 1 Feature Coding:** Feature coding is strictly blocked until this Final Evidence Gate report is reviewed and approved by the founder/team.
+- **Vertical Slice 1 Feature Coding:** Feature coding is strictly blocked until this M3.5 report is reviewed and approved by the founder/team.

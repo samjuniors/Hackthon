@@ -1,43 +1,43 @@
 # System Architecture — Thermal Decision Engine
 
-**Status:** PROVISIONAL  
+**Status:** LOCKED  
 **Last Updated:** 2026-08-20  
+**Milestone:** M2 — Product Lock  
 
 ---
 
-## 1. System Overview & Boundaries
+## 1. High-Level Architectural Layers
 
-The system is structured as a unified Next.js TypeScript application leveraging server routes for protected external integrations and client components for interactive scenario modeling.
+The Thermal Decision Engine is built as a single, unified Next.js TypeScript application. System boundaries are strictly layered to isolate external API integration, deterministic domain logic, scenario simulation, and AI narrative synthesis.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                              FRONTEND                                  │
+│                              FRONTEND UI                               │
 │  ┌─────────────────────────┐         ┌──────────────────────────────┐  │
-│  │   Interactive UI / Map  │ ◄─────► │  Scenario / What-If Engine   │  │
-│  │   (Visualizer)          │         │  (Client-Side Simulation)    │  │
+│  │   Decision Workspace    │ ◄─────► │  Scenario / What-If Sandbox  │  │
+│  │   (8-Section Layout)    │         │  (Client-Side Simulation)    │  │
 │  └───────────┬─────────────┘         └──────────────┬───────────────┘  │
-│              │                                      │                  │
 └──────────────┼──────────────────────────────────────┼──────────────────┘
-               │ (Type-Safe Internal API Routes)      │
+               │ (Type-Safe RPC / Internal API Routes)│
 ┌──────────────▼──────────────────────────────────────▼──────────────────┐
 │                           SERVER LAYER                                 │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │  Next.js Server Handlers (app/api/*)                             │  │
-│  │  - Input validation (Zod)                                        │  │
-│  │  - Cache & rate-limit handling                                   │  │
-│  │  - AI Explanation Synthesizer (LLM adapter with strict prompt)   │  │
+│  │  Application / Use Cases Layer (app/api/decisions/*)            │  │
+│  │  - Orchestrates telemetry fetch, caching, and evaluation         │  │
+│  │  - Formats Evidence Bundle for AI Explainer                      │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 │                     │                                                  │
 │  ┌──────────────────▼───────────────────────────────────────────────┐  │
 │  │  Domain Decision Engine (Pure TypeScript Core)                   │  │
-│  │  - Deterministic risk evaluation & decision rules                │  │
-│  │  - Scenario delta calculation                                    │  │
+│  │  - Deterministic candidate window generation & ranking           │  │
+│  │  - Objective function evaluation & constraint filtering          │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 │                     │                                                  │
 │  ┌──────────────────▼───────────────────────────────────────────────┐  │
 │  │  FortyGuard API Adapter                                          │  │
-│  │  - Secure credential injection                                   │  │
-│  │  - Schema normalization & boundary validation (Zod)              │  │
+│  │  - Manages async activity_id status polling with backoff         │  │
+│  │  - Strict Zod boundary validation & data normalization           │  │
+│  │  - Sources env_params temperature input from heatmap tile data   │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 └─────────────────────┼──────────────────────────────────────────────────┘
                       │
@@ -47,37 +47,43 @@ The system is structured as a unified Next.js TypeScript application leveraging 
 
 ---
 
-## 2. Technology Stack
+## 2. Component Layer Responsibilities
 
-- **Runtime & Language:** Node.js (>= 20), TypeScript (strict mode)
-- **Framework:** Next.js (App Router, React 19)
-- **Styling:** Tailwind CSS + Radix UI primitives
-- **Validation:** Zod for all external API and user-input boundaries
-- **Deterministic Domain Core:** Pure TypeScript functions with zero I/O side effects for testability
-- **Testing:** Vitest for unit and domain logic testing
-- **Spatial / Map Visualization:** `UNKNOWN — VERIFY` (Selection of MapLibre GL, react-map-gl, or lightweight GeoJSON rendering is deferred until FortyGuard spatial data formats and coordinate structures are verified).
-
-*Note: No separate backend services (Python, Redis, Queues, DB) will be introduced unless justified by confirmed requirements.*
+1. **UI Layer (`src/app/*`, `src/components/*`):**
+   - Renders the Decision Workspace (Location selector, operational parameters, spatial thermal map, candidate windows, recommended window, evidence drawer, what-if sandbox, AI explanation panel).
+   - Manages interactive slider state for instant client-side scenario re-evaluation.
+2. **Application / Use Cases Layer (`src/app/api/*`):**
+   - Coordinates multi-step FortyGuard requests (Heatmap fetch $\to$ Temperature extraction $\to$ Environmental Parameters fetch $\to$ Decision Engine evaluation).
+   - Passes *structured decision outputs and evidence bundles* (never raw unvalidated payloads) to the AI Explanation Synthesizer.
+3. **Domain Decision Engine (`src/lib/decision-engine/*`):**
+   - Pure TypeScript core with zero I/O side effects.
+   - Evaluates objective functions, candidate windows, and what-if scenario deltas deterministically.
+4. **FortyGuard Adapter (`src/lib/fortyguard/*`):**
+   - Injects server-side API keys (`FORTYGUARD_API_KEY`).
+   - Polls `/v1/status/{activity_id}` until `Completed`.
+   - Validates external payloads against Zod schemas.
+   - Resolves the `/v1/env_params` temperature input dependency by piping `/v1/heatmap` tile temperature averages into environmental parameter requests.
 
 ---
 
-## 3. Data Lineage & Provenance Model
+## 3. Technology Stack
 
-Every data item presented in the system carries an explicit lineage tag:
+- **Framework:** Next.js (App Router, React 19)
+- **Language:** TypeScript (Strict mode)
+- **Styling:** Tailwind CSS + Radix UI primitives
+- **Validation:** Zod (for boundary schemas)
+- **Testing:** Vitest
+- **Package Manager:** pnpm
 
-```typescript
-export type DataOrigin = 
-  | 'OBSERVED'                  // Direct verified FortyGuard measurement
-  | 'DERIVED'                   // Deterministic domain calculation
-  | 'PREDICTED'                 // Forecast data from FortyGuard
-  | 'ASSUMED'                   // User-specified scenario parameter
-  | 'AI_GENERATED_EXPLANATION'; // Narrative synthesis
+*Note: No separate backend services (Python, Redis, Queues, DB, Kubernetes) are used.*
+
+---
+
+## 4. AI Grounding & Information Flow Boundary
+
+```
+[ Domain Decision Engine Output ] ──► [ Structured Evidence Bundle ] ──► [ AI Explanation Synthesizer ] ──► [ UI Narrative ]
 ```
 
----
-
-## 4. Security Architecture
-
-1. **Secrets Isolation:** FortyGuard API keys and LLM tokens reside strictly in server-side environment variables (`.env.local`).
-2. **No Client Secret Exposure:** Client components communicate only through internal server route handlers (`/api/*`).
-3. **Boundary Sanitization:** All incoming FortyGuard data is validated with Zod before entering the domain layer.
+- The AI explanation layer consumes **ONLY** the structured `Evidence Bundle` produced by the deterministic engine.
+- The AI layer is strictly prohibited from fetching raw weather APIs or calculating numerical scores.

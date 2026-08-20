@@ -1,78 +1,68 @@
 # Thermal Decision Engine
 
-> **FortyGuard Hackathon'26 Project**  
+> **FortyGuard Hackathon'26 Project Submission**  
 > **Submission Deadline:** 2026-08-30  
-> **Status:** M0 — Repository Bootstrap & API Reconnaissance (`PROVISIONAL`)
+> **Status:** M2 — Product Lock (`LOCKED`)
 
 ---
 
-## ⚠️ Provisional Direction Notice
+## 🎯 Product Overview
 
-> [!IMPORTANT]
-> The product direction described herein is **PROVISIONAL** and subject to revision following formal FortyGuard API reconnaissance and capability validation. No FortyGuard capabilities, resolutions, or endpoints are assumed as facts until verified via actual API interactions.
+The **Thermal Decision Engine** is a decision-intelligence platform that transforms FortyGuard's hyperlocal spatial and temporal thermal intelligence into optimal operating window recommendations, interactive what-if scenario simulations, and evidence-grounded explanations for heat-exposed operations.
 
-**Provisional Core Mission:**
-An AI-powered Thermal Decision Engine that transforms hyperlocal temperature intelligence into actionable, explainable operational decisions and what-if scenarios.
+### Core User Question
+> *"I need to run a 3-hour outdoor operation at this location tomorrow. When and where should I do it to minimize modeled thermal exposure while satisfying my operating constraints?"*
 
 ---
 
-## 🎯 Project Overview
+## ⚡ Core MVP Capabilities
 
-Thermal conditions and urban heat stress create severe operational, logistical, safety, and energy challenges. While temperature data exists, raw thermal maps do not make decisions. The Thermal Decision Engine bridges the gap between raw spatial thermal observations and high-stakes operational choices by:
-
-1. Ingesting and validating hyperlocal thermal intelligence (FortyGuard).
-2. Applying deterministic, domain-specific evaluation logic.
-3. Simulating what-if scenarios under altered operating conditions or mitigation strategies.
-4. Delivering verified, explainable recommendations with clear attribution of observed, derived, and simulated values.
+1. **Thermal Assessment:** Ingests verified FortyGuard thermal telemetry (`wet_bulb_temperature_celsius`, `heat_index`, `solar_irradiance`).
+2. **Spatial Thermal Context:** Renders spatial heat variations using FortyGuard GeoJSON heatmap tiles.
+3. **Temporal Decision:** Evaluates candidate operating windows across temporal forecast series (+12h horizon).
+4. **Deterministic Decision Engine:** Ranks candidate operating windows deterministically to minimize modeled exposure given operational constraints.
+5. **What-If Scenarios:** Interactive sandbox for instant scenario recalculation (duration, shift timing, mitigation factors).
+6. **Evidence-Grounded AI Explanation:** Synthesizes clear narrative explanations using strictly verified decision outputs and evidence bundles.
 
 ---
 
 ## 🧭 Documentation Map
 
-All project architecture, requirements, decisions, and domain models are tracked within the structured documentation system. See [INDEX.md](file:///e:/Projects/NewProjetcs/Hackthon/INDEX.md) for full details.
+All system architecture, product requirements, decision models, and API integrations are tracked within the documentation system. See [INDEX.md](file:///e:/Projects/NewProjetcs/Hackthon/INDEX.md) for full details.
 
 | Document | Purpose | Status |
 | :--- | :--- | :--- |
-| [CONSTITUTION.md](file:///e:/Projects/NewProjetcs/Hackthon/CONSTITUTION.md) | Non-negotiable engineering & product rules | `LOCKED` |
-| [AGENTS.md](file:///e:/Projects/NewProjetcs/Hackthon/AGENTS.md) | Multi-agent collaboration protocols & roadmap | `VERIFIED` |
-| [docs/VISION.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/VISION.md) | Long-term vision and problem statement | `PROVISIONAL` |
-| [docs/PRD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/PRD.md) | Product requirements and acceptance criteria | `PROVISIONAL` |
-| [docs/ARCHITECTURE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/ARCHITECTURE.md) | Technical architecture & system boundaries | `PROVISIONAL` |
-| [docs/DESIGN.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DESIGN.md) | UX principles & thermal visualization guidelines | `PROVISIONAL` |
-| [docs/DECISION-ENGINE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DECISION-ENGINE.md) | Deterministic decision logic & scenario models | `PROVISIONAL` |
-| [docs/FORTYGUARD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/FORTYGUARD.md) | Verified FortyGuard API intelligence & schemas | `DRAFT` |
-| [docs/CURRENT-SPRINT.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/CURRENT-SPRINT.md) | Active milestone operational tracking | `VERIFIED` |
-| [docs/WORKLOG.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/WORKLOG.md) | Chronological log of actual engineering actions | `VERIFIED` |
-| [docs/EVALUATION.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/EVALUATION.md) | Quality, correctness, and demo validation plan | `PROVISIONAL` |
-| [docs/adr/0001-initial-architecture.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/adr/0001-initial-architecture.md) | Initial stack & architecture decision record | `VERIFIED` |
+| [CONSTITUTION.md](file:///e:/Projects/NewProjetcs/Hackthon/CONSTITUTION.md) | Non-negotiable engineering principles & data integrity rules | `LOCKED` |
+| [AGENTS.md](file:///e:/Projects/NewProjetcs/Hackthon/AGENTS.md) | Multi-agent protocols & vertical slice roadmap | `VERIFIED` |
+| [docs/VISION.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/VISION.md) | Long-term vision for heat-exposed operations | `LOCKED` |
+| [docs/PRD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/PRD.md) | Product requirements, 6 MVP capabilities, acceptance criteria | `LOCKED` |
+| [docs/ARCHITECTURE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/ARCHITECTURE.md) | System boundaries, App Router layers, AI grounding flow | `LOCKED` |
+| [docs/DESIGN.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DESIGN.md) | Decision Workspace 8-section layout & provenance badges | `LOCKED` |
+| [docs/DECISION-ENGINE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DECISION-ENGINE.md) | Deterministic decision model & optimization pipeline | `LOCKED` |
+| [docs/FORTYGUARD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/FORTYGUARD.md) | Verified FortyGuard API intelligence & live schemas | `VERIFIED` |
+| [docs/CURRENT-SPRINT.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/CURRENT-SPRINT.md) | Milestone 2 operational sprint tracking | `ACTIVE` |
+| [docs/WORKLOG.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/WORKLOG.md) | Chronological record of engineering actions & decisions | `VERIFIED` |
+| [docs/EVALUATION.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/EVALUATION.md) | Test matrix & evidence verification strategy | `LOCKED` |
+| [docs/adr/0002-thermal-operations-decision-model.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/adr/0002-thermal-operations-decision-model.md) | Decision model & product scope lock record | `LOCKED` |
 
 ---
 
 ## 🛠️ Technology Stack
 
 - **Framework:** Next.js (App Router, React 19)
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS + Radix UI / shadcn/ui primitives
-- **Validation:** Zod (for strict boundary schemas)
-- **Testing:** Vitest (unit/integration)
+- **Language:** TypeScript (Strict mode)
+- **Styling:** Tailwind CSS + Radix UI / shadcn primitives
+- **Validation:** Zod (for boundary schemas)
+- **Testing:** Vitest
 - **Package Manager:** pnpm
 
 ---
 
 ## 🚀 Getting Started
 
-### Prerequisites
-- Node.js >= 20.x
-- pnpm >= 9.x
-
-### Installation
-
 ```bash
 # Install dependencies
 pnpm install
-
-# Copy environment variables
-cp .env.example .env.local
 
 # Run development server
 pnpm dev
@@ -86,6 +76,6 @@ pnpm build
 
 ---
 
-## 🛡️ License & Attribution
+## ⚠️ Important Disclaimer
 
-Developed for FortyGuard Hackathon'26. Hyperlocal thermal data attribution is governed by FortyGuard API terms.
+The Thermal Decision Engine provides modeled operational guidance derived from available thermal and environmental inputs. It is decision support and does **NOT** constitute medical advice or occupational safety certification.

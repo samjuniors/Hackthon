@@ -1,43 +1,50 @@
 # Evaluation & Verification Plan — Thermal Decision Engine
 
-**Status:** PROVISIONAL  
+**Status:** LOCKED  
 **Last Updated:** 2026-08-20  
+**Milestone:** M2 — Product Lock  
 
 ---
 
-## 1. Quality & Correctness Strategy
+## 1. Quality & Verification Strategy
 
-To deliver a reliable, evidence-backed hackathon submission by **2026-08-30**, the Thermal Decision Engine utilizes a structured verification plan across all system layers.
+The Thermal Decision Engine uses a rigorous verification plan covering deterministic domain logic, API boundary resilience, scenario recalculation accuracy, and AI grounding protocols.
 
----
-
-## 2. Core Evaluation Pillars
-
-### 2.1 Deterministic Domain Logic Verification
-- **Unit & Logic Testing:** Comprehensive unit tests on all deterministic calculation functions, risk scoring, and scenario delta evaluations.
-- **Model-Specific Invariants:** Invariant properties (e.g., monotonic risk scaling, bounded delta ranges) will be formalized and tested once the specific domain model and formulas are locked in Milestone 2.
-- **Boundary & Edge Cases:** Robust handling of null or missing telemetry fields, coordinate extremes, and unexpected numeric outliers.
-
-### 2.2 Boundary & Schema Validation
-- **Zod Schema Tests:** Strict parsing of FortyGuard API payloads to ensure graceful failure on malformed external responses.
-
-### 2.3 End-to-End Vertical Slice Verification
-- **Integration Testing:** Verification of data flow across system layers (`User Request → UI → Server Handler → Adapter → Domain Logic → Rendered Output`).
-
-### 2.4 AI Grounding & Anti-Hallucination Guardrails
-- **Context Isolation:** AI explanation prompts are fed only validated domain data and deterministic outputs to prevent metric fabrication.
-
-### 2.5 Security & Secret Sanitization
-- **No Committed Credentials:** Automated checks and `.gitignore` enforcement ensuring no `.env.local` or secret tokens enter version control.
+> **Important Scientific & Operational Disclaimer:**  
+> The decision engine provides modeled operational guidance derived from available thermal and environmental telemetry inputs. It is strictly decision support and does **NOT** constitute medical advice or occupational safety certification.
 
 ---
 
-## 3. Milestone Verification Checklist
+## 2. Mandatory Test Matrix
+
+### 2.1 Deterministic Domain Logic Tests
+- **Identical Input Guarantee:** Identical location, duration, constraints, and FortyGuard telemetry inputs must yield 100% identical window rankings and exposure scores (`Input(A) == Input(B) => Result(A) == Result(B)`).
+- **Candidate Window Generation:** Correct sliding window generation across permissible time bounds ($[T_{\text{start}}, T_{\text{end}}]$ with duration $d$).
+- **Constraint Filtering:** Windows breaching mandatory user threshold limits are correctly filtered into the infeasible set.
+- **Deterministic Exposure Ranking:** Feasible candidate windows are correctly ordered from lowest to highest modeled exposure.
+- **Impossible Constraints:** Handling impossible operating constraints (e.g. duration > allowed window) by returning explicit infeasibility notices without crashing.
+
+### 2.2 Boundary & Error Resilience Tests
+- **Missing Telemetry Fields:** Handling `null` or missing FortyGuard parameter arrays gracefully (e.g., fallback calculations or explicit data missing flags).
+- **Malformed API Responses:** Zod schema validation correctly rejects invalid external payloads and returns structured domain errors.
+- **API Failure Handling:** Graceful fallback and error messaging when FortyGuard endpoints return 4xx/5xx errors or poll timeouts.
+
+### 2.3 Scenario & What-If Comparison Tests
+- **Scenario Recalculation Accuracy:** Altering duration (e.g., 3h $\to$ 2h) or window bounds correctly re-evaluates candidates and calculates exact exposure deltas ($\Delta E$).
+- **Sub-Second Performance:** Client-side scenario recalculation executes in $< 100\text{ ms}$.
+
+### 2.4 Provenance & AI Grounding Tests
+- **Lineage Tag Correctness:** Every metric displayed carries its correct lineage tag (`OBSERVED`, `DERIVED`, `PREDICTED`, `ASSUMED`, `AI_GENERATED_EXPLANATION`).
+- **AI Grounding Isolation:** The AI Explanation Synthesizer receives structured `Evidence Bundles` only. AI output tests confirm no invented temperatures or ungrounded claims.
+
+---
+
+## 3. Continuous Verification Pipeline
 
 Before declaring any milestone or vertical slice complete, verify:
 - [ ] TypeScript typecheck passes (`pnpm typecheck`)
 - [ ] Linter passes with zero errors (`pnpm lint`)
-- [ ] Domain unit tests pass (`pnpm test`)
+- [ ] Automated unit test suite passes (`pnpm test`)
 - [ ] Production build succeeds (`pnpm build`)
-- [ ] No secrets committed in source code or documentation
+- [ ] No secrets committed in code or documentation
 - [ ] Documentation updated to reflect changes

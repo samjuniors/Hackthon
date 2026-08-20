@@ -1,64 +1,49 @@
 # Product Vision — Thermal Decision Engine
 
-**Status:** PROVISIONAL  
+**Status:** LOCKED  
 **Last Updated:** 2026-08-20  
+**Milestone:** M2 — Product Lock  
 
 ---
 
 ## 1. Executive Summary
 
-As urban environments and industrial systems experience localized thermal variations and severe heat stress, operational leaders struggle to translate raw ambient data into actionable choices.
+As global climate volatility drives intense localized thermal stress, organizations managing physical, industrial, and outdoor operations face severe operational disruptions. Raw temperature feeds and static thermal maps display heat intensity, but do not tell operators *when* or *where* to conduct activities to minimize thermal risk while fulfilling operational constraints.
 
-FortyGuard provides the underlying hyperlocal thermal and environmental data intelligence. The **Thermal Decision Engine** is a decision-support and scenario-modeling platform built above FortyGuard, turning hyperlocal thermal intelligence into explainable operational decisions and what-if analysis.
-
----
-
-## 2. The Core Problem
-
-1. **Data vs. Decision Gap:** Raw heatmaps and temperature readings display thermal severity but do not answer operational questions (e.g., when to schedule activities, how to optimize operating windows, or which mitigation measures yield the highest impact).
-2. **Hyperlocal Complexity:** Macro-weather feeds miss microclimate variations caused by urban materials, shade, surface heat retention, and localized thermal dynamics.
-3. **Absence of Scenario Simulation:** Operators lack lightweight, deterministic tools to simulate the effect of altered timing, operational constraints, or localized cooling interventions prior to execution.
-4. **AI Hallucination Risk:** Ungrounded AI tools frequently invent temperatures, compute invalid metrics, or deliver unverified operational advice.
+FortyGuard provides underlying hyperlocal thermal and environmental telemetry. The **Thermal Decision Engine** is a decision-intelligence system built above FortyGuard, transforming hyperlocal spatial and temporal thermal data into optimal operating window recommendations, interactive scenario simulations, and evidence-grounded explanations.
 
 ---
 
-## 3. Value Layer Above FortyGuard
+## 2. Core Value Proposition
 
 ```
-[ FortyGuard Hyperlocal Thermal Telemetry ]
-                    │
-                    ▼
-       [ Ingestion & Validation ] (Strict Zod Schemas)
-                    │
-                    ▼
-     [ Deterministic Thermal Analysis ] (Domain Engine)
-                    │
-                    ▼
-     [ Scenario & What-If Simulation ] (Parametric Modeling)
-                    │
-                    ▼
-   [ Evidence-Backed Recommendations ] (Deterministic Rules)
-                    │
-                    ▼
-     [ AI Synthesis & Interaction ] (Explainable Narrative)
+[ FortyGuard Telemetry (Heatmaps, Wet-Bulb, Solar Irradiance) ]
+                               │
+                               ▼
+        [ Operational Constraints (Duration, Time Windows) ]
+                               │
+                               ▼
+          [ Deterministic Window Ranking & Exposure Evaluation ]
+                               │
+                               ▼
+         [ Interactive What-If Scenario Comparison Sandbox ]
+                               │
+                               ▼
+        [ Grounded AI Narrative Explanation & Evidence Summary ]
 ```
 
 ---
 
-## 4. Candidate Domain Hypotheses (PROVISIONAL)
+## 3. Product Abstraction vs. Demo Vertical
 
-*Note: No specific industry or domain is selected. The following are candidate application hypotheses to be evaluated against verified FortyGuard API capabilities:*
-
-- **Hypothesis A — Operational Labor & Field Safety:** Dynamic operational window scheduling and heat-risk mitigation based on hyperlocal thermal exposure.
-- **Hypothesis B — Logistics & Thermal-Sensitive Operations:** Route and dispatch time-window optimization to reduce heat exposure for sensitive assets or cargo.
-- **Hypothesis C — Urban Infrastructure & Municipal Interventions:** Comparative simulation of microclimate interventions and targeted thermal relief zones.
-
-The final vertical domain will be selected in Milestone 2 (Product Lock) based on actual API capabilities, spatial resolution, and available parameters confirmed in Milestone 1.
+- **Architectural Product Abstraction:** Heat-Exposed Operations Decision Intelligence. The underlying engine evaluates candidate operating windows, spatial variations, and scenario constraints for *any* time-sensitive outdoor or thermally sensitive activity.
+- **Primary Demonstration Vertical:** Outdoor Field Operations (e.g., outdoor maintenance shifts, inspection teams, site crews). Outdoor field operations serve as the concrete judging narrative for the hackathon MVP, but do not constrain the general-purpose decision model.
 
 ---
 
-## 5. Success Criteria & Differentiators
+## 4. Key Differentiators
 
-- **Zero Hallucinated Metrics:** Absolute boundary separation between observed API data, derived deterministic calculations, user scenario assumptions, and AI explanations.
-- **Actionability:** Clear, deterministic operational guidance with explicit trade-offs.
-- **Interactive Simulation:** Rapid scenario recalculation enabling users to evaluate operational what-if parameters.
+1. **Decision Intelligence over Raw Data:** Moves beyond viewing heatmaps to solving the operational choice: *"When and where should this operation occur?"*
+2. **Deterministic Integrity:** Calculations, ranking algorithms, and scenario deltas are 100% mathematical and testable. AI never calculates temperatures or invents metrics.
+3. **Interactive Scenario Simulation:** Allows operators to test "what-if" changes (e.g., shifting start times, shortening shift durations, applying mitigation factors) with instant side-by-side exposure comparisons.
+4. **No Unsubstantiated Health Claims:** Strictly focused on *modeled thermal exposure* and relative operational burden, eliminating misleading medical safety claims.

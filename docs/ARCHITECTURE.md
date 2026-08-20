@@ -7,36 +7,37 @@
 
 ## 1. System Overview & Boundaries
 
-The system is structured as a unified Next.js TypeScript application leveraging server routes for protected external integrations and client components for reactive UI and instant scenario modeling.
+The system is structured as a unified Next.js TypeScript application leveraging server routes for protected external integrations and client components for interactive scenario modeling.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                              FRONTEND                                  │
 │  ┌─────────────────────────┐         ┌──────────────────────────────┐  │
-│  │   Interactive Map / UI  │ ◄─────► │  Scenario / What-If Engine   │  │
+│  │   Interactive UI / Map  │ ◄─────► │  Scenario / What-If Engine   │  │
+│  │   (Visualizer)          │         │  (Client-Side Simulation)    │  │
 │  └───────────┬─────────────┘         └──────────────┬───────────────┘  │
 │              │                                      │                  │
 └──────────────┼──────────────────────────────────────┼──────────────────┘
-               │ (Type-Safe RPC / API Routes)         │
+               │ (Type-Safe Internal API Routes)      │
 ┌──────────────▼──────────────────────────────────────▼──────────────────┐
 │                           SERVER LAYER                                 │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │  Next.js Server Handlers (app/api/*)                             │  │
 │  │  - Input validation (Zod)                                        │  │
-│  │  - Rate-limit & Caching Layer                                    │  │
+│  │  - Cache & rate-limit handling                                   │  │
 │  │  - AI Explanation Synthesizer (LLM adapter with strict prompt)   │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 │                     │                                                  │
 │  ┌──────────────────▼───────────────────────────────────────────────┐  │
-│  │  Domain Decision Engine (Pure TS Core)                           │  │
-│  │  - Deterministic risk scoring & threshold evaluation             │  │
-│  │  - Operational recommendation rules                              │  │
+│  │  Domain Decision Engine (Pure TypeScript Core)                   │  │
+│  │  - Deterministic risk evaluation & decision rules                │  │
+│  │  - Scenario delta calculation                                    │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 │                     │                                                  │
 │  ┌──────────────────▼───────────────────────────────────────────────┐  │
 │  │  FortyGuard API Adapter                                          │  │
-│  │  - Auth headers / Bearer tokens                                  │  │
-│  │  - Strict response validation & normalization                    │  │
+│  │  - Secure credential injection                                   │  │
+│  │  - Schema normalization & boundary validation (Zod)              │  │
 │  └──────────────────┬───────────────────────────────────────────────┘  │
 └─────────────────────┼──────────────────────────────────────────────────┘
                       │
@@ -49,25 +50,27 @@ The system is structured as a unified Next.js TypeScript application leveraging 
 ## 2. Technology Stack
 
 - **Runtime & Language:** Node.js (>= 20), TypeScript (strict mode)
-- **Framework:** Next.js (App Router)
-- **UI & Styling:** React, Tailwind CSS, Lucide Icons, Radix UI primitives
+- **Framework:** Next.js (App Router, React 19)
+- **Styling:** Tailwind CSS + Radix UI primitives
 - **Validation:** Zod for all external API and user-input boundaries
-- **Deterministic Core:** Pure TypeScript modules with zero I/O side effects for easy testability
-- **Testing:** Vitest for fast unit/integration testing
-- **Mapping (Provisional):** MapLibre GL / react-map-gl (pending FortyGuard spatial format verification)
+- **Deterministic Domain Core:** Pure TypeScript functions with zero I/O side effects for testability
+- **Testing:** Vitest for unit and domain logic testing
+- **Spatial / Map Visualization:** `UNKNOWN — VERIFY` (Selection of MapLibre GL, react-map-gl, or lightweight GeoJSON rendering is deferred until FortyGuard spatial data formats and coordinate structures are verified).
+
+*Note: No separate backend services (Python, Redis, Queues, DB) will be introduced unless justified by confirmed requirements.*
 
 ---
 
-## 3. Data Integrity & Tagging Model
+## 3. Data Lineage & Provenance Model
 
-Every data item flowing through the system carries an explicit lineage tag:
+Every data item presented in the system carries an explicit lineage tag:
 
 ```typescript
 export type DataOrigin = 
-  | 'OBSERVED'              // Raw FortyGuard telemetry
-  | 'DERIVED'               // Computed by deterministic domain rules
-  | 'PREDICTED'             // Forecast model from FortyGuard
-  | 'ASSUMED'               // User-supplied scenario input
+  | 'OBSERVED'                  // Direct verified FortyGuard measurement
+  | 'DERIVED'                   // Deterministic domain calculation
+  | 'PREDICTED'                 // Forecast data from FortyGuard
+  | 'ASSUMED'                   // User-specified scenario parameter
   | 'AI_GENERATED_EXPLANATION'; // Narrative synthesis
 ```
 
@@ -76,5 +79,5 @@ export type DataOrigin =
 ## 4. Security Architecture
 
 1. **Secrets Isolation:** FortyGuard API keys and LLM tokens reside strictly in server-side environment variables (`.env.local`).
-2. **No Secret Leaks:** Client code interacts only with internal API routes (`/api/*`).
-3. **Payload Sanitization:** All incoming external data is validated against strict Zod schemas before being processed by domain logic.
+2. **No Client Secret Exposure:** Client components communicate only through internal server route handlers (`/api/*`).
+3. **Boundary Sanitization:** All incoming FortyGuard data is validated with Zod before entering the domain layer.

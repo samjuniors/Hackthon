@@ -5,24 +5,30 @@
 
 ---
 
-## 2026-08-20 — Milestone 0: Project Bootstrap & Documentation Architecture
+## 2026-08-20 — Milestone 0: Reconciliation & Evidence-Safety Pass
 
-### Actions Completed:
-1. **Workspace Inspection:** Verified initial repository state containing only `AGENTS.md`.
-2. **Runtime Setup:** Installed Node.js LTS (v24.19.0) and global package manager `pnpm` (v11.22.0) on the host machine.
-3. **Core Documentation Architecture Created:**
-   - `CONSTITUTION.md`: Locked non-negotiable engineering principles and data integrity rules.
-   - `INDEX.md`: Authoritative navigation map across all documentation artifacts.
-   - `README.md`: Project summary, hackathon context, and explicit provisional disclaimer.
-   - `docs/VISION.md`: Problem statement and provisional value layer definition.
-   - `docs/PRD.md`: Requirements, personas, non-goals, and acceptance criteria.
-   - `docs/ARCHITECTURE.md`: Next.js TypeScript system layers, boundary validation, and security model.
-   - `docs/DESIGN.md`: Data provenance badge conventions and thermal UI guidelines.
-   - `docs/DECISION-ENGINE.md`: Deterministic calculation pipeline and mathematical formulation.
-   - `docs/FORTYGUARD.md`: Capability matrix skeleton with explicit `UNKNOWN — VERIFY` placeholders.
-   - `docs/EVALUATION.md`: Testing, verification, and anti-hallucination protocols.
-   - `docs/CURRENT-SPRINT.md`: Milestone 0 tracking and M1 next steps.
-   - `docs/adr/0001-initial-architecture.md`: ADR recording initial stack selection.
-   - `.env.example`: Configuration template for API keys and environment variables.
-4. **Application Base Setup:** Initialized Next.js App Router with TypeScript, Tailwind CSS, Zod, and Vitest test runner.
-5. **Verification:** Executed dependency installation, build verification, and test execution.
+### Summary of Actions:
+1. **Documentation Review & Reconciliation:**
+   - Updated `AGENTS.md`: Stripped one-time bootstrap instructions while preserving persistent engineering rules, evidence-first protocols, and milestone definitions.
+   - Updated `docs/VISION.md`: Re-anchored product vision around generalized thermal decision intelligence and framed specific domains (worker safety, logistics, resilience) as candidate hypotheses.
+   - Updated `docs/PRD.md`: Converted specific personas and industry scenarios to hypotheses; aligned acceptance criteria to be domain-independent.
+   - Updated `docs/ARCHITECTURE.md`: Removed assumptions regarding specific map libraries (MapLibre), spatial formats, or thermal fields. Maintained clean boundary isolation without adding unnecessary backend services.
+   - Updated `docs/DESIGN.md`: Removed hardcoded temperature thresholds (e.g., 28°C/34°C/40°C) and prescriptive actions; established relative severity and provenance badge guidelines.
+   - Updated `docs/DECISION-ENGINE.md`: Replaced specific mathematical formulas (TSI, Wet-Bulb, Heat Index) with a generic domain pipeline, explicitly marking mathematical models as `UNKNOWN — VERIFY`.
+   - Updated `docs/EVALUATION.md`: Replaced rigid universal invariants with model-specific invariant placeholders and realistic verification protocols.
+   - Updated `docs/FORTYGUARD.md`: Established evidence-only structure with explicit `UNKNOWN — VERIFY` placeholders for all API dimensions.
+   - Updated `docs/CURRENT-SPRINT.md`: Transitioned active sprint to Milestone 1 (API Reconnaissance) with NOW / NEXT / BLOCKED tasks.
+2. **Quality Verification:**
+   - Ran unit test suite (`pnpm test`) — passed.
+   - Ran TypeScript typecheck (`pnpm typecheck`) — passed.
+   - Ran ESLint check (`pnpm lint`) — passed.
+   - Ran production build (`pnpm build`) — passed.
+
+---
+
+## 2026-08-20 — Milestone 0: Initial Repository Bootstrap
+
+### Summary of Actions:
+1. Initialized Next.js 15 TypeScript project with Tailwind CSS, Zod, and Vitest.
+2. Configured authoritative documentation architecture (`CONSTITUTION.md`, `INDEX.md`, `README.md`, `docs/*`, `adr/0001-initial-architecture.md`).
+3. Committed initial baseline to repository.

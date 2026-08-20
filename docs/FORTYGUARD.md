@@ -1,37 +1,39 @@
 # FortyGuard API Integration & Capability Intelligence
 
-**Status:** DRAFT (Awaiting API Reconnaissance)  
+**Status:** DRAFT (Awaiting Milestone 1 API Reconnaissance)  
 **Last Updated:** 2026-08-20  
 
 ---
 
-## 1. Overview & Verification Policy
+## 1. Overview & Verification Protocol
 
 This document tracks **ONLY VERIFIED** facts regarding the FortyGuard API. No assumptions or inferred capabilities are recorded as facts. Any unverified element is explicitly marked as `UNKNOWN — VERIFY`.
 
+Official API responses and official FortyGuard documentation are the sole sources of truth.
+
 ---
 
-## 2. Capability Matrix
+## 2. Verified Capability Matrix
 
-| Feature / Dimension | Status | Verified Value / Schema | Notes |
+| Feature / Dimension | Status | Verified Value / Description | Notes |
 | :--- | :--- | :--- | :--- |
-| **Authentication Scheme** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | API Key header vs Bearer token format |
-| **Base URL** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Production / Sandbox endpoints |
-| **Available Endpoints** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Temperature, Forecast, Spatial tiles |
-| **Spatial Resolution** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Hyperlocal grid size (e.g., 10m, 100m, 1km) |
+| **Authentication Scheme** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Auth header vs Bearer token format |
+| **Base URL** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Production vs Sandbox endpoints |
+| **Available Endpoints** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Temperature, Forecast, Spatial data |
+| **Spatial Capability & Resolution** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Grid size, coordinate system, bounding boxes |
 | **Supported Geographies** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Specific cities vs global coverage |
-| **Temporal Resolution** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Hourly, 15-min, real-time |
-| **Forecast Horizon** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | 24h, 48h, 7-day |
-| **Environmental Fields** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Ambient temp, surface temp, humidity |
-| **Rate Limits & Quota** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Requests/sec, monthly quota |
-| **Response Latency** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Typical response time (ms) |
-| **Attribution Requirements**| `UNKNOWN — VERIFY` | Pending API Reconnaissance | Logo, copyright notice format |
+| **Temporal Capability & Resolution** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Real-time intervals, historical depth |
+| **Forecast Horizon** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Available forecast lead time |
+| **Environmental Fields** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Ambient temp, surface temp, humidity, etc. |
+| **Quotas & Rate Limits** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Requests per second / monthly limits |
+| **Response Latency** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Average round-trip latency |
+| **Attribution Requirements** | `UNKNOWN — VERIFY` | Pending API Reconnaissance | Required logos, terms, copyright notice |
 
 ---
 
-## 3. Verified Endpoints
+## 3. Endpoints (`UNKNOWN — VERIFY`)
 
-*(No endpoints verified yet. To be populated during Milestone 1: API Reconnaissance).*
+*(To be populated during Milestone 1 live API calls)*
 
 ```
 None verified yet.
@@ -39,12 +41,26 @@ None verified yet.
 
 ---
 
-## 4. Verified Request & Response Schemas
+## 4. Request & Response Schemas (`UNKNOWN — VERIFY`)
 
-*(No schemas verified yet. Raw API responses will be captured and documented here).*
+*(To be populated with exact JSON payloads from live exploratory calls)*
+
+```
+None verified yet.
+```
 
 ---
 
-## 5. Error Codes & Handling Observations
+## 5. Error Codes & Failure Modes (`UNKNOWN — VERIFY`)
 
-*(To be recorded during initial test calls).*
+*(To be documented based on real observed API error responses)*
+
+```
+None verified yet.
+```
+
+---
+
+## 6. Actual Observed Examples
+
+*(Raw payload captures will be recorded here during API reconnaissance)*

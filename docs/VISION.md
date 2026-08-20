@@ -7,28 +7,28 @@
 
 ## 1. Executive Summary
 
-As urban environments face escalating heat stress, organizations, city operators, logistics networks, and infrastructure managers struggle to translate raw temperature forecasts into actionable operational decisions.
+As urban environments and industrial systems experience localized thermal variations and severe heat stress, operational leaders struggle to translate raw ambient data into actionable choices.
 
-FortyGuard provides the underlying hyperlocal thermal and environmental data intelligence. The **Thermal Decision Engine** is an intelligence and decision-support layer built above FortyGuard, transforming raw spatial-temporal thermal observations into deterministic operational choices, explainable recommendations, and interactive what-if scenarios.
+FortyGuard provides the underlying hyperlocal thermal and environmental data intelligence. The **Thermal Decision Engine** is a decision-support and scenario-modeling platform built above FortyGuard, turning hyperlocal thermal intelligence into explainable operational decisions and what-if analysis.
 
 ---
 
 ## 2. The Core Problem
 
-1. **Data vs. Decision Gap:** Raw heatmaps and temperature readings display thermal severity but do not answer operational questions (e.g., *"Can cold-chain logistics operate safely along Route A at 14:00?"*, *"Which outdoor maintenance shifts must be rescheduled?"*, *"What cooling intervention yields the greatest risk reduction?"*).
-2. **Generic Forecasts are Insufficient:** Macro-weather feeds miss microclimate variations caused by urban canyoning, asphalt absorption, and localized shading.
-3. **Lack of Scenario Simulation:** Operators cannot easily simulate the impact of timing changes, route adjustments, or urban interventions before executing them.
-4. **AI Hallucination Risk:** Generic AI solutions frequently hallucinate weather metrics, calculate false statistics, and provide unsubstantiated operational guidance.
+1. **Data vs. Decision Gap:** Raw heatmaps and temperature readings display thermal severity but do not answer operational questions (e.g., when to schedule activities, how to optimize operating windows, or which mitigation measures yield the highest impact).
+2. **Hyperlocal Complexity:** Macro-weather feeds miss microclimate variations caused by urban materials, shade, surface heat retention, and localized thermal dynamics.
+3. **Absence of Scenario Simulation:** Operators lack lightweight, deterministic tools to simulate the effect of altered timing, operational constraints, or localized cooling interventions prior to execution.
+4. **AI Hallucination Risk:** Ungrounded AI tools frequently invent temperatures, compute invalid metrics, or deliver unverified operational advice.
 
 ---
 
-## 3. The Solution: Value Layer Above FortyGuard
+## 3. Value Layer Above FortyGuard
 
 ```
 [ FortyGuard Hyperlocal Thermal Telemetry ]
                     │
                     ▼
-       [ Ingestion & Validation ] (Zod Schemas)
+       [ Ingestion & Validation ] (Strict Zod Schemas)
                     │
                     ▼
      [ Deterministic Thermal Analysis ] (Domain Engine)
@@ -37,26 +37,28 @@ FortyGuard provides the underlying hyperlocal thermal and environmental data int
      [ Scenario & What-If Simulation ] (Parametric Modeling)
                     │
                     ▼
-   [ Evidence-Backed Recommendations ] (Strict Decision Trees)
+   [ Evidence-Backed Recommendations ] (Deterministic Rules)
                     │
                     ▼
-     [ AI Synthesis & Interaction ] (Explainable Reasoning)
+     [ AI Synthesis & Interaction ] (Explainable Narrative)
 ```
 
 ---
 
-## 4. Candidate Target Domains (PROVISIONAL)
+## 4. Candidate Domain Hypotheses (PROVISIONAL)
 
-*Note: Final domain selection is deferred pending FortyGuard API capability reconnaissance.*
+*Note: No specific industry or domain is selected. The following are candidate application hypotheses to be evaluated against verified FortyGuard API capabilities:*
 
-1. **Urban Infrastructure & Worker Heat Safety:** Dynamic shift planning, outdoor labor safety thresholds, cooling station dispatch.
-2. **Cold-Chain & Sensitive Logistics:** Hyperlocal route thermal exposure mitigation and operational time-window scheduling.
-3. **Urban Resilience & Municipal Operations:** Targeted microclimate intervention simulation and localized heat risk response.
+- **Hypothesis A — Operational Labor & Field Safety:** Dynamic operational window scheduling and heat-risk mitigation based on hyperlocal thermal exposure.
+- **Hypothesis B — Logistics & Thermal-Sensitive Operations:** Route and dispatch time-window optimization to reduce heat exposure for sensitive assets or cargo.
+- **Hypothesis C — Urban Infrastructure & Municipal Interventions:** Comparative simulation of microclimate interventions and targeted thermal relief zones.
+
+The final vertical domain will be selected in Milestone 2 (Product Lock) based on actual API capabilities, spatial resolution, and available parameters confirmed in Milestone 1.
 
 ---
 
 ## 5. Success Criteria & Differentiators
 
-- **No Fact Fabrication:** Absolute separation between observed sensor/API metrics, deterministic domain derivations, and AI explanations.
-- **Actionability:** Every thermal observation maps directly to an operational recommendation with concrete trade-offs.
-- **Interactive Simulation:** Sub-second what-if recalculation enabling operators to explore mitigation scenarios.
+- **Zero Hallucinated Metrics:** Absolute boundary separation between observed API data, derived deterministic calculations, user scenario assumptions, and AI explanations.
+- **Actionability:** Clear, deterministic operational guidance with explicit trade-offs.
+- **Interactive Simulation:** Rapid scenario recalculation enabling users to evaluate operational what-if parameters.

@@ -5,38 +5,42 @@
 
 ---
 
-## 1. Product Overview
+## 1. Product Overview & Hypothesis
 
-The **Thermal Decision Engine** is an operational decision platform that ingests FortyGuard hyperlocal thermal intelligence to produce deterministic operational recommendations, spatial-temporal risk assessments, and scenario what-if simulations.
+The **Thermal Decision Engine** is an operational decision-support tool that consumes FortyGuard hyperlocal thermal intelligence to produce deterministic recommendations, risk assessments, and interactive scenario simulations.
 
----
-
-## 2. Target Personas (Provisional)
-
-1. **Operational Safety Manager:** Needs to ensure field/outdoor teams do not exceed heat stress thresholds while minimizing productivity loss.
-2. **Logistics & Dispatch Planner:** Needs to identify optimal dispatch windows and routes that minimize thermal exposure for sensitive cargo or equipment.
-3. **Urban Resilience Planner:** Needs to evaluate microclimate impact and simulate the benefits of localized cooling or operational timing shifts.
+**Core Product Hypothesis:**
+By wrapping raw hyperlocal thermal intelligence in a deterministic decision engine and what-if simulation layer, operators can make evidence-backed operational decisions faster and with higher confidence than using raw heatmaps or generic weather feeds alone.
 
 ---
 
-## 3. Scope & Phased Capabilities
+## 2. Candidate Personas & Use Case Hypotheses (PROVISIONAL)
 
-### Phase 1: MVP Vertical Slices
-- **Slice 0 (Evidence):** Verified FortyGuard API client and capability map.
-- **Slice 1 (First Thermal Decision):** Single location query → FortyGuard telemetry fetch → deterministic thermal threshold assessment → operational recommendation display with clear evidence.
-- **Slice 2 (Spatial Intelligence):** Spatial thermal visualization, hotspot detection, and zone-level risk rating.
-- **Slice 3 (Temporal Decision):** Time-series / forecast integration to identify operational windows and risk peaks.
-- **Slice 4 (What-If Scenarios):** User-controlled parameter adjustments (e.g., timing shifts, threshold changes, intervention simulations) with instant comparison.
-- **Slice 5 (AI Explainability Layer):** LLM-based narrative synthesizer explaining why a recommendation was generated based strictly on verified domain metrics.
+*The exact target persona and workflow will be locked during Milestone 2 based on verified FortyGuard capabilities:*
+
+- **Candidate Persona 1 — Field Operations Manager:** Needs to optimize operational time windows, evaluate thermal stress on personnel/equipment, and plan mitigation steps.
+- **Candidate Persona 2 — Logistics & Asset Dispatcher:** Needs to avoid peak thermal exposure windows along transit corridors or asset staging areas.
+- **Candidate Persona 3 — Urban / Facility Resilience Planner:** Needs to simulate and compare the relative effectiveness of localized thermal mitigation interventions.
+
+---
+
+## 3. General MVP Capability Roadmap (PROVISIONAL)
+
+- **Slice 0 (Evidence):** Verified FortyGuard API client and capability matrix.
+- **Slice 1 (First Thermal Decision):** Single location query → FortyGuard telemetry fetch → deterministic evaluation → operational recommendation display with clear evidence.
+- **Slice 2 (Spatial Intelligence):** Spatial thermal visualization, hotspot identification, and zone-level risk rating (format pending API verification).
+- **Slice 3 (Temporal Decision):** Time-series or forecast evaluation to identify optimal operating windows.
+- **Slice 4 (What-If Scenarios):** User-controlled scenario parameter adjustments with instant side-by-side delta comparison.
+- **Slice 5 (AI Explainability Layer):** LLM-based narrative explainer synthesizing verified domain outputs without hallucinating facts.
 
 ---
 
 ## 4. Non-Goals
 
 - We are **NOT** building a generic consumer weather dashboard.
-- We are **NOT** building an ungrounded LLM chatbot that hallucinates weather facts.
+- We are **NOT** building an ungrounded LLM chatbot that invents weather metrics.
 - We are **NOT** re-creating FortyGuard's internal spatial modeling engine or data generation pipelines.
-- We are **NOT** building complex multi-tenant enterprise billing or authentication during the hackathon MVP.
+- We are **NOT** building complex multi-tenant billing or auth systems for the hackathon MVP.
 
 ---
 
@@ -45,20 +49,21 @@ The **Thermal Decision Engine** is an operational decision platform that ingests
 ### Known Facts
 - Hackathon deadline is **2026-08-30**.
 - Product must leverage FortyGuard hyperlocal temperature data.
-- Stack is TypeScript, Next.js, React, Tailwind, and Vitest.
+- Stack is Next.js, TypeScript, Tailwind, and Vitest.
 
 ### Unknowns (`UNKNOWN — VERIFY`)
 - Exact FortyGuard API endpoints, parameters, and authentication scheme: `UNKNOWN — VERIFY`
 - Supported geographic locations and spatial coordinate bounds: `UNKNOWN — VERIFY`
 - Temporal resolution (real-time intervals, historical depth, forecast horizon): `UNKNOWN — VERIFY`
-- Environmental parameters provided beyond ambient temperature (e.g., surface temp, humidity, solar radiation, heat index): `UNKNOWN — VERIFY`
+- Environmental parameters provided beyond ambient temperature: `UNKNOWN — VERIFY`
 - Rate limits and query quota for the hackathon API key: `UNKNOWN — VERIFY`
 
 ---
 
-## 6. Acceptance Criteria (MVP Baseline)
+## 6. Domain-Independent Acceptance Criteria (MVP Baseline)
 
-1. Zero fabricated metrics: All numbers shown are either labeled `OBSERVED` (from FortyGuard) or `DERIVED` (from tested domain code).
-2. Deterministic reproducibility: Given identical thermal inputs and scenario constraints, the decision engine outputs identical recommendations.
-3. Sub-second scenario recalculation in client UI.
-4. Clean end-to-end user workflow demoable in under 3 minutes.
+1. **Zero Fabricated Facts:** All values displayed are strictly categorized as `OBSERVED`, `DERIVED`, `PREDICTED`, `ASSUMED`, or `AI-GENERATED EXPLANATION`.
+2. **Deterministic Reproducibility:** Identical thermal inputs and scenario parameters always yield identical decision outputs and risk evaluations.
+3. **Responsive Simulation:** Scenario parameter changes recalculate deterministically with sub-second latency in the client UI.
+4. **Resilient Error Handling:** External API timeouts, rate limits, or invalid schemas fail gracefully with actionable user feedback.
+5. **Clear Demo Workflow:** End-to-end user journey can be demonstrated clearly in under 3 minutes.

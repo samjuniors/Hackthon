@@ -40,4 +40,4 @@ We adopt the following core stack:
 - Rapid test iteration cycle for decision algorithms.
 
 ### Negative / Trade-offs
-- Heavy geospatial processing (if needed beyond client MapLibre / GeoJSON) must be kept lightweight within Node.js runtime limits.
+- Heavy geospatial processing (if needed beyond client rendering / GeoJSON transformations) must be kept lightweight within Node.js runtime limits.

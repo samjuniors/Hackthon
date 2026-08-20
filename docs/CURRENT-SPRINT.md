@@ -1,29 +1,32 @@
-# Current Sprint — Milestone 0: Repository Bootstrap & Evidence
+# Current Sprint — Milestone 1: FortyGuard API Reconnaissance
 
-**Status:** VERIFIED  
-**Current Milestone:** M0 — Repository + Evidence  
+**Status:** ACTIVE  
+**Current Milestone:** M1 — API Reconnaissance  
 **Submission Deadline:** 2026-08-30  
 **Last Updated:** 2026-08-20  
 
 ---
 
 ## 🎯 Sprint Goal
-Establish a clean, type-safe Next.js project foundation, create the authoritative documentation architecture, and prepare for FortyGuard API reconnaissance.
+Verify what the hackathon FortyGuard account actually provides and determine the strongest product direction supported by that evidence.
 
 ---
 
-## 📋 Active Tasks & Status
+## 📋 Task Breakdown
 
-- [x] Inspect initial repository state (found empty repository with `AGENTS.md`).
-- [x] Install Node.js LTS environment and pnpm package manager.
-- [x] Establish documentation skeleton (`CONSTITUTION.md`, `INDEX.md`, `README.md`, `docs/*`, `adr/`).
-- [x] Configure base Next.js TypeScript application with Tailwind and Vitest.
-- [x] Verify project builds and passes typecheck cleanly.
-- [ ] **NEXT:** Milestone 1 — FortyGuard API Reconnaissance (awaiting user instruction / credentials).
+### NOW (Immediate Execution)
+- [ ] Obtain FortyGuard API credentials and documentation references.
+- [ ] Locate official FortyGuard API documentation / portal specifications.
+- [ ] Verify authentication scheme and headers with a test call.
+- [ ] Make first live request to an exploratory endpoint.
+- [ ] Record raw request and response schemas in [docs/FORTYGUARD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/FORTYGUARD.md).
+- [ ] Build initial verified capability matrix.
 
----
+### NEXT (Follow-Up)
+- [ ] Verify spatial and temporal resolutions (coordinates, bounding boxes, intervals).
+- [ ] Identify rate limits, quotas, and geographic coverage constraints.
+- [ ] Evaluate candidate use case hypotheses against verified API capabilities.
+- [ ] Update [docs/PRD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/PRD.md) and prepare for Milestone 2 (Product Lock).
 
-## 🚧 Blockers & Unknowns
-
-1. **FortyGuard Credentials & Documentation:** Exact API keys and official API documentation links are needed to conduct live reconnaissance calls.
-2. **Geographic Coverage:** Need to determine supported geographic coordinate ranges.
+### 🚧 BLOCKED
+- **Product Implementation:** Application feature implementation is strictly blocked until sufficient FortyGuard API evidence is established.

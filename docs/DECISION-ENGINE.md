@@ -7,54 +7,55 @@
 
 ## 1. Core Purpose & Determinism Guarantee
 
-The Decision Engine is a pure mathematical and rules-based domain service. It takes validated thermal observations and scenario parameters, evaluates risk thresholds, and computes deterministic operational recommendations.
+The Decision Engine is a pure mathematical and rules-based domain service. It processes validated thermal observations and scenario parameters, evaluates operational constraints, and computes deterministic recommendations.
 
-**Core Rule:** Decision calculation NEVER invokes an LLM. The output for any identical set of inputs is 100% deterministic and reproducible.
-
----
-
-## 2. Decision Logic Pipeline
-
-```
-[ FortyGuard Normalized Telemetry ]
-   ├── Current Ambient / Surface Temp (T_obs)
-   ├── Relative Humidity (RH_obs) [UNKNOWN — VERIFY if available]
-   └── Forecast Series (T_forecast[t]) [UNKNOWN — VERIFY if available]
-                 │
-                 ▼
-[ Derived Thermal Indices Calculation ]
-   ├── Heat Index / Wet-Bulb Approximation (HI)
-   └── Thermal Exposure Duration (E_duration)
-                 │
-                 ▼
-[ Operational Constraint Evaluation ]
-   ├── User / Industry Thresholds (T_critical)
-   ├── Time-window constraints
-   └── Mitigation parameters (cooling, shading, route shift)
-                 │
-                 ▼
-[ Recommendation & Risk Score Generation ]
-   ├── Risk Level: SAFE | CAUTION | WARNING | CRITICAL
-   ├── Recommended Action: PROCEED | DELAY | REROUTE | MITIGATE
-   └── Delta Impact Metrics (under What-If adjustments)
-```
+**Fundamental Rule:** Decision evaluation NEVER relies on an LLM for calculation or scoring. Output for any identical input set is 100% deterministic, testable, and reproducible.
 
 ---
 
-## 3. Candidate Decision Rules & Formulas (PROVISIONAL)
+## 2. Generic Decision Domain Pipeline
 
-### 3.1 Thermal Stress Index (TSI)
-$$TSI = f(T_{ambient}, T_{surface}, RH, SolarExposure)$$
-*(Exact mathematical formulation to be locked following FortyGuard API field verification: `UNKNOWN — VERIFY`)*
+```
+[ Validated FortyGuard Telemetry ]
+                 │
+                 ▼
+[ Derived Features & Thermal Indicators ]
+  - Metric aggregations / exposure calculations
+  - Specific formulas: UNKNOWN — VERIFY (pending confirmed API fields)
+                 │
+                 ▼
+[ Domain Constraints & Thresholds ]
+  - User-defined limits, operational bounds, time windows
+                 │
+                 ▼
+[ Candidate Actions & Mitigations ]
+  - Feasible operational adjustments (timing, routing, intervention)
+                 │
+                 ▼
+[ Deterministic Decision Evaluation ]
+  - Multi-criteria scoring / cost-benefit / rule evaluation
+                 │
+                 ▼
+[ Recommended Action & Evidence Bundle ]
+  - Primary recommendation
+  - Relative risk score
+  - Supporting evidence metrics & delta impacts
+```
 
-### 3.2 Time Window Optimization
-Given a required operational task duration $\Delta t$, the engine computes the optimal start time $t^*$ minimizing cumulative thermal stress:
-$$t^* = \arg\min_{t \in [t_{start}, t_{end}]} \int_{t}^{t + \Delta t} TSI(t') \, dt'$$
+---
+
+## 3. Mathematical & Algorithmic Models (`UNKNOWN — VERIFY`)
+
+*The specific mathematical formulas, stress indices, and optimization algorithms are intentionally deferred until FortyGuard API telemetry fields and temporal/spatial resolutions are confirmed:*
+
+- **Thermal Exposure & Stress Formulation:** `UNKNOWN — VERIFY` (depends on whether FortyGuard provides ambient, surface, heat index, or humidity fields).
+- **Time-Window Optimization Algorithm:** `UNKNOWN — VERIFY` (depends on forecast horizon and temporal step intervals).
+- **Scenario Delta Formulation:** `UNKNOWN — VERIFY` (depends on supported intervention and parameter types).
 
 ---
 
 ## 4. Unknowns & Verifications Needed
 
-- Which specific environmental parameters FortyGuard returns (e.g., surface temperature vs ambient temperature vs apparent temperature): `UNKNOWN — VERIFY`
-- Format and granularity of FortyGuard forecast horizons: `UNKNOWN — VERIFY`
-- Spatial polygon vs point query capabilities: `UNKNOWN — VERIFY`
+- Available FortyGuard telemetry parameters (ambient temp, surface temp, humidity, solar exposure, etc.): `UNKNOWN — VERIFY`
+- Format and granularity of forecast series: `UNKNOWN — VERIFY`
+- Spatial resolution and query mechanics: `UNKNOWN — VERIFY`

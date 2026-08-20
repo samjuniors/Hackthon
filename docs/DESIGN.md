@@ -7,43 +7,44 @@
 
 ## 1. Design Philosophy & Aesthetic Goals
 
-The Thermal Decision Engine must provide an intuitive, high-density, mission-critical interface that immediately instills technical confidence and operational clarity.
+The Thermal Decision Engine provides a high-density, mission-critical operational interface with clear visual hierarchy, immediate status legibility, and transparent data provenance.
 
-- **Theme:** Sleek, modern dark-mode primary aesthetic with high-contrast data visualization.
+- **Theme:** Modern dark-mode primary aesthetic with high-contrast data visualization.
 - **Tone:** Professional, analytical, authoritative, and responsive.
-- **Density:** High information density without visual clutter, utilizing card hierarchy and collapsible detail drawers.
+- **Density:** Structured card hierarchy with collapsible detail drawers to balance overview and deep evidence.
 
 ---
 
-## 2. Visual Differentiation of Data Origins
+## 2. Visual Differentiation of Data Provenance
 
-To eliminate ambiguity and prevent AI hallucination confusion, data elements are color-coded and badged by provenance:
+To eliminate ambiguity and prevent AI hallucination confusion, data elements are explicitly tagged with distinct visual badges:
 
-| Badge / Tag | Meaning | Visual Style |
+| Lineage Tag | Description | Visual Style |
 | :--- | :--- | :--- |
-| `OBSERVED` | Direct FortyGuard measurement | Blue / Cyan border badge |
-| `DERIVED` | Calculated domain metric | Indigo / Purple badge |
+| `OBSERVED` | Direct FortyGuard measurement | Blue / Cyan outline badge |
+| `DERIVED` | Calculated domain metric | Indigo / Violet badge |
 | `PREDICTED` | FortyGuard forecast interval | Amber / Orange badge |
 | `ASSUMED` | User scenario parameter | Slate / Dashed border badge |
 | `AI EXPLAIN` | LLM narrative synthesis | Emerald / Green badge |
 
 ---
 
-## 3. Thermal Severity Scale
+## 3. Relative Severity Color Palette (PROVISIONAL)
 
-A standardized thermal color palette reflecting operational risk:
+A standardized relative severity scale representing thermal risk levels without hardcoding premature temperature cutoffs:
 
-- **Low Risk / Safe:** `Emerald / Teal` (< 28°C / normal range)
-- **Caution / Elevated:** `Yellow / Amber` (28°C - 34°C)
-- **Warning / High Risk:** `Orange / Coral` (34°C - 40°C)
-- **Extreme / Critical:** `Crimson / Red` (> 40°C)
-*(Exact temperature thresholds to be finalized in DECISION-ENGINE.md based on use case)*
+- **Nominal / Low Severity:** `Emerald / Teal` (Conditions within baseline range)
+- **Elevated / Moderate Severity:** `Amber / Yellow` (Moderate deviation from baseline)
+- **High Severity:** `Orange / Coral` (Significant thermal stress / threshold breach)
+- **Critical Severity:** `Crimson / Red` (Extreme conditions requiring operational intervention)
+
+*Note: Specific temperature ranges, threshold rules, and units (°C/°F) will be configured in the domain model once the use case and API data types are locked.*
 
 ---
 
-## 4. Key UI Workflows
+## 4. Core UI Interaction Patterns
 
-1. **Location & Thermal Profile:** Clean selector for monitored zones/coordinates with instant thermal status readout.
-2. **Decision & Risk Summary:** Prominent recommendation card highlighting the primary action (e.g., *"Shift Dispatch to 16:30"*, *"Trigger Cooling Station Delta"*).
-3. **What-If Scenario Sandbox:** Interactive sliders allowing instant parameter adjustments with side-by-side delta visualization.
-4. **Explainability Drawer:** Collapsible panel presenting the logical rationale, mathematical formulas used, and data provenance.
+1. **Location / Zone Selection:** Intuitive selector for monitored coordinates or zones with real-time status indication.
+2. **Decision & Risk Summary:** Clear presentation of the primary deterministic recommendation and associated risk indicators.
+3. **What-If Scenario Sandbox:** Interactive controls (sliders, toggles) enabling parameter adjustments with instant side-by-side delta visualization.
+4. **Evidence & Explainability Drawer:** Structured display of underlying verified telemetry, calculation steps, and AI-assisted narrative explanations.

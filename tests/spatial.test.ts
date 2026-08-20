@@ -53,4 +53,62 @@ describe('Spatial Point-to-Polygon Mapper', () => {
     const outsidePoint = { latitude: 40.75, longitude: -74.005 };
     expect(() => findTileForPoint(outsidePoint, sampleAOI)).toThrow(OutsideCoverageError);
   });
+
+  it('correctly handles polygon with interior holes', () => {
+    const outer = [
+      [-74.02, 40.70],
+      [-74.00, 40.70],
+      [-74.00, 40.72],
+      [-74.02, 40.72],
+      [-74.02, 40.70],
+    ];
+    const hole = [
+      [-74.015, 40.705],
+      [-74.005, 40.705],
+      [-74.005, 40.715],
+      [-74.015, 40.715],
+      [-74.015, 40.705],
+    ];
+
+    const aoiWithHole: PolygonAOI = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { tile_id: 'tile-hole', average_temperature: 30.0 },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [outer, hole],
+          },
+        },
+      ],
+    };
+
+    // Point in solid part
+    expect(findTileForPoint({ latitude: 40.702, longitude: -74.01 }, aoiWithHole).tileId).toBe('tile-hole');
+    // Point inside the hole should throw OutsideCoverageError
+    expect(() => findTileForPoint({ latitude: 40.710, longitude: -74.010 }, aoiWithHole)).toThrow(OutsideCoverageError);
+  });
+
+  it('correctly maps points inside MultiPolygon features', () => {
+    const multiAOI: PolygonAOI = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { tile_id: 'tile-multi', average_temperature: 33.0 },
+          geometry: {
+            type: 'MultiPolygon',
+            coordinates: [
+              [[[-74.10, 40.70], [-74.08, 40.70], [-74.08, 40.72], [-74.10, 40.72], [-74.10, 40.70]]],
+              [[[-74.05, 40.70], [-74.03, 40.70], [-74.03, 40.72], [-74.05, 40.72], [-74.05, 40.70]]],
+            ] as unknown as number[][][],
+          },
+        },
+      ],
+    };
+
+    const pointInIsland2 = { latitude: 40.71, longitude: -74.04 };
+    expect(findTileForPoint(pointInIsland2, multiAOI).tileId).toBe('tile-multi');
+  });
 });

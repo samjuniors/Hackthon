@@ -17,8 +17,8 @@ export interface PolygonAOI {
       [key: string]: unknown;
     };
     geometry: {
-      type: 'Polygon';
-      coordinates: number[][][];
+      type: 'Polygon' | 'MultiPolygon';
+      coordinates: number[][][] | number[][][][];
     };
   }>;
 }
@@ -31,8 +31,8 @@ export interface TileFeature {
   minTemperatureCelsius: number;
   maxTemperatureCelsius: number;
   geometry: {
-    type: 'Polygon';
-    coordinates: number[][][];
+    type: 'Polygon' | 'MultiPolygon';
+    coordinates: number[][][] | number[][][][];
   };
 }
 

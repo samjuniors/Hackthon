@@ -57,13 +57,40 @@ function createDemoThermalAOI(center: LocationPoint): PolygonAOI {
   };
 }
 
+import { z } from 'zod';
+
+const DecisionRequestSchema = z.object({
+  latitude: z.number().min(-90).max(90).default(40.7128),
+  longitude: z.number().min(-180).max(180).default(-74.006),
+  durationHours: z.number().int().min(1).max(12).default(2),
+  allowedStart: z.string().optional(),
+  allowedEnd: z.string().optional(),
+});
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    let rawBody: unknown;
+    try {
+      rawBody = await request.json();
+    } catch {
+      rawBody = {};
+    }
 
-    const latitude = Number(body.latitude ?? 40.7128);
-    const longitude = Number(body.longitude ?? -74.006);
-    const durationHours = Number(body.durationHours ?? 2);
+    const parseResult = DecisionRequestSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', '),
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const { latitude, longitude, durationHours, allowedStart: reqStart, allowedEnd: reqEnd } = parseResult.data;
 
     const now = new Date();
     now.setUTCMinutes(0, 0, 0);
@@ -71,8 +98,8 @@ export async function POST(request: Request) {
     const defaultStart = now.toISOString();
     const defaultEnd = new Date(now.getTime() + 6 * 3600 * 1000).toISOString();
 
-    const allowedStart = body.allowedStart || defaultStart;
-    const allowedEnd = body.allowedEnd || defaultEnd;
+    const allowedStart = reqStart || defaultStart;
+    const allowedEnd = reqEnd || defaultEnd;
 
     const location: LocationPoint = { latitude, longitude };
     const constraints: DecisionConstraints = {
@@ -111,9 +138,22 @@ export async function POST(request: Request) {
     const observations = [];
 
     for (let tMs = startMs; tMs < endMs; tMs += 3600 * 1000) {
-      const timestamp = new Date(tMs).toISOString();
-      const obs = adapter.normalizePointObservation(aoi, location, timestamp);
-      observations.push(obs);
+      const d = new Date(tMs);
+      const timestamp = d.toISOString();
+      const hour = d.getUTCHours();
+      const baseObs = adapter.normalizePointObservation(aoi, location, timestamp);
+
+      // Apply deterministic diurnal solar thermal profile (+/-2.5°C curve) across forecast hours
+      const diurnalDelta = Math.sin(((hour - 8) / 12) * Math.PI) * 2.5;
+      const temperatureCelsius = Number((baseObs.metrics.temperatureCelsius + diurnalDelta).toFixed(1));
+
+      observations.push({
+        ...baseObs,
+        metrics: {
+          ...baseObs.metrics,
+          temperatureCelsius,
+        },
+      });
     }
 
     const decision = evaluateCandidateWindows(

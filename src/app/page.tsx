@@ -54,6 +54,7 @@ export default function WorkspacePage() {
       setDecision(data.decision);
       setSpatialField(data.spatialField);
     } catch (err) {
+      setDecision(null);
       setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
     } finally {
       setLoading(false);
@@ -82,7 +83,10 @@ export default function WorkspacePage() {
         setSpatialField(data.spatialField);
       })
       .catch((err) => {
-        if (isMounted) setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
+        if (isMounted) {
+          setDecision(null);
+          setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
+        }
       })
       .finally(() => {
         if (isMounted) setLoading(false);
@@ -107,7 +111,7 @@ export default function WorkspacePage() {
             </Badge>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            FortyGuard Hyperlocal Surface Intelligence & Deterministic Window Optimization
+            FortyGuard Hyperlocal Thermal Intelligence & Deterministic Window Optimization
           </p>
         </div>
         <div className="flex items-center gap-2">

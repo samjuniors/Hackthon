@@ -196,7 +196,7 @@ export class FortyGuardAdapter {
         tileMinTemperatureCelsius: tile.minTemperatureCelsius,
         tileMaxTemperatureCelsius: tile.maxTemperatureCelsius,
       },
-      provenance: 'OBSERVED',
+      provenance: 'DERIVED',
     };
   }
 }

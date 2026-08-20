@@ -21,9 +21,11 @@
 - **Observed Behavior:** Multi-hour range queries (`filter_type: 2`) perform asynchronous multi-hour surface aggregation.
 - **Decision:** For candidate-window sliding evaluation (which requires hour-by-hour temporal resolution), single-hour snapshots (`filter_type: 1`) are retained and cached in-memory by `(location, date, hour)` hash.
 
-### GATE 2 — `average_temperature` Semantics
-- **Observed Definition:** Represents FortyGuard modeled mean surface thermal temperature (°C) for the GeoJSON polygon tile.
-- **Strict Boundary:** It is explicitly NOT raw station temperature, ambient air temperature, or LST satellite surface temperature.
+### GATE 2 — `average_temperature` Semantics (Reconciled & Gated)
+- **Property in Payload:** `average_temperature` (accompanied by `min_temperature` and `max_temperature`) in GeoJSON feature properties.
+- **Observed Definition:** Represents FortyGuard modeled mean thermal temperature (°C) for the GeoJSON polygon tile.
+- **Semantic Classification:** `UNKNOWN — VERIFY` (Physical measurement level). The API payload metadata does not specify sensor height or physical surface level. The FortyGuard Participant Handbook describes FortyGuard LTMs as predicting ambient air temperature at human/pedestrian height (~2m), whereas prior assumptions asserted land surface skin temperature (LST).
+- **Rule:** The system treats `average_temperature` as a relative tile-level thermal baseline without asserting medical safety or unverified physical sensor heights. Derived tile statistics must strictly carry provenance `DERIVED` or `PREDICTED`, never `OBSERVED`.
 
 ### GATE 3 — `/v1/env_params` Parameters & Temperature Composition
 - **Required Field:** Empirical testing revealed `/v1/env_params` requires the `analysis` array parameter (e.g., `["heat_index_celsius", "apparent_temperature_celsius", "wet_bulb_temperature_celsius", "relative_humidity_percent"]`). Without `analysis`, requests transition immediately to `Failed`.

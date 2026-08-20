@@ -49,7 +49,7 @@ describe('FortyGuard Adapter Unit Tests', () => {
     expect(obs.metrics.temperatureCelsius).toBe(32.4);
     expect(obs.metrics.tileMinTemperatureCelsius).toBe(30.1);
     expect(obs.metrics.tileMaxTemperatureCelsius).toBe(35.0);
-    expect(obs.provenance).toBe('OBSERVED');
+    expect(obs.provenance).toBe('DERIVED');
   });
 
   it('throws OutsideCoverageError if point lies outside tile boundary', () => {

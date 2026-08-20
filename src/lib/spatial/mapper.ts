@@ -26,14 +26,50 @@ export function isPointInPolygonRing(point: LocationPoint, ring: number[][]): bo
 }
 
 /**
+ * Check if point is inside a polygon with optional interior holes.
+ */
+export function isPointInPolygon(point: LocationPoint, rings: number[][][]): boolean {
+  if (!rings || rings.length === 0 || !rings[0] || rings[0].length < 3) {
+    return false;
+  }
+
+  // Must be inside the exterior ring
+  const insideOuter = isPointInPolygonRing(point, rings[0]);
+  if (!insideOuter) return false;
+
+  // Must NOT be inside any interior holes
+  for (let i = 1; i < rings.length; i++) {
+    if (rings[i] && rings[i].length >= 3 && isPointInPolygonRing(point, rings[i])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Locate the exact FortyGuard GeoJSON tile feature containing the given location point.
  * Throws OutsideCoverageError if point is outside all tile polygons (zero silent fallbacks).
  */
 export function findTileForPoint(point: LocationPoint, aoi: PolygonAOI): TileFeature {
   for (let idx = 0; idx < aoi.features.length; idx++) {
     const feature = aoi.features[idx];
-    const outerRing = feature.geometry.coordinates[0];
-    if (outerRing && isPointInPolygonRing(point, outerRing)) {
+    const geom = feature.geometry;
+    let isInside = false;
+
+    if (geom.type === 'Polygon') {
+      isInside = isPointInPolygon(point, geom.coordinates as number[][][]);
+    } else if (geom.type === 'MultiPolygon') {
+      const multiCoords = geom.coordinates as unknown as number[][][][];
+      for (const polyRings of multiCoords) {
+        if (isPointInPolygon(point, polyRings)) {
+          isInside = true;
+          break;
+        }
+      }
+    }
+
+    if (isInside) {
       const props = feature.properties;
       const tileId = props.tile_id ?? idx;
       const averageTemp = props.average_temperature ?? props.mean_temperature ?? 0;

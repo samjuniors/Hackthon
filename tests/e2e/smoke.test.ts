@@ -29,16 +29,24 @@ test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
     await expect(page.getByRole('button', { name: /Noise Curfew/ })).toBeVisible();
     await expect(page.getByText('Constraint Cost:')).toBeVisible();
 
+    // Click through canonical What-If preset scenarios
+    const siteLockBtn = page.getByRole('button', { name: /Site Lock/ });
+    await siteLockBtn.click();
+    await expect(page.getByText('+2.20°C').first()).toBeVisible();
+
     // 7. Verify Grounded Decision Explanation & Evidence Synthesis renders
+
     await expect(page.getByText('Decision Explanation & Evidence Synthesis')).toBeVisible();
     await expect(page.getByText('OPERATIONAL SUMMARY')).toBeVisible();
     await expect(page.getByText('WHY THIS PLAN WINS')).toBeVisible();
     await expect(page.getByText('Grounding: 100% Verified Evidence')).toBeVisible();
+    await expect(page.getByText('FortyGuard Hyperlocal Intelligence:')).toBeVisible();
 
-    // 8. Capture screenshot of working vertical slice
+    // 8. Capture high-res screenshot of polished M10 demo workspace
     await page.screenshot({ path: 'tests/e2e/workspace-smoke.png', fullPage: true });
   });
 });
+
 
 
 

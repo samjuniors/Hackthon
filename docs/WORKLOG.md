@@ -310,6 +310,33 @@
 - **Next.js Production Build (`pnpm build`):** Clean (6 static/dynamic pages compiled cleanly).
 - **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (9.0s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
 
+---
+
+# Engineering Worklog — Milestone 10 / Production Demo Polish Report
+
+**Date:** 2026-08-21  
+**Milestone:** Milestone 10 — Production Demo Slice & Narrative Polish  
+**Status:** COMPLETED & VERIFIED  
+
+---
+
+## 1. What Was Implemented
+- **Primary Visual Hierarchy:** Re-anchored workspace on WHERE (Battery Park Greenway) + WHEN (08:00–10:00 UTC) + WHY (29.15°C mean exposure, avoids +8.40°C delta) + DATA SOURCE (DEMO vs LIVE).
+- **Cognitive Noise Reduction:** Reframed "Candidate Focus Points" as "Operational Candidate Set (Evaluated Simultaneously)".
+- **Score Semantics & Model Labeling:** Labeled exposure scores as "Mean Modeled Temperature across operating window (v1.0.0-spatial-thermal-baseline)".
+- **Defensible FortyGuard Differentiation:** Added explicit callout highlighting FortyGuard's hyperlocal microclimate resolution.
+- **E2E Demo Automation:** Updated Playwright test to verify What-If preset clicking, instant scenario switching, and high-res screenshot capture.
+
+---
+
+## 2. Test & Verification Results
+- **Vitest Unit, Grounding & Failure Tests (`pnpm test`):** 11 test suites passed, 84 unit tests passed (100% pass rate).
+- **TypeScript Typecheck (`pnpm typecheck`):** Clean (0 errors).
+- **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
+- **Next.js Production Build (`pnpm build`):** Clean (6 static/dynamic pages compiled cleanly).
+- **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (9.3s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
+
+
 
 
 

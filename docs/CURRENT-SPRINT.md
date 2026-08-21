@@ -1,14 +1,14 @@
-# Current Sprint — Milestone 9: System Hardening & Failure States
+# Current Sprint — Milestone 10: Production Demo Slice & Narrative Polish
 
 **Status:** COMPLETED & VERIFIED  
-**Current Milestone:** M9 — System Hardening & Failure States  
+**Current Milestone:** M10 — Production Demo Slice & Narrative Polish  
 **Submission Deadline:** 2026-08-30  
 **Last Updated:** 2026-08-21  
 
 ---
 
 ## 🎯 Sprint Goal
-Harden the entire Thermal Decision Engine pipeline under failure, strictly enforce numeric grounding precision ($\le 0.01^\circ\text{C}$), enforce semantic date/time handling, cap FortyGuard interactive polling timeout to 30s, ensure clean state transitions on error recovery, and add a comprehensive 13-test failure-state invariant suite.
+Polish the complete vertical slice for a high-impact 60–90 second hackathon judge demonstration, establishing unmistakable primary visual hierarchy (WHAT, WHERE, WHEN, WHY, DATA SOURCE), single-click What-If scenario triggers, precise score semantics, explicit FortyGuard differentiation copy, and zero overclaiming.
 
 ---
 
@@ -56,7 +56,14 @@ Harden the entire Thermal Decision Engine pipeline under failure, strictly enfor
 - [x] **FortyGuard Polling Timeout Hardening:** Reduced interactive polling ceiling from 120s (60 attempts) to 30s (15 attempts).
 - [x] **State Transition Invariants:** Verified clean state reset on error in React state (`setDecision(null)`, `setJointDecision(null)`, `setExplanation(null)`).
 - [x] **Comprehensive Failure-State Test Suite:** Added `tests/failure_states.test.ts` (13 tests) covering 401 missing key, 401 invalid key, 500 error, malformed activity_id, polling timeout, missing hourly snapshot, +12h lead time boundary, outside coverage, explanation timeout fallback, grounding rejection fallback, decision immutability, LIVE failure isolation, and FIXTURE preservation.
-- [x] **Verification & Parity:** 84 Vitest tests passing across 11 test suites (100% pass rate). Next.js build clean. Playwright E2E smoke test passing.
+### Milestone 10 — Production Demo Slice & Narrative Polish (`COMPLETED & VERIFIED`)
+- [x] **Primary Visual Hierarchy:** Re-anchored workspace on WHERE (Battery Park Greenway) + WHEN (08:00–10:00 UTC) + WHY (29.15°C mean exposure, avoids +8.40°C delta) + DATA SOURCE (DEMO vs LIVE).
+- [x] **Cognitive Noise Reduction:** Reframed "Candidate Focus Points" as "Operational Candidate Set (Evaluated Simultaneously)".
+- [x] **Score Semantics & Model Labeling:** Labeled exposure scores as "Mean Modeled Temperature across operating window (v1.0.0-spatial-thermal-baseline)".
+- [x] **Defensible FortyGuard Differentiation:** Added explicit callout highlighting FortyGuard's hyperlocal microclimate resolution.
+- [x] **E2E Demo Automation:** Updated Playwright test to verify What-If preset clicking, instant scenario switching, and high-res screenshot capture.
+- [x] **Verification & Parity:** 84 Vitest tests passing across 11 test suites (100% pass rate). Next.js build clean. Playwright E2E test passing.
+
 
 
 

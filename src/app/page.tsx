@@ -190,19 +190,18 @@ export default function WorkspacePage() {
       {/* Header Banner */}
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 via-indigo-400 to-amber-400 bg-clip-text text-transparent">
               Thermal Decision Engine
             </h1>
             <Badge variant="outline" className="border-indigo-500/40 text-indigo-400 bg-indigo-950/40 font-mono text-xs">
-              M8 Grounded AI Explanation Layer
+              M10 Production Demo Slice
             </Badge>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Hyperlocal FortyGuard Thermal Intelligence, Deterministic Optimization & Grounded AI Explanation
+            Hyperlocal FortyGuard Thermal Intelligence & Deterministic Joint Optimization (WHERE + WHEN)
           </p>
         </div>
-
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Prominent UI Data Source Indicator */}
@@ -266,15 +265,14 @@ export default function WorkspacePage() {
 
           <Card className="bg-slate-900/80 border-slate-800 backdrop-blur-md">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base text-slate-200">Operational Candidate Cluster</CardTitle>
+              <CardTitle className="text-base text-slate-200">Operational Candidate Set</CardTitle>
               <CardDescription className="text-xs text-slate-400">
-                Simultaneously evaluated candidate sites within contiguous FortyGuard AOI
+                Candidate deployment sites evaluated simultaneously across contiguous FortyGuard microclimate surface
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-
               <div className="space-y-2">
-                <span className="text-xs font-semibold text-slate-300 block">Candidate Focus Points</span>
+                <span className="text-xs font-semibold text-slate-300 block">Evaluated Sites (Select to Center Map)</span>
                 <div className="flex flex-col gap-2">
                   {PRESET_LOCATIONS.map((loc) => (
                     <Button
@@ -293,6 +291,7 @@ export default function WorkspacePage() {
                   ))}
                 </div>
               </div>
+
 
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <div>
@@ -426,11 +425,24 @@ export default function WorkspacePage() {
                     <div className="text-2xl font-black text-emerald-400 font-mono">
                       {jointDecision.recommendedPlan.exposureScore.toFixed(2)}°C
                     </div>
-                    <div className="text-[10px] text-slate-400 font-mono uppercase">Modeled Thermal Exposure</div>
+                    <div className="text-[10px] text-slate-400 font-mono uppercase">
+                      Mean Modeled Temperature
+                    </div>
+                    <div className="text-[9px] text-slate-500 font-mono">
+                      across operating window (v1.0.0-spatial-thermal-baseline)
+                    </div>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="pt-4 space-y-4">
+                {/* FortyGuard Hyperlocal Microclimate Differentiation Note */}
+                <div className="bg-slate-950/90 border border-cyan-500/30 p-2.5 rounded-lg text-xs text-slate-300 flex items-start gap-2">
+                  <span className="text-cyan-400 font-bold text-xs shrink-0">ℹ️ FortyGuard Hyperlocal Intelligence:</span>
+                  <p className="text-slate-300 leading-relaxed text-[11px]">
+                    FortyGuard provides materially different modeled thermal values across candidate locations at hyperlocal spatial resolution, enabling spatially informed operational selection.
+                  </p>
+                </div>
+
                 {/* Joint Difference Banner */}
                 {jointDecision.rankedPlans.length > 1 && (
                   <div className="bg-emerald-950/40 border border-emerald-500/40 p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">

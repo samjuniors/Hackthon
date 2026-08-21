@@ -1,14 +1,14 @@
-# Current Sprint — Milestone 7: What-If Scenario Analysis & Constraint Sensitivity
+# Current Sprint — Milestone 8: Grounded AI Explanation Layer
 
 **Status:** COMPLETED & VERIFIED  
-**Current Milestone:** M7 — What-If Constraint Sensitivity  
+**Current Milestone:** M8 — Grounded AI Explanation Layer  
 **Submission Deadline:** 2026-08-30  
 **Last Updated:** 2026-08-21  
 
 ---
 
 ## 🎯 Sprint Goal
-Provide deterministic What-If operational constraint sensitivity analysis that directly answers "What does this operational constraint cost me?" by comparing the unconstrained baseline optimum ($P_0$) against single-constraint scenarios ($P'$) and computing the exact Cost of the Constraint ($C = E(P') - E(P_0)$).
+Integrate a strictly read-only, grounded AI explanation layer over verified deterministic decision outputs and What-If constraint sensitivity results, protected by multi-layered numeric allow-lists, forbidden medical/safety claim rejection, and zero-dependency deterministic rule-based fallback.
 
 ---
 
@@ -44,6 +44,15 @@ Provide deterministic What-If operational constraint sensitivity analysis that d
   3. `DURATION_EXPANSION` (2h $\to$ 4h shift) $\to +1.48^\circ\text{C}$, `durationChanged: true`.
 - [x] **Interactive What-If UI:** Created 3-Box visual flow ($P_0 \to \text{Constraint} \to P'$) with clear constraint cost readout and shift status badges.
 - [x] **Verification & Parity:** 52 Vitest tests passing across 9 test suites (100% pass rate). Playwright smoke test verified with screenshot.
+### Milestone 8 — Read-Only AI Explanation Layer (`COMPLETED & VERIFIED`)
+- [x] **Explanation Domain Contract:** Implemented `ExplainableDecisionInput` and `DecisionExplanation` in `src/types/explanation.ts`.
+- [x] **Deterministic Explainer:** Implemented `generateDeterministicExplanation()` producing structured, factual summaries without LLM dependencies.
+- [x] **Multi-Layered Grounding Validator:** Implemented `validateGroundedExplanation()` enforcing numeric allow-lists, rejecting forbidden medical/safety claims, and validating strict JSON schemas.
+- [x] **AI Explainer Engine:** Implemented `explainDecision()` with OpenAI/Gemini support, grounding prompt, timeout handling, and automatic fallback to rule-based explanation on failure or grounding violation.
+- [x] **Server Explanation Route (`/api/explain`):** Created standalone server-side route completely decoupled from FortyGuard credentials.
+- [x] **Explanation UI:** Added `Decision Explanation & Evidence Synthesis` section with operational summary, why it wins, constraint impact, epistemic notice, and refresh button.
+- [x] **Verification & Parity:** 66 Vitest tests passing across 10 test suites (100% pass rate). Playwright smoke test verified with screenshot.
+
 
 
 

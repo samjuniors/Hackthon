@@ -29,11 +29,17 @@ test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
     await expect(page.getByRole('button', { name: /Noise Curfew/ })).toBeVisible();
     await expect(page.getByText('Constraint Cost:')).toBeVisible();
 
-    // 7. Capture screenshot of working vertical slice
-    await page.screenshot({ path: 'tests/e2e/workspace-smoke.png', fullPage: true });
+    // 7. Verify Grounded Decision Explanation & Evidence Synthesis renders
+    await expect(page.getByText('Decision Explanation & Evidence Synthesis')).toBeVisible();
+    await expect(page.getByText('OPERATIONAL SUMMARY')).toBeVisible();
+    await expect(page.getByText('WHY THIS PLAN WINS')).toBeVisible();
+    await expect(page.getByText('Grounding: 100% Verified Evidence')).toBeVisible();
 
+    // 8. Capture screenshot of working vertical slice
+    await page.screenshot({ path: 'tests/e2e/workspace-smoke.png', fullPage: true });
   });
 });
+
 
 
 

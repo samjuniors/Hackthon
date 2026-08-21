@@ -12,8 +12,11 @@ import type {
   SpatialDecisionResult,
   JointDecisionResult,
   ScenarioAnalysisResult,
+  WhatIfScenarioResult,
   PolygonAOI,
 } from '@/types/domain';
+
+import type { DecisionExplanation } from '@/types/explanation';
 import type { DataSourceMode } from '@/types/provenance';
 
 // Dynamically import MapLibre map component to bypass SSR canvas requirement
@@ -38,6 +41,8 @@ export default function WorkspacePage() {
   const [jointDecision, setJointDecision] = useState<JointDecisionResult | null>(null);
   const [scenarioAnalysis, setScenarioAnalysis] = useState<ScenarioAnalysisResult | null>(null);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>('scenario-temporal-shift');
+  const [explanation, setExplanation] = useState<DecisionExplanation | null>(null);
+  const [explaining, setExplaining] = useState<boolean>(false);
   const [spatialField, setSpatialField] = useState<PolygonAOI | null>(null);
   const [spatialFieldMeta, setSpatialFieldMeta] = useState<{
     baseTimestamp: string;
@@ -48,49 +53,87 @@ export default function WorkspacePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
 
-  const runDecisionPipeline = useCallback(async (
-    latitude = lat,
-    longitude = lon,
-    durationHours = duration,
-    dataSourceMode = mode
-  ) => {
-    setLoading(true);
-    setErrorMsg(null);
 
-    try {
-      const res = await fetch('/api/decision', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          latitude,
-          longitude,
-          durationHours,
-          mode: dataSourceMode,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!data.success) {
-        throw new Error(data.error?.message || 'Decision pipeline execution failed');
+  const fetchExplanation = useCallback(
+    async (jointDec: JointDecisionResult, activeScen?: WhatIfScenarioResult) => {
+      setExplaining(true);
+      try {
+        const res = await fetch('/api/explain', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            jointDecision: jointDec,
+            activeScenario: activeScen,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.explanation) {
+          setExplanation(data.explanation);
+        }
+      } catch {
+        // Non-blocking
+      } finally {
+        setExplaining(false);
       }
+    },
+    []
+  );
 
-      setDecision(data.decision);
-      setSpatialDecision(data.spatialDecision || null);
-      setJointDecision(data.jointDecision || null);
-      setScenarioAnalysis(data.scenarioAnalysis || null);
-      setSpatialField(data.spatialField);
-      setSpatialFieldMeta(data.spatialFieldMetadata || null);
-    } catch (err) {
-      setDecision(null);
-      setSpatialDecision(null);
-      setJointDecision(null);
-      setScenarioAnalysis(null);
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
-    } finally {
-      setLoading(false);
-    }
-  }, [lat, lon, duration, mode]);
+  const runDecisionPipeline = useCallback(
+    async (
+      latitude = lat,
+      longitude = lon,
+      durationHours = duration,
+      dataSourceMode = mode
+    ) => {
+      setLoading(true);
+      setErrorMsg(null);
+
+      try {
+        const res = await fetch('/api/decision', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            latitude,
+            longitude,
+            durationHours,
+            mode: dataSourceMode,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!data.success) {
+          throw new Error(data.error?.message || 'Decision pipeline execution failed');
+        }
+
+        setDecision(data.decision);
+        setSpatialDecision(data.spatialDecision || null);
+        setJointDecision(data.jointDecision || null);
+        setScenarioAnalysis(data.scenarioAnalysis || null);
+        setSpatialField(data.spatialField);
+        setSpatialFieldMeta(data.spatialFieldMetadata || null);
+
+        if (data.jointDecision) {
+          const activeScen = data.scenarioAnalysis?.scenarios?.find(
+            (s: WhatIfScenarioResult) => s.scenarioId === selectedScenarioId
+          ) || data.scenarioAnalysis?.scenarios?.[0];
+          fetchExplanation(data.jointDecision, activeScen);
+        }
+      } catch (err) {
+
+        setDecision(null);
+        setSpatialDecision(null);
+        setJointDecision(null);
+        setScenarioAnalysis(null);
+        setExplanation(null);
+        setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [lat, lon, duration, mode, selectedScenarioId, fetchExplanation]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -117,6 +160,11 @@ export default function WorkspacePage() {
         setScenarioAnalysis(data.scenarioAnalysis || null);
         setSpatialField(data.spatialField);
         setSpatialFieldMeta(data.spatialFieldMetadata || null);
+
+        if (data.jointDecision) {
+          const activeScen = data.scenarioAnalysis?.scenarios?.[0];
+          fetchExplanation(data.jointDecision, activeScen);
+        }
       })
       .catch((err) => {
         if (isMounted) {
@@ -124,6 +172,7 @@ export default function WorkspacePage() {
           setSpatialDecision(null);
           setJointDecision(null);
           setScenarioAnalysis(null);
+          setExplanation(null);
           setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
         }
       })
@@ -131,11 +180,10 @@ export default function WorkspacePage() {
         if (isMounted) setLoading(false);
       });
 
-
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [fetchExplanation]);
 
   return (
     <main className="min-h-screen bg-[#090d16] text-slate-100 p-4 md:p-8 space-y-6">
@@ -146,14 +194,15 @@ export default function WorkspacePage() {
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 via-indigo-400 to-amber-400 bg-clip-text text-transparent">
               Thermal Decision Engine
             </h1>
-            <Badge variant="outline" className="border-cyan-500/40 text-cyan-400 bg-cyan-950/40 font-mono text-xs">
-              M7 What-If Constraint Sensitivity
+            <Badge variant="outline" className="border-indigo-500/40 text-indigo-400 bg-indigo-950/40 font-mono text-xs">
+              M8 Grounded AI Explanation Layer
             </Badge>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Hyperlocal FortyGuard Thermal Intelligence & Operational Constraint Sensitivity Analysis (WHERE + WHEN + WHAT-IF)
+            Hyperlocal FortyGuard Thermal Intelligence, Deterministic Optimization & Grounded AI Explanation
           </p>
         </div>
+
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Prominent UI Data Source Indicator */}
@@ -658,7 +707,12 @@ export default function WorkspacePage() {
                       key={sc.scenarioId}
                       variant={selectedScenarioId === sc.scenarioId ? 'default' : 'outline'}
                       size="sm"
-                      onClick={() => setSelectedScenarioId(sc.scenarioId)}
+                      onClick={() => {
+                        setSelectedScenarioId(sc.scenarioId);
+                        if (jointDecision) {
+                          fetchExplanation(jointDecision, sc);
+                        }
+                      }}
                       className={`text-xs justify-start h-auto py-2 px-3 ${
                         selectedScenarioId === sc.scenarioId
                           ? 'bg-indigo-600 hover:bg-indigo-500 text-white font-semibold'
@@ -794,11 +848,105 @@ export default function WorkspacePage() {
             </Card>
           )}
 
+          {/* M8 Grounded Decision Explanation Section */}
+          {explanation && (
+            <Card className="bg-slate-900/90 border-slate-800">
+              <CardHeader className="pb-3 border-b border-slate-800/80">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base text-slate-100 flex flex-wrap items-center gap-2">
+                      <span>Decision Explanation & Evidence Synthesis</span>
+                      {explanation.generatedBy === 'AI_GROUNDED_EXPLAINER' ? (
+                        <Badge className="bg-indigo-950 text-indigo-300 border-indigo-500/40 text-[10px]">
+                          🤖 AI Explanation of Deterministic Decision
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-slate-800 text-slate-300 border-slate-700 text-[10px]">
+                          ⚡ Deterministic Rule-Based Explanation
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="border-cyan-500/40 text-cyan-300 text-[10px] font-mono">
+                        Grounding: 100% Verified Evidence
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription className="text-xs text-slate-400 mt-1">
+                      Grounded operational synthesis translating deterministic spatial-temporal decision mathematics into plain-language narrative.
+                    </CardDescription>
+                  </div>
+                  <div className="shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={explaining}
+                      onClick={() => {
+                        if (jointDecision) {
+                          const activeScen = scenarioAnalysis?.scenarios?.find(
+                            (s) => s.scenarioId === selectedScenarioId
+                          );
+                          fetchExplanation(jointDecision, activeScen);
+                        }
+                      }}
+                      className="text-xs border-slate-700 text-slate-300 hover:bg-slate-800"
+                    >
+                      {explaining ? 'Synthesizing...' : '🔄 Refresh Explanation'}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-3 text-xs">
+                <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 space-y-1.5">
+                  <span className="text-[10px] font-mono uppercase text-indigo-400 font-bold block">
+                    OPERATIONAL SUMMARY
+                  </span>
+                  <p className="text-slate-200 leading-relaxed font-sans text-[13px]">
+                    {explanation.summary}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 space-y-1.5">
+                    <span className="text-[10px] font-mono uppercase text-cyan-400 font-bold block">
+                      WHY THIS PLAN WINS
+                    </span>
+                    <p className="text-slate-300 leading-relaxed">
+                      {explanation.whyThisPlan}
+                    </p>
+                  </div>
+
+                  {explanation.constraintImpact && (
+                    <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 space-y-1.5">
+                      <span className="text-[10px] font-mono uppercase text-amber-400 font-bold block">
+                        WHAT-IF CONSTRAINT IMPACT
+                      </span>
+                      <p className="text-slate-300 leading-relaxed">
+                        {explanation.constraintImpact}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Epistemic Boundary Notice */}
+                <div className="bg-slate-950/60 p-3 rounded border border-slate-800/80 text-[11px] text-slate-400 space-y-1">
+                  <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <span>🛡️ Epistemic & Provenance Boundary:</span>
+                    {explanation.fallbackReason && (
+                      <span className="text-amber-400 font-mono text-[10px]">({explanation.fallbackReason})</span>
+                    )}
+                  </div>
+                  <p className="leading-relaxed">
+                    {explanation.epistemicNotice}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
         </div>
       </div>
     </main>
   );
 }
+
 
 
 

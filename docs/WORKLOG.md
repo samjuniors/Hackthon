@@ -243,5 +243,40 @@
 - **Next.js Production Build (`pnpm build`):** Clean (5 static/dynamic pages compiled cleanly).
 - **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (9.0s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
 
+---
+
+# Engineering Worklog — Milestone 8 / Read-Only AI Explanation Layer Report
+
+**Date:** 2026-08-21  
+**Milestone:** Milestone 8 — Grounded AI Explanation Layer  
+**Status:** COMPLETED & VERIFIED  
+
+---
+
+## 1. What Was Implemented
+- **Explanation Domain Contract (`src/types/explanation.ts`):** Implemented strongly typed `ExplainableDecisionInput` and `DecisionExplanation` contracts with explicit `generatedBy` discrimination (`AI_GROUNDED_EXPLAINER` vs `DETERMINISTIC_FALLBACK`).
+- **Zero-Dependency Deterministic Explainer (`src/lib/explanation/deterministic-explainer.ts`):** Implemented `generateDeterministicExplanation()` synthesizing operational summary, why the plan wins, and constraint impact directly from verified input facts.
+- **Multi-Layered Grounding & Security Validator (`src/lib/explanation/grounding-validator.ts`):**
+  - Schema validation (Zod).
+  - Numeric allow-list validation (extracts numbers from text and asserts correspondence with allowed input values).
+  - Semantic guardrails rejecting medical/physiological claims (`heat stroke`, `heat stress`, `worker safety limits`, `hazard`, `OSHA`).
+  - Physical measurement guardrails rejecting unverified claims (`2m ambient`, `skin temperature`, `satellite thermal`).
+- **AI Explainer Engine (`src/lib/explanation/ai-explainer.ts`):** Direct SDK/fetch call with grounding system prompt and automatic fallback to rule-based generation if LLM is unavailable, times out, or fails grounding.
+- **Decoupled Server Route (`src/app/api/explain/route.ts`):** Standalone server route receiving `ExplainableDecisionInput` and returning verified `DecisionExplanation`. Zero access to FortyGuard API credentials.
+- **Explanation Workspace UI (`src/app/page.tsx`):** Displays `Decision Explanation & Evidence Synthesis` section with operational summary, why it wins, constraint impact, epistemic boundary statement, and manual refresh button.
+- **Automated Verification & E2E Tests (`tests/explanation.test.ts` & `tests/e2e/smoke.test.ts`):**
+  - Added 14 unit and grounding tests verifying deterministic fallback, valid AI responses, ungrounded number rejection, medical claim rejection, physical semantics claim rejection, malformed JSON fallback, timeout fallback, data source preservation, and decision data immutability.
+  - Playwright smoke test verifies the full explanation workflow and captures updated screenshot at `tests/e2e/workspace-smoke.png`.
+
+---
+
+## 2. Test & Verification Results
+- **Vitest Unit & Grounding Tests (`pnpm test`):** 10 test suites passed, 66 unit tests passed (100% pass rate).
+- **TypeScript Typecheck (`pnpm typecheck`):** Clean (0 errors).
+- **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
+- **Next.js Production Build (`pnpm build`):** Clean (6 static/dynamic pages compiled cleanly).
+- **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (13.2s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
+
+
 
 

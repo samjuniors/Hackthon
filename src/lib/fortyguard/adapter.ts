@@ -118,7 +118,7 @@ export class FortyGuardAdapter {
   private async submitAndPoll(
     endpoint: string,
     body: Record<string, unknown>,
-    maxAttempts = 15,
+    maxAttempts = 30,   // 30 × 2s = 60s max poll window — FortyGuard processing can exceed 30s
     intervalMs = 2000
   ): Promise<FortyGuardStatusResponse> {
 

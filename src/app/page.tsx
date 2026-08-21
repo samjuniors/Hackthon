@@ -195,8 +195,9 @@ export default function WorkspacePage() {
               Thermal Decision Engine
             </h1>
             <Badge variant="outline" className="border-indigo-500/40 text-indigo-400 bg-indigo-950/40 font-mono text-xs">
-              M10 Production Demo Slice
+              Production Demo Slice
             </Badge>
+
           </div>
           <p className="text-sm text-slate-400 mt-1">
             Hyperlocal FortyGuard Thermal Intelligence & Deterministic Joint Optimization (WHERE + WHEN)
@@ -456,8 +457,9 @@ export default function WorkspacePage() {
                       <span className="text-amber-300 font-mono font-bold">
                         +{jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].deltaVsBest.toFixed(2)}°C
                       </span>{' '}
-                      of continuous modeled thermal exposure vs worst feasible plan ({jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].location.name} @ {new Date(jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].window.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC).
+                      higher mean modeled temperature across the window vs worst feasible plan ({jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].location.name} @ {new Date(jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].window.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC).
                     </div>
+
                     <Badge variant="outline" className="border-emerald-500/50 text-emerald-300 text-[10px] font-mono shrink-0">
                       Delta vs Worst: {jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].deltaVsBest.toFixed(2)}°C
                     </Badge>

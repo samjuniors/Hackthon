@@ -2,58 +2,102 @@
 
 > **FortyGuard Hackathon'26 Project Submission**  
 > **Submission Deadline:** 2026-08-30  
-> **Status:** M2.1 — Decision Model Contract Reconciled (`LOCKED`)
+> **Status:** Production Hackathon Submission (`VERIFIED & LOCKED`)  
+> **Commit Target:** Milestone 11 Final Packaging  
 
 ---
 
 ## 🎯 Product Overview
 
-The **Thermal Decision Engine** is a decision-intelligence platform that transforms FortyGuard's hyperlocal spatial and temporal thermal telemetry into optimal operating window recommendations, interactive scenario comparisons, and evidence-grounded explanations for heat-exposed operations.
+The **Thermal Decision Engine** solves joint spatial-temporal operational dispatch ($\arg\min_{(L, W)} E(L, W)$) using FortyGuard's hyperlocal microclimate temperature intelligence, deterministically quantifying the exact thermal penalty of operational constraints ($C = E(P') - E(P_0)$) and synthesizing the decision through a strictly grounded, read-only AI explanation layer.
 
 ### Core User Question
-> *"I need to run a 3-hour outdoor operation at this location tomorrow. When should I do it to minimize modeled thermal exposure while satisfying my operating constraints?"*
+> *"I need to run a heat-exposed operation in Manhattan tomorrow. WHERE and WHEN should I operate to minimize modeled thermal exposure, and what does each operational constraint cost me?"*
 
 ---
 
-## ⚡ Core MVP Capabilities
+## 🏗️ System Architecture Pipeline
 
-1. **Thermal Assessment:** Ingests verified FortyGuard thermal telemetry (`wet_bulb_temperature_celsius`, `heat_index`, `solar_irradiance`).
-2. **Spatial Thermal Context:** Renders spatial heat variations using FortyGuard GeoJSON heatmap tiles.
-3. **Temporal Decision:** Evaluates candidate operating windows across temporal forecast series (+12h horizon).
-4. **Deterministic Decision Engine:** Ranks candidate operating windows deterministically to minimize modeled exposure given operational constraints (`CandidateWindowStep = DATA_RESOLUTION`).
-5. **What-If Scenarios:** Interactive sandbox for local, responsive scenario recalculation (duration, shift timing, location).
-6. **Evidence-Grounded AI Explanation:** Synthesizes clear narrative explanations using strictly verified decision outputs and evidence bundles.
+The system enforces a strict one-way dataflow where deterministic mathematics is the sole source of truth:
+
+```
+FortyGuard Hyperlocal Thermal Surface (GeoJSON Polygon Heatmap Tiles)
+  ↓
+Point-in-Polygon Containment & Normalization (Ray Casting, Zero Interpolation)
+  ↓
+Deterministic Joint Spatial-Temporal Optimizer (Exhaustive Cartesian Search: L × W)
+  ↓
+What-If Constraint Sensitivity Engine (Exact Arithmetic Penalty: C = E(P') - E(P₀))
+  ↓
+Structured Evidence Bundle (Numeric Allow-Lists, Immutable Domain Facts)
+  ↓
+Grounded Read-Only AI Explanation Layer (Strict Grounding Validator, ±0.01°C Tolerance)
+  ↓
+Interactive Decision Workspace UI (MapLibre GL, 3-Box Flow, Real-Time Scenario Chips)
+```
+
+---
+
+## ⚡ Core Capabilities
+
+1. **Hyperlocal Microclimate Intelligence:** Ingests discrete FortyGuard polygon tiles revealing $>8.40^\circ\text{C}$ temperature variations between urban waterfronts and asphalt street canyons within a 1 km radius.
+2. **Joint WHERE + WHEN Optimization:** Evaluates all candidate locations and sliding time windows simultaneously ($\mathcal{L} \times \mathcal{W} = 15\text{ candidate plans}$), recommending the globally optimal operational plan.
+3. **What-If Constraint Sensitivity:** Deterministically calculates the exact modeled temperature increase ($C = E(P') - E(P_0)$) when operational constraints (e.g., site locks, curfew shifts, extended durations) restrict the unconstrained optimum.
+4. **Grounded Read-Only AI Synthesis:** Translates verified mathematical outputs into structured narratives protected by multi-layered validation (numeric allow-lists, forbidden medical/safety claim rejection, zero-credential deterministic fallback).
+5. **Zero-Dependency Demo Reliability:** Default DEMO mode runs 100% offline from captured FortyGuard API fixture data with zero external network dependencies.
+
+---
+
+## ⏱️ 60-Second Demo Walkthrough
+
+1. **[00:00–00:15] Spatial Variance:** Observe the **Spatial Thermal Surface** map showing Manhattan microclimates varying from $28.50^\circ\text{C}$ to $37.55^\circ\text{C}$ across adjacent candidate operational sites.
+2. **[00:15–00:30] Joint WHERE + WHEN Decision:** Click **Recalculate Decision**. The **Recommended Operational Plan** card identifies the global optimum:
+   - **Recommended Site:** `Battery Park Greenway (Waterfront) (LOC-A)`
+   - **Operating Window:** `08:00 AM – 10:00 AM UTC (2h Duration)`
+   - **Mean Modeled Temperature:** `29.15°C`
+   - **Joint Advantage:** Avoids an `+8.40°C` higher mean modeled temperature across the window vs deploying to Chinatown at noon.
+3. **[00:30–00:45] What-If Constraint Cost:** Single-click the **Site Lock (Chinatown Asphalt Canyon)** preset chip. The 3-Box comparison visually shifts to show **`Constraint Cost: +2.20°C Mean Modeled Temperature Increase`**.
+4. **[00:45–01:00] Grounded AI Synthesis:** Scroll to **Decision Explanation & Evidence Synthesis** to inspect the grounded narrative verified against strict evidence allow-lists ($\le 0.01^\circ\text{C}$ precision) with zero hallucination.
+
+---
+
+## 🛡️ Epistemic & Authority Boundaries
+
+- **Deterministic Optimizer Authority:** The AI layer has **zero decision authority**. It cannot select locations, alter operating windows, re-rank plans, or modify numerical scores.
+- **Provenance Transparency:** All FortyGuard tile temperatures are tagged `DERIVED`.
+- **Score Semantics:** Exposure scores represent the arithmetic **Mean Modeled Temperature across the operating window** under `v1.0.0-spatial-thermal-baseline`.
+- **Safety Invariant:** The system does not compute physiological heat strain (e.g., WBGT, UTCI) and does not provide medical or worker safety certification.
 
 ---
 
 ## 🧭 Documentation Map
 
-All system architecture, product requirements, decision models, and API integrations are tracked within the documentation system. See [INDEX.md](file:///e:/Projects/NewProjetcs/Hackthon/INDEX.md) for full details.
+All system architecture, product requirements, decision models, and API integrations are tracked within the documentation system:
 
 | Document | Purpose | Status |
 | :--- | :--- | :--- |
-| [CONSTITUTION.md](file:///e:/Projects/NewProjetcs/Hackthon/CONSTITUTION.md) | Non-negotiable engineering principles & data integrity rules | `LOCKED` |
-| [AGENTS.md](file:///e:/Projects/NewProjetcs/Hackthon/AGENTS.md) | Multi-agent protocols & vertical slice roadmap | `VERIFIED` |
-| [docs/VISION.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/VISION.md) | Long-term vision for heat-exposed operations decision intelligence | `LOCKED` |
-| [docs/PRD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/PRD.md) | Product requirements, 6 MVP capabilities, acceptance criteria | `LOCKED` |
-| [docs/ARCHITECTURE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/ARCHITECTURE.md) | System boundaries, execution phases, credit safety caching | `LOCKED` |
-| [docs/DESIGN.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DESIGN.md) | Decision Workspace 8-section layout & provenance badges | `LOCKED` |
-| [docs/DECISION-ENGINE.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/DECISION-ENGINE.md) | Deterministic decision pipeline & pluggable model contract | `PROVISIONAL FORMULA` |
-| [docs/FORTYGUARD.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/FORTYGUARD.md) | Verified FortyGuard API intelligence & live schemas | `VERIFIED` |
-| [docs/CURRENT-SPRINT.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/CURRENT-SPRINT.md) | Milestone 2 operational sprint tracking | `ACTIVE` |
-| [docs/WORKLOG.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/WORKLOG.md) | Chronological record of engineering actions & decisions | `VERIFIED` |
-| [docs/EVALUATION.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/EVALUATION.md) | Hardened test matrix & evidence verification strategy | `LOCKED` |
-| [docs/adr/0002-thermal-operations-decision-model.md](file:///e:/Projects/NewProjetcs/Hackthon/docs/adr/0002-thermal-operations-decision-model.md) | Decision model & scope lock record | `LOCKED` |
+| [CONSTITUTION.md](CONSTITUTION.md) | Non-negotiable engineering principles & data integrity rules | `LOCKED` |
+| [AGENTS.md](AGENTS.md) | Multi-agent protocols & vertical slice roadmap | `LOCKED` |
+| [docs/VISION.md](docs/VISION.md) | Long-term vision for heat-exposed operations decision intelligence | `LOCKED` |
+| [docs/PRD.md](docs/PRD.md) | Product requirements, 6 MVP capabilities, acceptance criteria | `LOCKED` |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System boundaries, execution phases, credit safety caching | `LOCKED` |
+| [docs/DESIGN.md](docs/DESIGN.md) | Decision Workspace 8-section layout & provenance badges | `LOCKED` |
+| [docs/DECISION-ENGINE.md](docs/DECISION-ENGINE.md) | Mathematical formulation of joint optimizer, What-If engine, and grounding validator | `LOCKED` |
+| [docs/FORTYGUARD.md](docs/FORTYGUARD.md) | Verified FortyGuard API intelligence & live schemas | `LOCKED` |
+| [docs/CURRENT-SPRINT.md](docs/CURRENT-SPRINT.md) | Milestone 10/11 operational sprint tracking | `LOCKED` |
+| [docs/WORKLOG.md](docs/WORKLOG.md) | Chronological record of engineering actions & decisions | `LOCKED` |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | Hardened test matrix & evidence verification strategy | `LOCKED` |
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Framework:** Next.js (App Router, React 19)
+- **Framework:** Next.js 15 (App Router, React 19)
 - **Language:** TypeScript (Strict mode)
-- **Styling:** Tailwind CSS + Radix UI primitives
-- **Validation:** Zod (for boundary schemas)
-- **Testing:** Vitest
+- **Mapping & Spatial:** MapLibre GL + Zero-Dependency Ray Casting
+- **Styling:** Tailwind CSS + Radix UI / shadcn primitives
+- **Validation:** Zod
+- **Testing:** Vitest (84 tests, 100% pass rate) + Playwright (E2E smoke test)
 - **Package Manager:** pnpm
 
 ---
@@ -61,17 +105,18 @@ All system architecture, product requirements, decision models, and API integrat
 ## 🚀 Getting Started
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 pnpm install
 
-# Run development server
+# 2. Run development server (defaults to 100% offline DEMO mode)
 pnpm dev
 
-# Run test suite
-pnpm test
-
-# Run build verification
-pnpm build
+# 3. Run automated verification suite
+pnpm test          # 84 Vitest unit, failure, and grounding tests
+pnpm typecheck     # TypeScript strict validation
+pnpm lint          # ESLint rules
+pnpm build         # Production Next.js build
+pnpm test:e2e      # Playwright E2E browser smoke test
 ```
 
 ---

@@ -194,9 +194,32 @@ export class FortyGuardAdapter {
   }
 
   /**
+   * Return default operating window bounds.
+   * Fixture mode provides bounds from its own captured timestamps; live mode provides current UTC bounds.
+   */
+  getDefaultOperatingWindow(spanHours = 6): { allowedStart: string; allowedEnd: string } {
+    if (this.mode === 'FIXTURE') {
+      const firstSnapshot = hourlyFixtureData.hourlySnapshots[0];
+      const startMs = new Date(firstSnapshot.timestamp).getTime();
+      return {
+        allowedStart: new Date(startMs).toISOString(),
+        allowedEnd: new Date(startMs + spanHours * 3600 * 1000).toISOString(),
+      };
+    }
+
+    const now = new Date();
+    now.setUTCMinutes(0, 0, 0);
+    return {
+      allowedStart: now.toISOString(),
+      allowedEnd: new Date(now.getTime() + spanHours * 3600 * 1000).toISOString(),
+    };
+  }
+
+  /**
    * Fetch spatial thermal heatmap GeoJSON tile field.
    */
   async getHeatmap(request: FortyGuardHeatmapRequest): Promise<{ aoi: PolygonAOI; activityId: string }> {
+
     const validReq = FortyGuardHeatmapRequestSchema.parse(request);
 
     if (this.mode === 'LIVE') {

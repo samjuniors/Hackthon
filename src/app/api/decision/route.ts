@@ -43,19 +43,11 @@ export async function POST(request: Request) {
     // Explicit DataSourceMode: request override or server default
     const mode: DataSourceMode = reqMode ?? (process.env.FORTYGUARD_DATA_SOURCE === 'LIVE' ? 'LIVE' : 'FIXTURE');
 
-    const now = new Date();
-    now.setUTCMinutes(0, 0, 0);
+    const adapter = new FortyGuardAdapter({ mode });
+    const defaultWindow = adapter.getDefaultOperatingWindow(6);
 
-    // In FIXTURE mode, default to the fixture's base date window (2026-08-21T08:00:00.000Z to 14:00:00.000Z)
-    const defaultStart = mode === 'FIXTURE'
-      ? '2026-08-21T08:00:00.000Z'
-      : now.toISOString();
-    const defaultEnd = mode === 'FIXTURE'
-      ? '2026-08-21T14:00:00.000Z'
-      : new Date(now.getTime() + 6 * 3600 * 1000).toISOString();
-
-    const allowedStart = reqStart || defaultStart;
-    const allowedEnd = reqEnd || defaultEnd;
+    const allowedStart = reqStart || defaultWindow.allowedStart;
+    const allowedEnd = reqEnd || defaultWindow.allowedEnd;
 
     const location: LocationPoint = { latitude, longitude };
     const constraints: DecisionConstraints = {
@@ -85,12 +77,9 @@ export async function POST(request: Request) {
       throw new IncompleteTemporalCoverageError('Empty hourly sequence for requested time span');
     }
 
-    const adapter = new FortyGuardAdapter({ mode });
-
     // Fetch discrete hourly snapshots from selected source (LIVE API or FIXTURE)
     const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps);
 
-    const baseObservationMs = startMs;
     const observations: NormalizedThermalObservation[] = [];
 
     for (const timestamp of hourlyTimestamps) {
@@ -99,14 +88,13 @@ export async function POST(request: Request) {
         throw new IncompleteTemporalCoverageError(`Missing thermal observation at timestamp ${timestamp}`);
       }
 
-      const obsMs = new Date(timestamp).getTime();
-      const isPredicted = obsMs > baseObservationMs;
+      // Heatmap tile values represent spatial polygon model aggregations (provenance: DERIVED)
       const obs = adapter.normalizePointObservation(
         snapshotAoi,
         location,
         timestamp,
         '/v1/heatmap',
-        isPredicted ? 'PREDICTED' : 'DERIVED'
+        'DERIVED'
       );
       observations.push(obs);
     }
@@ -118,13 +106,21 @@ export async function POST(request: Request) {
       allowedStart
     );
 
-    const firstAoi = snapshotsMap.get(hourlyTimestamps[0]);
+    const baseTimestamp = hourlyTimestamps[0];
+    const baseSpatialField = snapshotsMap.get(baseTimestamp);
 
     return NextResponse.json({
       success: true,
       decision,
-      spatialField: firstAoi,
+      spatialField: baseSpatialField,
+      spatialFieldMetadata: {
+        baseTimestamp,
+        coverageType: 'BASE_TIMESTAMP_SNAPSHOT',
+        description: 'Spatial thermal surface represents the initial observation snapshot (t₀)',
+        totalEvaluatedHours: hourlyTimestamps.length,
+      },
     });
+
   } catch (error) {
     if (error instanceof AppError) {
       return NextResponse.json(

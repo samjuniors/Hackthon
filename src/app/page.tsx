@@ -30,6 +30,12 @@ export default function WorkspacePage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [spatialField, setSpatialField] = useState<PolygonAOI | null>(null);
+  const [spatialFieldMeta, setSpatialFieldMeta] = useState<{
+    baseTimestamp: string;
+    coverageType: string;
+    description: string;
+    totalEvaluatedHours: number;
+  } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const runDecisionPipeline = useCallback(async (
@@ -61,6 +67,7 @@ export default function WorkspacePage() {
 
       setDecision(data.decision);
       setSpatialField(data.spatialField);
+      setSpatialFieldMeta(data.spatialFieldMetadata || null);
     } catch (err) {
       setDecision(null);
       setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
@@ -90,6 +97,7 @@ export default function WorkspacePage() {
         }
         setDecision(data.decision);
         setSpatialField(data.spatialField);
+        setSpatialFieldMeta(data.spatialFieldMetadata || null);
       })
       .catch((err) => {
         if (isMounted) {
@@ -105,6 +113,7 @@ export default function WorkspacePage() {
       isMounted = false;
     };
   }, []);
+
 
   return (
     <main className="min-h-screen bg-[#090d16] text-slate-100 p-4 md:p-8 space-y-6">
@@ -276,13 +285,33 @@ export default function WorkspacePage() {
           )}
 
           {/* Map Surface */}
-          <Card className="bg-slate-900/80 border-slate-800 p-2">
+          <Card className="bg-slate-900/80 border-slate-800 p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold text-slate-200">Spatial Thermal Surface</h2>
+                  {spatialFieldMeta?.baseTimestamp && (
+                    <Badge variant="outline" className="text-[10px] font-mono border-cyan-500/40 text-cyan-400 bg-cyan-950/30">
+                      Base Snapshot: {new Date(spatialFieldMeta.baseTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC (t₀)
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Map displays spatial tile variation at initial observation timestamp (t₀). Candidate window optimization evaluates the full discrete hourly sequence.
+                </p>
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 shrink-0">
+                Coverage: <span className="text-slate-200">Single Snapshot (t₀)</span>
+              </div>
+            </div>
+
             <ThermalMap
               location={{ latitude: lat, longitude: lon }}
               spatialField={spatialField}
               selectedTileId={decision?.evidenceBundle.selectedTileId}
             />
           </Card>
+
 
           {/* Decision Outcome Card */}
           {decision && (

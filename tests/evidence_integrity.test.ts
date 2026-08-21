@@ -210,7 +210,7 @@ describe('M4.1 Evidence Integrity & Parity Test Suite', () => {
         sourceEndpoint: '/v1/heatmap',
         dataSource: 'FIXTURE',
         metrics: { temperatureCelsius: 28.0 },
-        provenance: 'PREDICTED',
+        provenance: 'DERIVED',
       },
     ];
 
@@ -225,4 +225,19 @@ describe('M4.1 Evidence Integrity & Parity Test Suite', () => {
       evaluateCandidateWindows(nycCenter, obs, constraintsExceeding12h, baseTime)
     ).toThrow(IncompleteTemporalCoverageError);
   });
+
+  it('8. Fixture date ownership is decoupled — adapter provides default bounds without route hardcoding', () => {
+    const fixtureAdapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
+    const fixtureWindow = fixtureAdapter.getDefaultOperatingWindow(4);
+    expect(fixtureWindow.allowedStart).toBeDefined();
+    expect(fixtureWindow.allowedEnd).toBeDefined();
+    expect(new Date(fixtureWindow.allowedEnd).getTime() - new Date(fixtureWindow.allowedStart).getTime()).toBe(4 * 3600 * 1000);
+
+    const liveAdapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: 'mock-key' });
+    const liveWindow = liveAdapter.getDefaultOperatingWindow(4);
+    expect(liveWindow.allowedStart).toBeDefined();
+    expect(liveWindow.allowedEnd).toBeDefined();
+    expect(new Date(liveWindow.allowedEnd).getTime() - new Date(liveWindow.allowedStart).getTime()).toBe(4 * 3600 * 1000);
+  });
 });
+

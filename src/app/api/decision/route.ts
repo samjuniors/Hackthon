@@ -3,7 +3,9 @@ import { FortyGuardAdapter } from '@/lib/fortyguard/adapter';
 import {
   evaluateCandidateWindows,
   evaluateCandidateLocations,
+  evaluateJointDecision,
 } from '@/lib/decision-engine/evaluator';
+
 import type {
   LocationPoint,
   DecisionConstraints,
@@ -204,6 +206,17 @@ export async function POST(request: Request) {
       }
     );
 
+    // Evaluate joint discrete spatial-temporal optimization over CandidateLocation × CandidateWindow (WHERE + WHEN)
+    const jointDecision = evaluateJointDecision(
+      candidatesToEvaluate,
+      observationsByCandidate,
+      constraints,
+      {
+        dataSource: mode,
+        baseTimestamp: hourlyTimestamps[0],
+      }
+    );
+
     const baseTimestamp = hourlyTimestamps[0];
     const baseSpatialField = snapshotsMap.get(baseTimestamp);
 
@@ -211,6 +224,7 @@ export async function POST(request: Request) {
       success: true,
       decision,
       spatialDecision,
+      jointDecision,
       spatialField: baseSpatialField,
       spatialFieldMetadata: {
         baseTimestamp,
@@ -219,6 +233,7 @@ export async function POST(request: Request) {
         totalEvaluatedHours: hourlyTimestamps.length,
       },
     });
+
 
 
   } catch (error) {

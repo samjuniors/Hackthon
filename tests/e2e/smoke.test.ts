@@ -17,16 +17,17 @@ test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
     // 4. Wait for decision calculation to settle
     await page.waitForTimeout(2000);
 
-    // 5. Verify spatial location decision outcome card and advantage banner render
-    await expect(page.getByText('Optimal Operating Location')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Rank #1 Winner')).toBeVisible();
-    await expect(page.getByText('FortyGuard Spatial Advantage')).toBeVisible();
+    // 5. Verify joint spatial-temporal decision outcome card and advantage banner render
+    await expect(page.getByText('Recommended Operational Plan')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('★ Optimal Plan #1')).toBeVisible();
+    await expect(page.getByText('FortyGuard Joint Advantage')).toBeVisible();
     await expect(page.getByRole('strong').filter({ hasText: 'Battery Park Greenway' })).toBeVisible();
+    await expect(page.getByText('EVALUATED SEARCH')).toBeVisible();
 
     // 6. Capture screenshot of working vertical slice
     await page.screenshot({ path: 'tests/e2e/workspace-smoke.png', fullPage: true });
-
   });
 });
+
 
 

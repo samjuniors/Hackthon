@@ -7,14 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { DecisionResult, SpatialDecisionResult, PolygonAOI } from '@/types/domain';
+import type { DecisionResult, SpatialDecisionResult, JointDecisionResult, PolygonAOI } from '@/types/domain';
 import type { DataSourceMode } from '@/types/provenance';
 
 // Dynamically import MapLibre map component to bypass SSR canvas requirement
 const ThermalMap = dynamic(() => import('@/components/ThermalMap'), {
   ssr: false,
 });
-
 
 const PRESET_LOCATIONS = [
   { name: 'LOC-A (Battery Park - Waterfront)', lat: 40.7120, lon: -74.0080 },
@@ -30,6 +29,7 @@ export default function WorkspacePage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [spatialDecision, setSpatialDecision] = useState<SpatialDecisionResult | null>(null);
+  const [jointDecision, setJointDecision] = useState<JointDecisionResult | null>(null);
   const [spatialField, setSpatialField] = useState<PolygonAOI | null>(null);
   const [spatialFieldMeta, setSpatialFieldMeta] = useState<{
     baseTimestamp: string;
@@ -68,11 +68,13 @@ export default function WorkspacePage() {
 
       setDecision(data.decision);
       setSpatialDecision(data.spatialDecision || null);
+      setJointDecision(data.jointDecision || null);
       setSpatialField(data.spatialField);
       setSpatialFieldMeta(data.spatialFieldMetadata || null);
     } catch (err) {
       setDecision(null);
       setSpatialDecision(null);
+      setJointDecision(null);
       setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
     } finally {
       setLoading(false);
@@ -100,6 +102,7 @@ export default function WorkspacePage() {
         }
         setDecision(data.decision);
         setSpatialDecision(data.spatialDecision || null);
+        setJointDecision(data.jointDecision || null);
         setSpatialField(data.spatialField);
         setSpatialFieldMeta(data.spatialFieldMetadata || null);
       })
@@ -107,6 +110,7 @@ export default function WorkspacePage() {
         if (isMounted) {
           setDecision(null);
           setSpatialDecision(null);
+          setJointDecision(null);
           setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
         }
       })
@@ -129,13 +133,14 @@ export default function WorkspacePage() {
               Thermal Decision Engine
             </h1>
             <Badge variant="outline" className="border-cyan-500/40 text-cyan-400 bg-cyan-950/40 font-mono text-xs">
-              M5 Spatial Decision Slice
+              M6 Joint Decision Model
             </Badge>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Hyperlocal FortyGuard Thermal Intelligence & Deterministic Spatial Location Optimization
+            Hyperlocal FortyGuard Thermal Intelligence & Joint Spatial-Temporal Operational Optimization (WHERE + WHEN)
           </p>
         </div>
+
         <div className="flex flex-wrap items-center gap-3">
           {/* Prominent UI Data Source Indicator */}
           {decision?.dataSource === 'LIVE' || mode === 'LIVE' ? (
@@ -322,57 +327,98 @@ export default function WorkspacePage() {
             />
           </Card>
 
-          {/* M5 Spatial Location Decision Card (WHERE TO OPERATE) */}
-          {spatialDecision && (
+          {/* M6 Joint Spatial-Temporal Decision Card (WHERE + WHEN) */}
+          {jointDecision ? (
             <Card className="bg-slate-900/90 border-slate-800">
               <CardHeader className="pb-3 border-b border-slate-800/80">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                   <div>
                     <CardTitle className="text-base text-slate-100 flex items-center gap-2">
-                      <span>Optimal Operating Location</span>
+                      <span>Recommended Operational Plan</span>
                       <Badge className="bg-emerald-950 text-emerald-300 border-emerald-500/40 text-[10px]">
-                        ★ Rank #1 Winner
+                        ★ Optimal Plan #1
                       </Badge>
                       <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px] font-mono">
-                        Source: {spatialDecision.dataSource}
+                        Source: {jointDecision.dataSource}
                       </Badge>
                     </CardTitle>
-                    <CardDescription className="text-xs text-slate-400 mt-1">
-                      Recommended site: <strong className="text-slate-200">{spatialDecision.recommendedLocation.name}</strong> ({spatialDecision.recommendedLocation.locationId})
+                    <CardDescription className="text-xs text-slate-300 mt-1.5 space-y-1">
+                      <div>
+                        <span className="text-slate-400">Recommended Site:</span>{' '}
+                        <strong className="text-white font-semibold">{jointDecision.recommendedPlan.location.name}</strong>{' '}
+                        <span className="text-cyan-300 font-mono">({jointDecision.recommendedPlan.location.locationId})</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Optimal Operating Window:</span>{' '}
+                        <strong className="text-white font-semibold font-mono">
+                          {new Date(jointDecision.recommendedPlan.window.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} –{' '}
+                          {new Date(jointDecision.recommendedPlan.window.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC
+                        </strong>{' '}
+                        <span className="text-amber-400 font-mono text-[11px]">({jointDecision.recommendedPlan.window.durationHours}h Duration)</span>
+                      </div>
                     </CardDescription>
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-black text-emerald-400 font-mono">
-                      {spatialDecision.recommendedLocation.exposureScore.toFixed(2)}°C
+                      {jointDecision.recommendedPlan.exposureScore.toFixed(2)}°C
                     </div>
                     <div className="text-[10px] text-slate-400 font-mono uppercase">Modeled Thermal Exposure</div>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="pt-4 space-y-4">
-                {/* Visual Difference Banner */}
-                {spatialDecision.rankedLocations.length > 1 && (
+                {/* Joint Difference Banner */}
+                {jointDecision.rankedPlans.length > 1 && (
                   <div className="bg-emerald-950/40 border border-emerald-500/40 p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                     <div className="text-emerald-300">
-                      <span className="font-bold">FortyGuard Spatial Advantage:</span> Operating at{' '}
-                      <span className="text-white font-bold">{spatialDecision.recommendedLocation.name}</span> avoids{' '}
-                      <span className="text-amber-300 font-mono font-bold">
-                        +{spatialDecision.rankedLocations[spatialDecision.rankedLocations.length - 1].deltaVsBest.toFixed(2)}°C
+                      <span className="font-bold">FortyGuard Joint Advantage:</span> Deploying to{' '}
+                      <span className="text-white font-bold">{jointDecision.recommendedPlan.location.name}</span> during{' '}
+                      <span className="text-white font-mono font-bold">
+                        {new Date(jointDecision.recommendedPlan.window.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}–{new Date(jointDecision.recommendedPlan.window.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC
                       </span>{' '}
-                      of continuous thermal exposure vs worst site ({spatialDecision.rankedLocations[spatialDecision.rankedLocations.length - 1].name}).
+                      avoids{' '}
+                      <span className="text-amber-300 font-mono font-bold">
+                        +{jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].deltaVsBest.toFixed(2)}°C
+                      </span>{' '}
+                      of continuous modeled thermal exposure vs worst feasible plan ({jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].location.name} @ {new Date(jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].window.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC).
                     </div>
                     <Badge variant="outline" className="border-emerald-500/50 text-emerald-300 text-[10px] font-mono shrink-0">
-                      Savings: {spatialDecision.rankedLocations[spatialDecision.rankedLocations.length - 1].deltaVsBest.toFixed(2)}°C
+                      Delta vs Worst: {jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].deltaVsBest.toFixed(2)}°C
                     </Badge>
                   </div>
                 )}
 
-                {/* Tabs for Spatial WHERE vs Temporal WHEN vs Provenance */}
-                <Tabs defaultValue="spatial-ranking" className="w-full">
+                {/* WHY THIS PLAN — Search Space & Deterministic Metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                  <div className="bg-slate-950/80 p-2.5 rounded border border-slate-800">
+                    <span className="text-slate-400 text-[10px] block">CANDIDATE SITES</span>
+                    <span className="text-cyan-300 font-bold">{jointDecision.searchSpace.locationCount} Locations</span>
+                  </div>
+                  <div className="bg-slate-950/80 p-2.5 rounded border border-slate-800">
+                    <span className="text-slate-400 text-[10px] block">SLIDING WINDOWS</span>
+                    <span className="text-indigo-300 font-bold">{jointDecision.searchSpace.windowCount} Windows</span>
+                  </div>
+                  <div className="bg-slate-950/80 p-2.5 rounded border border-slate-800">
+                    <span className="text-slate-400 text-[10px] block">EVALUATED SEARCH</span>
+                    <span className="text-amber-300 font-bold">{jointDecision.searchSpace.totalEvaluatedPlans} Plans</span>
+                  </div>
+                  <div className="bg-slate-950/80 p-2.5 rounded border border-slate-800">
+                    <span className="text-slate-400 text-[10px] block">EXPOSURE MODEL</span>
+                    <span className="text-emerald-300 text-[11px] font-bold">Baseline Mean</span>
+                  </div>
+                </div>
+
+                {/* Tabs for Joint Plans vs Spatial WHERE vs Temporal WHEN vs Provenance */}
+                <Tabs defaultValue="joint-ranking" className="w-full">
                   <TabsList className="bg-slate-950 border border-slate-800">
-                    <TabsTrigger value="spatial-ranking" className="text-xs">
-                      Candidate Locations ({spatialDecision.rankedLocations.length})
+                    <TabsTrigger value="joint-ranking" className="text-xs">
+                      Candidate Plans ({jointDecision.rankedPlans.length})
                     </TabsTrigger>
+                    {spatialDecision && (
+                      <TabsTrigger value="spatial-ranking" className="text-xs">
+                        Candidate Locations ({spatialDecision.rankedLocations.length})
+                      </TabsTrigger>
+                    )}
                     {decision && (
                       <TabsTrigger value="temporal-ranking" className="text-xs">
                         Operating Windows ({decision.rankedWindows.length})
@@ -381,15 +427,15 @@ export default function WorkspacePage() {
                     <TabsTrigger value="provenance" className="text-xs">Data Provenance</TabsTrigger>
                   </TabsList>
 
-                  {/* Tab 1: Spatial Location Comparison Matrix */}
-                  <TabsContent value="spatial-ranking" className="pt-3">
+                  {/* Tab 1: Joint WHERE + WHEN Ranked Plans Matrix */}
+                  <TabsContent value="joint-ranking" className="pt-3">
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs font-mono text-left">
                         <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
                           <tr>
                             <th className="py-2 px-3">Rank</th>
-                            <th className="py-2 px-3">Location ID</th>
-                            <th className="py-2 px-3">Site Description</th>
+                            <th className="py-2 px-3">Location</th>
+                            <th className="py-2 px-3">Time Window (UTC)</th>
                             <th className="py-2 px-3">Tile ID</th>
                             <th className="py-2 px-3">Modeled Exposure</th>
                             <th className="py-2 px-3">Δ vs Best</th>
@@ -397,33 +443,39 @@ export default function WorkspacePage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/60">
-                          {spatialDecision.rankedLocations.map((loc) => (
+                          {jointDecision.rankedPlans.map((plan) => (
                             <tr
-                              key={loc.locationId}
-                              className={loc.rank === 1 ? 'bg-emerald-950/30 text-emerald-200 font-semibold' : 'text-slate-300'}
+                              key={plan.planId}
+                              className={plan.rank === 1 ? 'bg-emerald-950/30 text-emerald-200 font-semibold' : 'text-slate-300'}
                             >
-                              <td className="py-2.5 px-3 font-bold">#{loc.rank}</td>
-                              <td className="py-2.5 px-3 text-cyan-300">{loc.locationId}</td>
-                              <td className="py-2.5 px-3">{loc.name}</td>
-                              <td className="py-2.5 px-3 text-slate-400">{loc.tileId}</td>
-                              <td className="py-2.5 px-3 font-bold">{loc.exposureScore.toFixed(2)}°C</td>
+                              <td className="py-2.5 px-3 font-bold">#{plan.rank}</td>
                               <td className="py-2.5 px-3">
-                                {loc.deltaVsBest === 0 ? (
+                                <span className="text-cyan-300 font-bold">{plan.location.locationId}</span>{' '}
+                                <span className="text-slate-400 text-[11px]">({plan.location.name.split(' (')[0]})</span>
+                              </td>
+                              <td className="py-2.5 px-3 font-bold">
+                                {new Date(plan.window.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} –{' '}
+                                {new Date(plan.window.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-400">{plan.tileId}</td>
+                              <td className="py-2.5 px-3 font-bold">{plan.exposureScore.toFixed(2)}°C</td>
+                              <td className="py-2.5 px-3">
+                                {plan.deltaVsBest === 0 ? (
                                   <span className="text-emerald-400 font-bold">0.00°C (Best)</span>
                                 ) : (
-                                  <span className="text-amber-400 font-bold">+{loc.deltaVsBest.toFixed(2)}°C</span>
+                                  <span className="text-amber-400 font-bold">+{plan.deltaVsBest.toFixed(2)}°C</span>
                                 )}
                               </td>
                               <td className="py-2.5 px-3">
                                 <Badge
                                   variant="outline"
                                   className={
-                                    loc.rank === 1
+                                    plan.rank === 1
                                       ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/50 text-[10px]'
                                       : 'bg-slate-900 text-slate-400 border-slate-700 text-[10px]'
                                   }
                                 >
-                                  {loc.rank === 1 ? 'Optimal' : 'Feasible'}
+                                  {plan.status}
                                 </Badge>
                               </td>
                             </tr>
@@ -433,7 +485,61 @@ export default function WorkspacePage() {
                     </div>
                   </TabsContent>
 
-                  {/* Tab 2: Temporal Sliding Windows */}
+                  {/* Tab 2: Spatial Locations */}
+                  {spatialDecision && (
+                    <TabsContent value="spatial-ranking" className="pt-3">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs font-mono text-left">
+                          <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                            <tr>
+                              <th className="py-2 px-3">Rank</th>
+                              <th className="py-2 px-3">Location ID</th>
+                              <th className="py-2 px-3">Site Description</th>
+                              <th className="py-2 px-3">Tile ID</th>
+                              <th className="py-2 px-3">Modeled Exposure</th>
+                              <th className="py-2 px-3">Δ vs Best</th>
+                              <th className="py-2 px-3">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/60">
+                            {spatialDecision.rankedLocations.map((loc) => (
+                              <tr
+                                key={loc.locationId}
+                                className={loc.rank === 1 ? 'bg-emerald-950/30 text-emerald-200 font-semibold' : 'text-slate-300'}
+                              >
+                                <td className="py-2.5 px-3 font-bold">#{loc.rank}</td>
+                                <td className="py-2.5 px-3 text-cyan-300">{loc.locationId}</td>
+                                <td className="py-2.5 px-3">{loc.name}</td>
+                                <td className="py-2.5 px-3 text-slate-400">{loc.tileId}</td>
+                                <td className="py-2.5 px-3 font-bold">{loc.exposureScore.toFixed(2)}°C</td>
+                                <td className="py-2.5 px-3">
+                                  {loc.deltaVsBest === 0 ? (
+                                    <span className="text-emerald-400 font-bold">0.00°C (Best)</span>
+                                  ) : (
+                                    <span className="text-amber-400 font-bold">+{loc.deltaVsBest.toFixed(2)}°C</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      loc.rank === 1
+                                        ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/50 text-[10px]'
+                                        : 'bg-slate-900 text-slate-400 border-slate-700 text-[10px]'
+                                    }
+                                  >
+                                    {loc.rank === 1 ? 'Optimal' : 'Feasible'}
+                                  </Badge>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </TabsContent>
+                  )}
+
+                  {/* Tab 3: Temporal Sliding Windows */}
                   {decision && (
                     <TabsContent value="temporal-ranking" className="pt-3">
                       <div className="overflow-x-auto">
@@ -453,7 +559,7 @@ export default function WorkspacePage() {
                                 <td className="py-2 px-3 font-bold">#{rw.rank}</td>
                                 <td className="py-2 px-3">{rw.windowId}</td>
                                 <td className="py-2 px-3">
-                                  {new Date(rw.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} - {new Date(rw.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
+                                  {new Date(rw.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} – {new Date(rw.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                                 </td>
                                 <td className="py-2 px-3 font-bold">{rw.exposureScore.toFixed(1)}°C</td>
                                 <td className="py-2 px-3">
@@ -469,7 +575,7 @@ export default function WorkspacePage() {
                     </TabsContent>
                   )}
 
-                  {/* Tab 3: Data Provenance & Epistemic Boundary */}
+                  {/* Tab 4: Data Provenance & Epistemic Boundary */}
                   <TabsContent value="provenance" className="pt-3 space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                       <div className="bg-slate-950 p-3 rounded border border-cyan-500/30 space-y-1">
@@ -478,10 +584,10 @@ export default function WorkspacePage() {
                           <span className="font-bold text-cyan-400">DATA SOURCE</span>
                         </div>
                         <p className="text-[11px] text-slate-300 font-mono">
-                          Mode: <span className="text-white font-bold">{spatialDecision.dataSource}</span> ({spatialDecision.evidenceBundle.sourceEndpoint})
+                          Mode: <span className="text-white font-bold">{jointDecision.dataSource}</span> ({jointDecision.evidenceBundle.sourceEndpoint})
                         </p>
                         <p className="text-[11px] text-slate-400">
-                          Evaluated across {spatialDecision.rankedLocations.length} spatial candidate locations within contiguous 60m mesh.
+                          Evaluated across {jointDecision.searchSpace.locationCount} spatial candidate locations and {jointDecision.searchSpace.windowCount} temporal windows ({jointDecision.searchSpace.totalEvaluatedPlans} candidate plans).
                         </p>
                       </div>
 
@@ -499,21 +605,23 @@ export default function WorkspacePage() {
                     {/* Macro Weather Feed Comparison Note */}
                     <div className="bg-slate-950/80 p-3 rounded border border-slate-800 text-xs text-slate-400 space-y-1">
                       <div className="font-bold text-slate-300 flex items-center gap-1.5">
-                        <span>ℹ️ Resolution Notice:</span>
+                        <span>ℹ️ FortyGuard Microclimate Advantage:</span>
                       </div>
                       <p className="text-[11px] leading-relaxed">
-                        Conventional macro weather feeds may not expose this 60m spatial microclimate resolution. FortyGuard provides materially different modeled thermal values across these candidate locations, enabling objective location selection.
+                        FortyGuard provides materially different modeled thermal values across candidate locations at 60m spatial resolution, enabling spatially informed location selection and joint optimization.
                       </p>
                     </div>
                   </TabsContent>
                 </Tabs>
               </CardContent>
             </Card>
-          )}
+          ) : null}
         </div>
       </div>
     </main>
   );
 }
+
+
 
 

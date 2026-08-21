@@ -1,7 +1,7 @@
 # Current Sprint — Milestone 6: Joint Spatial-Temporal Decision Model (WHERE + WHEN)
 
-**Status:** M5 COMPLETED & VERIFIED — M6 RECONNAISSANCE ACTIVE  
-**Current Milestone:** M6 — Joint Decision Model (Reconnaissance Phase)  
+**Status:** COMPLETED & VERIFIED  
+**Current Milestone:** M6 — Joint Decision Model (WHERE + WHEN)  
 **Submission Deadline:** 2026-08-30  
 **Last Updated:** 2026-08-21  
 
@@ -9,7 +9,6 @@
 
 ## 🎯 Sprint Goal
 Combine proven location selection (WHERE) and sliding window optimization (WHEN) into a unified joint decision engine evaluating the Cartesian space $\mathcal{L} \times \mathcal{W}$ to recommend the single global optimal operational deployment plan.
-
 
 ---
 
@@ -30,4 +29,11 @@ Combine proven location selection (WHERE) and sliding window optimization (WHEN)
 - [x] **Decision Route Extension (`/api/decision`):** Supports candidate arrays, validates duplicate candidate IDs/coordinates, normalizes observations per candidate with zero cross-location leakage.
 - [x] **Spatial Decision Workspace UI:** Displays 3 candidate markers on MapLibre map, highlights winning site with `★ Rank #1 Winner`, displays savings banner (`+2.20°C` savings vs worst site), and provides interactive duration recalculation.
 - [x] **Verification & Adversarial Testing:** 36 Vitest tests passing across 7 test suites (100% pass rate). Playwright smoke test verified with screenshot saved at `tests/e2e/workspace-smoke.png`.
+### Milestone 6 — Joint Spatial-Temporal Decision Model (`COMPLETED & VERIFIED`)
+- [x] **Joint Decision Domain Contract:** Implemented `CandidatePlan` and `JointDecisionResult` in `src/types/domain.ts`.
+- [x] **Exhaustive Joint Evaluator:** Implemented `evaluateJointDecision()` evaluating $\mathcal{L} \times \mathcal{W}$ using exact 3-tier deterministic ordering (lower score $\to$ earlier start $\to$ stable locationId).
+- [x] **Route Integration:** Extended `/api/decision` returning `jointDecision` with complete search-space metrics (`locationCount`, `windowCount`, `totalEvaluatedPlans`).
+- [x] **Joint Decision Workspace UI:** Prominently highlights `Recommended Operational Plan` (WHERE + WHEN), WHY THIS PLAN search-space metrics, FortyGuard Joint Advantage banner (+8.40°C delta vs worst feasible plan), and full 15-plan ranking matrix.
+- [x] **Verification & Parity Testing:** 46 Vitest tests passing across 8 test suites (100% pass rate). Playwright smoke test verified with updated screenshot.
+
 

@@ -1,5 +1,6 @@
 import type {
   CandidateLocation,
+  CandidatePlan,
   CandidateWindow,
   DecisionConstraints,
   DecisionResult,
@@ -7,6 +8,7 @@ import type {
   ExposureResult,
   ExposureModel,
   HourlyTileTemperature,
+  JointDecisionResult,
   LocationPoint,
   NormalizedThermalObservation,
   RankedLocationResult,
@@ -18,6 +20,7 @@ import {
   InfeasibleConstraintsError,
   ValidationError,
 } from '@/types/errors';
+
 
 
 export const BASELINE_MODEL_VERSION = 'v1.0.0-spatial-thermal-baseline';
@@ -386,5 +389,174 @@ export function evaluateCandidateLocations(
     },
   };
 }
+
+/**
+ * Execute joint discrete spatial-temporal decision optimization over CandidateLocation × CandidateWindow.
+ * Exhaustively evaluates every feasible plan and ranks them using strict 3-tier deterministic ordering:
+ * 1. Lower exposureScore
+ * 2. Earlier startTime
+ * 3. Stable locationId
+ */
+export function evaluateJointDecision(
+  candidates: CandidateLocation[],
+  observationsByLocation: Map<string, NormalizedThermalObservation[]>,
+  constraints: DecisionConstraints,
+  options?: {
+    dataSource?: DataSourceMode;
+    baseTimestamp?: string;
+  }
+): JointDecisionResult {
+  if (!candidates || candidates.length === 0) {
+    throw new ValidationError('At least one candidate location is required for joint decision evaluation');
+  }
+
+  // Reject duplicate candidate IDs
+  const seenIds = new Set<string>();
+  for (const cand of candidates) {
+    if (seenIds.has(cand.locationId)) {
+      throw new ValidationError(`Duplicate candidate locationId: ${cand.locationId}`);
+    }
+    seenIds.add(cand.locationId);
+  }
+
+  // Generate feasible candidate sliding windows
+  const windows = generateCandidateWindows(constraints);
+
+  // Validate +12h forecast lead time boundary from base observation time
+  const baseTimestamp = options?.baseTimestamp || constraints.allowedStart;
+  const baseTimeMs = new Date(baseTimestamp).getTime();
+  const maxAllowedForecastMs = baseTimeMs + 12 * 3600 * 1000;
+
+  for (const win of windows) {
+    const endMs = new Date(win.endTime).getTime();
+    if (endMs > maxAllowedForecastMs) {
+      throw new IncompleteTemporalCoverageError(
+        `Candidate window ${win.windowId} end time (${win.endTime}) exceeds +12h verified forecast limit from base time (${baseTimestamp})`
+      );
+    }
+  }
+
+  const evaluator = new BaselineSpatialThermalEvaluator();
+  const evaluatedPlans: Array<{
+    location: CandidateLocation;
+    window: CandidateWindow;
+    score: number;
+    tileId: string | number;
+    thermalValues: HourlyTileTemperature[];
+  }> = [];
+
+  let detectedDataSource: DataSourceMode = options?.dataSource || 'FIXTURE';
+  let firstEndpoint = '/v1/heatmap';
+
+  // Evaluate Cartesian product: CandidateLocation × CandidateWindow
+  for (const cand of candidates) {
+    const allLocObs = observationsByLocation.get(cand.locationId);
+    if (!allLocObs || allLocObs.length === 0) {
+      throw new IncompleteTemporalCoverageError(`No thermal observations provided for candidate ${cand.locationId}`);
+    }
+
+    if (allLocObs[0]) {
+      detectedDataSource = allLocObs[0].dataSource;
+      firstEndpoint = allLocObs[0].sourceEndpoint;
+    }
+
+    for (const win of windows) {
+      const winStartMs = new Date(win.startTime).getTime();
+      const winEndMs = new Date(win.endTime).getTime();
+
+      const inWinObs = allLocObs.filter((obs) => {
+        const obsMs = new Date(obs.timestamp).getTime();
+        return obsMs >= winStartMs && obsMs < winEndMs;
+      });
+
+      if (inWinObs.length === 0) {
+        throw new IncompleteTemporalCoverageError(
+          `Missing hourly observations for candidate ${cand.locationId} in window ${win.windowId} (${win.startTime} to ${win.endTime})`
+        );
+      }
+
+      const evalResult = evaluator.evaluate(inWinObs, win);
+
+      const thermalValues: HourlyTileTemperature[] = inWinObs.map((obs) => ({
+        timestamp: obs.timestamp,
+        temperatureCelsius: obs.metrics.temperatureCelsius,
+        provenance: 'DERIVED',
+        tileId: obs.selectedTileId,
+        evidenceReference: obs.sourceEndpoint,
+      }));
+
+      evaluatedPlans.push({
+        location: cand,
+        window: win,
+        score: evalResult.score,
+        tileId: inWinObs[0]?.selectedTileId || 'unknown',
+        thermalValues,
+      });
+    }
+  }
+
+  // Strict 3-tier deterministic ordering:
+  // 1. Lower exposureScore
+  // 2. Earlier startTime
+  // 3. Stable locationId
+  evaluatedPlans.sort((a, b) => {
+    // 1. Exposure score (ascending)
+    if (a.score !== b.score) {
+      return a.score - b.score;
+    }
+
+    // 2. Start time (chronological ascending)
+    const timeDiff = new Date(a.window.startTime).getTime() - new Date(b.window.startTime).getTime();
+    if (timeDiff !== 0) {
+      return timeDiff;
+    }
+
+    // 3. Stable locationId (alphabetical ascending)
+    return a.location.locationId.localeCompare(b.location.locationId);
+  });
+
+  const bestScore = evaluatedPlans[0].score;
+
+  const rankedPlans: CandidatePlan[] = evaluatedPlans.map((item, idx) => ({
+    planId: `plan-${String(idx + 1).padStart(3, '0')}`,
+    rank: idx + 1,
+    location: item.location,
+    window: item.window,
+    tileId: item.tileId,
+    exposureScore: item.score,
+    deltaVsBest: Number((item.score - bestScore).toFixed(2)),
+    status: idx === 0 ? 'Optimal' : 'Feasible',
+    thermalValues: item.thermalValues,
+  }));
+
+  const totalEvaluatedHours = windows.length + constraints.durationHours - 1;
+
+  return {
+    decisionType: 'JOINT_SPATIAL_TEMPORAL_PLAN',
+    recommendedPlan: rankedPlans[0],
+    rankedPlans,
+    searchSpace: {
+      locationCount: candidates.length,
+      windowCount: windows.length,
+      totalEvaluatedPlans: rankedPlans.length,
+    },
+    dataSource: detectedDataSource,
+    modelVersion: BASELINE_MODEL_VERSION,
+    spatialFieldMetadata: {
+      baseTimestamp,
+      coverageType: 'BASE_TIMESTAMP_SNAPSHOT',
+      totalEvaluatedHours,
+      description: 'Spatial thermal surface represents the initial observation snapshot (t₀)',
+    },
+    evidenceBundle: {
+      candidateCount: candidates.length,
+      windowCount: windows.length,
+      sourceEndpoint: firstEndpoint,
+      dataSource: detectedDataSource,
+      provenance: 'DERIVED',
+    },
+  };
+}
+
 
 

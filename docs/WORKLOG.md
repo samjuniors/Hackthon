@@ -174,3 +174,39 @@
 - **Next.js Production Build (`pnpm build`):** Clean (5 static/dynamic pages compiled cleanly).
 - **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (8.6s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
 
+---
+
+# Engineering Worklog — Milestone 6 / Joint Decision Model Report
+
+**Date:** 2026-08-21  
+**Milestone:** Milestone 6 — Joint Spatial-Temporal Decision Model (WHERE + WHEN)  
+**Status:** COMPLETED & VERIFIED  
+
+---
+
+## 1. What Was Implemented
+- **Joint Decision Domain Contract (`src/types/domain.ts`):** Implemented `CandidatePlan` and `JointDecisionResult` evaluating the Cartesian search space $\mathcal{L} \times \mathcal{W}$.
+- **Deterministic Joint Evaluator (`src/lib/decision-engine/evaluator.ts`):** Implemented `evaluateJointDecision()`. Exhaustively evaluates every feasible plan ($E(L_i, W_j) = \frac{1}{|W_j|}\sum T(L_i, t)$) using the exact 3-tier deterministic ordering:
+  1. Lower `exposureScore`
+  2. Earlier `startTime`
+  3. Stable `locationId`
+- **Route Integration (`src/app/api/decision/route.ts`):** Returns `jointDecision` with complete search-space metrics (`locationCount`, `windowCount`, `totalEvaluatedPlans`) alongside `spatialDecision` and `decision`.
+- **Joint Decision Workspace UI (`src/app/page.tsx`):**
+  - Displays primary `Recommended Operational Plan` card (WHERE + WHEN) showing optimal site (`LOC-A - Battery Park`), time window (`08:00 AM – 10:00 AM UTC`), and modeled exposure (`29.15°C`).
+  - Displays WHY THIS PLAN search-space metrics (3 Locations $\times$ 5 Windows $=$ 15 Plans).
+  - Displays FortyGuard Joint Advantage banner showing $+8.40^\circ\text{C}$ modeled exposure delta avoided vs worst feasible plan.
+  - Renders 15-plan candidate ranking table with rank, location, time window, tile ID, modeled exposure, and $\Delta$ vs best.
+- **Automated Verification & E2E Tests (`tests/joint_decision.test.ts` & `tests/e2e/smoke.test.ts`):**
+  - Added 10 comprehensive tests verifying Cartesian enumeration, global optimum, exposure scores, deltas, tie-breaking, missing data errors, horizon limits, LIVE/FIXTURE parity, and dynamic scenario recalculation.
+  - Playwright smoke test verifies full UI flow and re-captures clean screenshot at `tests/e2e/workspace-smoke.png`.
+
+---
+
+## 2. Test & Verification Results
+- **Vitest Unit & Parity Tests (`pnpm test`):** 8 test suites passed, 46 unit tests passed (100% pass rate).
+- **TypeScript Typecheck (`pnpm typecheck`):** Clean (0 errors).
+- **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
+- **Next.js Production Build (`pnpm build`):** Clean (5 static/dynamic pages compiled cleanly).
+- **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (10.6s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
+
+

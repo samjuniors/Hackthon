@@ -179,4 +179,47 @@ export interface SpatialDecisionResult {
   };
 }
 
+// ==========================================
+// Milestone 6: Joint Decision Domain Types
+// ==========================================
+
+export interface CandidatePlan {
+  planId: string;
+  rank: number;
+  location: CandidateLocation;
+  window: CandidateWindow;
+  tileId: string | number;
+  exposureScore: number;
+  deltaVsBest: number;
+  status: 'Optimal' | 'Feasible' | 'Infeasible';
+  thermalValues: HourlyTileTemperature[];
+}
+
+export interface JointDecisionResult {
+  decisionType: 'JOINT_SPATIAL_TEMPORAL_PLAN';
+  recommendedPlan: CandidatePlan;
+  rankedPlans: CandidatePlan[];
+  searchSpace: {
+    locationCount: number;
+    windowCount: number;
+    totalEvaluatedPlans: number;
+  };
+  dataSource: DataSourceMode;
+  modelVersion: 'v1.0.0-spatial-thermal-baseline';
+  spatialFieldMetadata: {
+    baseTimestamp: string;
+    coverageType: 'BASE_TIMESTAMP_SNAPSHOT';
+    totalEvaluatedHours: number;
+    description: string;
+  };
+  evidenceBundle: {
+    candidateCount: number;
+    windowCount: number;
+    sourceEndpoint: string;
+    dataSource: DataSourceMode;
+    provenance: 'DERIVED';
+  };
+}
+
+
 

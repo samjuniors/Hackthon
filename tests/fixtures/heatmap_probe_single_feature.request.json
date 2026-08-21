@@ -1,0 +1,98 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "GATE 4 — polygon_aoi must be a single GeoJSON Feature",
+  "probe": "single-feature",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "Feature",
+      "properties": {},
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -74.01074049942717,
+              40.70920675530004
+            ],
+            [
+              -74.00125950057283,
+              40.70920675530004
+            ],
+            [
+              -74.00125950057283,
+              40.716393244699965
+            ],
+            [
+              -74.01074049942717,
+              40.716393244699965
+            ],
+            [
+              -74.01074049942717,
+              40.70920675530004
+            ]
+          ]
+        ]
+      }
+    },
+    "date_time": {
+      "start_date": "2026-08-21",
+      "start_time": "07:00",
+      "filter_type": 1
+    },
+    "granularity": 60
+  },
+  "intendedUtcHour": "2026-08-21T07:00:00.000Z",
+  "activityId": "bf1fea6f-6f12-4748-8b24-1d4f42e20391",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 557
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 548
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 494
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 516
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 552
+    },
+    {
+      "attempt": 6,
+      "httpStatus": 200,
+      "status": "Completed",
+      "elapsedMs": 925
+    }
+  ],
+  "responseSummary": {
+    "featureCount": 0,
+    "nCells": 0,
+    "statsKeys": [
+      "activity_id",
+      "n_cells"
+    ],
+    "samplePropertyKeys": [],
+    "sampleProperties": null,
+    "sampleGeometryType": null,
+    "sampleRing": null
+  },
+  "capturedAt": "2026-08-21T05:50:47.833Z"
+}

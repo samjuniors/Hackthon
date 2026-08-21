@@ -1,0 +1,88 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "GATE 4 — both the wrapper shape and the area were wrong",
+  "probe": "large-bare-100",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [
+            -74.04155374570375,
+            40.68585066475027
+          ],
+          [
+            -73.97044625429625,
+            40.68585066475027
+          ],
+          [
+            -73.97044625429625,
+            40.73974933524973
+          ],
+          [
+            -74.04155374570375,
+            40.73974933524973
+          ],
+          [
+            -74.04155374570375,
+            40.68585066475027
+          ]
+        ]
+      ]
+    },
+    "date_time": {
+      "start_date": "2026-08-21",
+      "start_time": "07:00",
+      "filter_type": 1
+    },
+    "granularity": 100
+  },
+  "intendedUtcHour": "2026-08-21T07:00:00.000Z",
+  "activityId": "dc8ce8a5-22e4-45d9-abf1-45476644056e",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 491
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 526
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 609
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 526
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Completed",
+      "elapsedMs": 835
+    }
+  ],
+  "responseSummary": {
+    "featureCount": 0,
+    "nCells": 0,
+    "statsKeys": [
+      "activity_id",
+      "n_cells"
+    ],
+    "samplePropertyKeys": [],
+    "sampleProperties": null,
+    "sampleGeometryType": null,
+    "sampleRing": null
+  },
+  "capturedAt": "2026-08-21T05:51:49.640Z"
+}

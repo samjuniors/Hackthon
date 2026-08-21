@@ -1,0 +1,104 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "GATE 4 — confirm coverage finding at a second metropolitan area",
+  "probe": "coverage-dxb",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  55.24101486293235,
+                  25.177850664750267
+                ],
+                [
+                  55.30058513706765,
+                  25.177850664750267
+                ],
+                [
+                  55.30058513706765,
+                  25.23174933524973
+                ],
+                [
+                  55.24101486293235,
+                  25.23174933524973
+                ],
+                [
+                  55.24101486293235,
+                  25.177850664750267
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "date_time": {
+      "start_date": "2026-08-21",
+      "start_time": "07:00",
+      "filter_type": 1
+    },
+    "granularity": 100,
+    "analytic_type": "tcm"
+  },
+  "intendedUtcHour": "2026-08-21T07:00:00.000Z",
+  "activityId": "86fc8168-ae8c-4c00-bafd-ced036ca7020",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 787
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 568
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 799
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 534
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 733
+    },
+    {
+      "attempt": 6,
+      "httpStatus": 200,
+      "status": "Completed",
+      "elapsedMs": 785
+    }
+  ],
+  "responseSummary": {
+    "featureCount": 0,
+    "nCells": 0,
+    "statsKeys": [
+      "activity_id",
+      "n_cells"
+    ],
+    "samplePropertyKeys": [],
+    "sampleProperties": null,
+    "sampleGeometryType": null,
+    "sampleRing": null
+  },
+  "capturedAt": "2026-08-21T06:00:07.260Z"
+}

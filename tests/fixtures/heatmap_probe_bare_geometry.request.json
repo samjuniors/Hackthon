@@ -1,0 +1,88 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "GATE 4 — polygon_aoi must be a bare GeoJSON Polygon geometry, not a FeatureCollection",
+  "probe": "bare-geometry",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [
+            -74.01074049942717,
+            40.70920675530004
+          ],
+          [
+            -74.00125950057283,
+            40.70920675530004
+          ],
+          [
+            -74.00125950057283,
+            40.716393244699965
+          ],
+          [
+            -74.01074049942717,
+            40.716393244699965
+          ],
+          [
+            -74.01074049942717,
+            40.70920675530004
+          ]
+        ]
+      ]
+    },
+    "date_time": {
+      "start_date": "2026-08-21",
+      "start_time": "07:00",
+      "filter_type": 1
+    },
+    "granularity": 60
+  },
+  "intendedUtcHour": "2026-08-21T07:00:00.000Z",
+  "activityId": "6a32b58e-732f-40aa-981b-40174974df54",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 698
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 523
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 549
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 584
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Completed",
+      "elapsedMs": 819
+    }
+  ],
+  "responseSummary": {
+    "featureCount": 0,
+    "nCells": 0,
+    "statsKeys": [
+      "activity_id",
+      "n_cells"
+    ],
+    "samplePropertyKeys": [],
+    "sampleProperties": null,
+    "sampleGeometryType": null,
+    "sampleRing": null
+  },
+  "capturedAt": "2026-08-21T05:50:25.381Z"
+}

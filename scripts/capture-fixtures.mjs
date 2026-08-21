@@ -35,7 +35,7 @@
  *   `all` performs 5 billable calls (~10,000 credits).
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -90,6 +90,45 @@ function utcHour(plusHours = 0) {
     date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
     time: `${pad(d.getUTCHours())}:00`,
     iso: d.toISOString(),
+  };
+}
+
+/** A specific UTC hour on a date `daysBack` before today. */
+function pastDayHour(daysBack, utcHourOfDay) {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - daysBack);
+  d.setUTCMinutes(0, 0, 0);
+  d.setUTCHours(utcHourOfDay);
+  return {
+    start_date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
+    start_time: `${pad(utcHourOfDay)}:00`,
+    filter_type: 1,
+  };
+}
+
+/** Noon UTC on a date `daysBack` before today. */
+function pastDayNoon(daysBack) {
+  return pastDayHour(daysBack, 12);
+}
+
+/**
+ * Rectangular AOI polygon around a centre point, with independent half-extents.
+ * The candidate sites span ~1.7 km of longitude but share one latitude, so a
+ * rectangle covers them with far fewer tiles than the enclosing square.
+ */
+function rectAoi(latitude, longitude, halfLonMetres, halfLatMetres) {
+  const dLat = halfLatMetres / 111320;
+  const dLon = halfLonMetres / (111320 * Math.cos((latitude * Math.PI) / 180));
+  const ring = [
+    [longitude - dLon, latitude - dLat],
+    [longitude + dLon, latitude - dLat],
+    [longitude + dLon, latitude + dLat],
+    [longitude - dLon, latitude + dLat],
+    [longitude - dLon, latitude - dLat],
+  ];
+  return {
+    type: "FeatureCollection",
+    features: [{ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } }],
   };
 }
 
@@ -322,12 +361,374 @@ async function captureGate3Sweep(temperatures = [24, 38]) {
   return probes;
 }
 
+/**
+ * GATE 4 — why does a Completed /v1/heatmap return `n_cells: 0`?
+ *
+ * The baseline capture (heatmap_ft1_raw.json) reached status `Completed` and
+ * still returned `map_data.features: []` with `stats_data.n_cells: 0`. A
+ * Completed-but-empty result narrows the cause to how the request describes the
+ * area, not to auth, timing, or coverage. Each variant below changes exactly one
+ * thing so the responsible parameter is identifiable from the response alone.
+ *
+ * Each probe is a billable call (~4,200 credits observed). Variants are ordered
+ * cheapest-hypothesis-first; stop as soon as one returns cells.
+ */
+function bareGeometry(latitude, longitude, halfSideMetres) {
+  return squareAoi(latitude, longitude, halfSideMetres).features[0].geometry;
+}
+
+function singleFeature(latitude, longitude, halfSideMetres) {
+  return squareAoi(latitude, longitude, halfSideMetres).features[0];
+}
+
+const HEATMAP_PROBES = {
+  // H1: is `polygon_aoi` expected to be a bare Polygon geometry rather than a
+  // FeatureCollection? A misread wrapper would intersect zero cells.
+  "bare-geometry": {
+    hypothesis: "polygon_aoi must be a bare GeoJSON Polygon geometry, not a FeatureCollection",
+    aoi: () => bareGeometry(CENTRE.latitude, CENTRE.longitude, 400),
+    granularity: 60,
+  },
+  // H2: is a single Feature accepted where a FeatureCollection is not?
+  "single-feature": {
+    hypothesis: "polygon_aoi must be a single GeoJSON Feature",
+    aoi: () => singleFeature(CENTRE.latitude, CENTRE.longitude, 400),
+    granularity: 60,
+  },
+  // H3: is the 800m AOI simply below the minimum area that yields a cell at
+  // granularity 60? Same wrapper as the baseline, larger area only.
+  "large-aoi-60": {
+    hypothesis: "800m AOI is below the minimum area for granularity 60",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 60,
+  },
+  // H4: does the coarsest granularity produce cells where 60 does not?
+  "large-aoi-100": {
+    hypothesis: "granularity 60 is unsupported for this AOI; 100 is the coarsest documented value",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 100,
+  },
+  // H5: combined — larger area AND bare geometry.
+  "large-bare-100": {
+    hypothesis: "both the wrapper shape and the area were wrong",
+    aoi: () => bareGeometry(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 100,
+  },
+  // H6: docs/FORTYGUARD.md records an `analytic_type` parameter (tcm,
+  // time_of_measure, exceedance, persistence) that no request has ever sent.
+  // A solver with no analytic selected may legitimately emit zero cells.
+  "tcm-analytic": {
+    hypothesis: "analytic_type is required to select a solver; omitting it yields zero cells",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 100,
+    analyticType: "tcm",
+  },
+  // H7: is New York simply outside FortyGuard's modeled coverage? Probe a
+  // different metropolitan area with an otherwise identical request. If cells
+  // return here but not for NYC, the constraint is geographic, not structural.
+  "coverage-auh": {
+    hypothesis: "NYC is outside modeled coverage; the request itself is well-formed",
+    aoi: () => squareAoi(24.4539, 54.3773, 3000), // Abu Dhabi
+    granularity: 100,
+    analyticType: "tcm",
+  },
+  "coverage-dxb": {
+    hypothesis: "confirm coverage finding at a second metropolitan area",
+    aoi: () => squareAoi(25.2048, 55.2708, 3000), // Dubai
+    granularity: 100,
+    analyticType: "tcm",
+  },
+  // H8: every probe so far requested a FUTURE hour (+2h). If the tile surface is
+  // produced from completed model runs, a forecast hour may legitimately have no
+  // cells while a past hour does. Vary ONLY the timestamp.
+  "past-hour": {
+    hypothesis: "future timestamps have no completed model run; a past hour does",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 100,
+    dateTime: () => {
+      const h = utcHour(-6);
+      return { start_date: h.date, start_time: h.time, filter_type: 1 };
+    },
+  },
+  "past-week": {
+    hypothesis: "only well-settled historical dates have tile surfaces",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 100,
+    dateTime: () => {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - 7);
+      d.setUTCMinutes(0, 0, 0);
+      d.setUTCHours(12);
+      return {
+        start_date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
+        start_time: "12:00",
+        filter_type: 1,
+      };
+    },
+  },
+  // GATE 5 — "past-week" proved tile surfaces exist for settled historical dates.
+  // These probes bound the two parameters the adapter actually hardcodes:
+  // how recent a date still returns cells, and whether granularity 60 works at all.
+  // stopOnSuccess:false so the sweep maps the whole boundary instead of short-circuiting.
+  "g60-past": {
+    hypothesis: "granularity 60 (hardcoded by the LIVE adapter) also returns cells on a settled date",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 60,
+    dateTime: () => pastDayNoon(7),
+    stopOnSuccess: false,
+  },
+  "g80-past": {
+    hypothesis: "granularity 80 also returns cells on a settled date",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 80,
+    dateTime: () => pastDayNoon(7),
+    stopOnSuccess: false,
+  },
+  "back-1d": {
+    hypothesis: "data is available 1 day back",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 100,
+    dateTime: () => pastDayNoon(1),
+    stopOnSuccess: false,
+  },
+  "back-2d": {
+    hypothesis: "data is available 2 days back",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 100,
+    dateTime: () => pastDayNoon(2),
+    stopOnSuccess: false,
+  },
+  "back-3d": {
+    hypothesis: "data is available 3 days back",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 100,
+    dateTime: () => pastDayNoon(3),
+    stopOnSuccess: false,
+  },
+  // GATE 6 — the AOI the product actually needs: one polygon containing ALL THREE
+  // candidate locations (LOC-A -74.0080, LOC-B -73.9980, LOC-C -73.9880 @ 40.7120),
+  // small enough that a 12-hour fixture stays a reasonable size.
+  "candidate-aoi": {
+    hypothesis: "a 1200m half-side AOI centred on LOC-B returns cells and contains all three candidates",
+    aoi: () => squareAoi(40.712, -73.998, 1200),
+    granularity: 100,
+    dateTime: () => pastDayNoon(7),
+    stopOnSuccess: false,
+  },
+  "candidate-rect": {
+    hypothesis: "a 2200m x 800m rectangular AOI still contains all three candidates with ~1/3 the tiles",
+    aoi: () => rectAoi(40.712, -73.998, 1100, 400),
+    granularity: 100,
+    dateTime: () => pastDayNoon(7),
+    stopOnSuccess: false,
+  },
+  // H9: filter_type 1 may not be the shape that emits tiles at all. The only
+  // other verified-submittable variant is the multi-hour range.
+  "range-past": {
+    hypothesis: "tile surfaces are only emitted for multi-hour ranges (filter_type 2)",
+    aoi: () => squareAoi(CENTRE.latitude, CENTRE.longitude, 3000),
+    granularity: 100,
+    dateTime: () => {
+      const start = utcHour(-6);
+      const end = utcHour(-2);
+      return {
+        start_date: start.date,
+        start_time: start.time,
+        end_date: end.date,
+        end_time: end.time,
+        filter_type: 2,
+      };
+    },
+  },
+};
+
+/** Count tiles in whatever shape the response returns them. */
+function summarizeHeatmapResult(body) {
+  const result = body?.data?.result ?? {};
+  const mapData = result.map_data ?? result;
+  const features = Array.isArray(mapData?.features) ? mapData.features : [];
+  const stats = result.stats_data ?? {};
+  const sampleProps = features[0]?.properties ?? null;
+  return {
+    featureCount: features.length,
+    nCells: stats.n_cells ?? null,
+    statsKeys: Object.keys(stats),
+    samplePropertyKeys: sampleProps ? Object.keys(sampleProps) : [],
+    sampleProperties: sampleProps,
+    sampleGeometryType: features[0]?.geometry?.type ?? null,
+    sampleRing: features[0]?.geometry?.coordinates?.[0] ?? null,
+  };
+}
+
+async function captureHeatmapProbe() {
+  const requested = process.argv.slice(3);
+  const names = requested.length > 0 ? requested : Object.keys(HEATMAP_PROBES);
+
+  log("\n[heatmap-probe] GATE 4 — diagnosing Completed-but-empty heatmap responses");
+  const summaries = [];
+
+  for (const name of names) {
+    const probe = HEATMAP_PROBES[name];
+    if (!probe) {
+      console.error(`unknown probe "${name}". known: ${Object.keys(HEATMAP_PROBES).join(", ")}`);
+      process.exit(1);
+    }
+
+    log(`\n  --- probe ${name} — ${probe.hypothesis}`);
+    const hour = utcHour(2);
+    const request = {
+      polygon_aoi: probe.aoi(),
+      date_time: probe.dateTime
+        ? probe.dateTime()
+        : { start_date: hour.date, start_time: hour.time, filter_type: 1 },
+      granularity: probe.granularity,
+      ...(probe.analyticType ? { analytic_type: probe.analyticType } : {}),
+    };
+
+    const result = await submitAndPoll("/v1/heatmap", request);
+    const body = result.final?.body ?? { __submitOnly: result.submit.body };
+    const summary = summarizeHeatmapResult(body);
+
+    save(`heatmap_probe_${name.replace(/-/g, "_")}`, body, {
+      endpoint: "/v1/heatmap",
+      gate: `GATE 4 — ${probe.hypothesis}`,
+      probe: name,
+      requestBody: request,
+      intendedUtcHour: hour.iso,
+      activityId: result.activityId ?? null,
+      submitHttpStatus: result.submit.status,
+      polls: result.polls,
+      responseSummary: summary,
+      capturedAt: new Date().toISOString(),
+    });
+
+    log(`      features: ${summary.featureCount}  n_cells: ${summary.nCells}`);
+    if (summary.samplePropertyKeys.length > 0) {
+      log(`      tile properties: ${summary.samplePropertyKeys.join(", ")}`);
+      log(`      first tile: ${JSON.stringify(summary.sampleProperties)}`);
+    }
+
+    summaries.push({ name, ...summary });
+
+    if (summary.featureCount > 0 && probe.stopOnSuccess !== false) {
+      log(`\n  ✅ probe "${name}" returned ${summary.featureCount} tiles — hypothesis confirmed, stopping sweep.`);
+      break;
+    }
+  }
+
+  log("\n  probe summary:");
+  for (const s of summaries) {
+    log(`    ${s.name.padEnd(18)} features=${String(s.featureCount).padEnd(5)} n_cells=${s.nCells}`);
+  }
+  return summaries;
+}
+
 /* ------------------------------------------------------------------ main --- */
+
+/**
+ * GATE 6 — capture the canonical multi-hour thermal surface used by FIXTURE mode.
+ *
+ * Empirically established constraints this configuration satisfies:
+ *  - `/v1/heatmap` returns cells ONLY for settled historical dates. Future hours and
+ *    the most recent ~12-24h return `features: []`. The date below is therefore fixed.
+ *  - `granularity` is the tile edge length in metres (verified: 60 -> ~60.6m,
+ *    80 -> ~80.6m, 100 -> ~101.0m).
+ *  - The rectangular AOI contains all three evaluated candidate sites, so no candidate
+ *    is ever mapped outside coverage.
+ *
+ * Every `aoi` written to the fixture is the VERBATIM `map_data` FeatureCollection from
+ * the API response. No value is computed, smoothed, interpolated or substituted.
+ */
+const HOURLY_SURFACE = {
+  date: "2026-08-14",
+  hours: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  granularity: 100,
+  centre: { latitude: 40.712, longitude: -73.998 },
+  halfLonMetres: 1100,
+  halfLatMetres: 400,
+};
+
+async function captureHourlySurface() {
+  const { date, hours, granularity, centre, halfLonMetres, halfLatMetres } = HOURLY_SURFACE;
+  const aoi = rectAoi(centre.latitude, centre.longitude, halfLonMetres, halfLatMetres);
+
+  log(`\n[hourly-surface] capturing ${hours.length} real hourly tile surfaces for ${date} (granularity ${granularity}m)`);
+
+  const snapshots = [];
+  for (const h of hours) {
+    const time = `${pad(h)}:00`;
+    const timestamp = `${date}T${time}:00.000Z`;
+    const request = {
+      polygon_aoi: aoi,
+      date_time: { start_date: date, start_time: time, filter_type: 1 },
+      granularity,
+    };
+
+    log(`\n  --- ${timestamp}`);
+    const result = await submitAndPoll("/v1/heatmap", request);
+    const body = result.final?.body;
+    const mapData = body?.data?.result?.map_data;
+    const stats = body?.data?.result?.stats_data ?? null;
+    const featureCount = Array.isArray(mapData?.features) ? mapData.features.length : 0;
+
+    if (featureCount === 0) {
+      console.error(
+        `\n  ABORT: ${timestamp} returned 0 tiles. A fixture hour will NOT be fabricated.\n` +
+          `  Re-run with a different date/hour, or shorten the hour list. Nothing was written.`
+      );
+      process.exit(1);
+    }
+
+    log(`      tiles: ${featureCount}  activity: ${result.activityId}`);
+
+    snapshots.push({
+      timestamp,
+      aoi: mapData,
+      statsData: stats,
+      capture: {
+        endpoint: "/v1/heatmap",
+        requestBody: request,
+        activityId: result.activityId ?? null,
+        submitHttpStatus: result.submit.status,
+        polls: result.polls,
+        responseStatus: body?.data?.status ?? null,
+        responseMessage: body?.message ?? null,
+        tileCount: featureCount,
+        capturedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  const fixture = {
+    description:
+      `Captured FortyGuard /v1/heatmap tile surfaces — ${hours.length} consecutive UTC hours ` +
+      `on ${date} over a ${halfLonMetres * 2}m x ${halfLatMetres * 2}m AOI centred at ` +
+      `${centre.latitude}, ${centre.longitude}. Each hourly 'aoi' is the verbatim map_data ` +
+      `FeatureCollection returned by the API.`,
+    provenance: "CAPTURED_FROM_LIVE_API",
+    source: "FortyGuard /v1/heatmap (async activity_id + /v1/status polling)",
+    captureScript: "scripts/capture-fixtures.mjs hourly-surface",
+    capturedAt: new Date().toISOString(),
+    granularityMetres: granularity,
+    tilePropertyKeys: ["tile_id", "average_temperature", "min_temperature", "max_temperature"],
+    aoiRequested: aoi,
+    hourlySnapshots: snapshots,
+  };
+
+  const outPath = resolve(FIXTURES, "heatmap_hourly_captured.json");
+  mkdirSync(FIXTURES, { recursive: true });
+  writeFileSync(outPath, JSON.stringify(fixture, null, 2) + "\n", "utf8");
+  log(`\n  saved tests/fixtures/heatmap_hourly_captured.json`);
+  log(`  ${snapshots.length} hours, ${snapshots[0].aoi.features.length} tiles/hour, ${(statSync(outPath).size / 1048576).toFixed(2)} MB`);
+  return fixture;
+}
 
 const COMMANDS = {
   usage: captureUsage,
   "heatmap-ft1": captureHeatmapFt1,
   "heatmap-ft2": captureHeatmapFt2,
+  "heatmap-probe": captureHeatmapProbe,
+  "hourly-surface": captureHourlySurface,
   "env-params": captureEnvParams,
   "gate3-sweep": captureGate3Sweep,
   async status() {

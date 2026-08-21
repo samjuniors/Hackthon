@@ -1,0 +1,136 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "GATE 4 — granularity 60 (hardcoded by the LIVE adapter) also returns cells on a settled date",
+  "probe": "g60-past",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -74.04155374570375,
+                  40.68585066475027
+                ],
+                [
+                  -73.97044625429625,
+                  40.68585066475027
+                ],
+                [
+                  -73.97044625429625,
+                  40.73974933524973
+                ],
+                [
+                  -74.04155374570375,
+                  40.73974933524973
+                ],
+                [
+                  -74.04155374570375,
+                  40.68585066475027
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "date_time": {
+      "start_date": "2026-08-14",
+      "start_time": "12:00",
+      "filter_type": 1
+    },
+    "granularity": 60
+  },
+  "intendedUtcHour": "2026-08-21T08:00:00.000Z",
+  "activityId": "d4900904-31d5-4e8c-bd26-a26f98ca7842",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1111
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 911
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 556
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 557
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 554
+    },
+    {
+      "attempt": 6,
+      "httpStatus": 200,
+      "status": "Completed",
+      "elapsedMs": 5499
+    }
+  ],
+  "responseSummary": {
+    "featureCount": 6224,
+    "nCells": null,
+    "statsKeys": [
+      "temperature_stats",
+      "overall_temperature_distribution",
+      "normal_temperature_distribution",
+      "temperature_frequency"
+    ],
+    "samplePropertyKeys": [
+      "tile_id",
+      "average_temperature",
+      "min_temperature",
+      "max_temperature"
+    ],
+    "sampleProperties": {
+      "tile_id": 0,
+      "average_temperature": 29.1698,
+      "min_temperature": 29.1698,
+      "max_temperature": 29.1698
+    },
+    "sampleGeometryType": "Polygon",
+    "sampleRing": [
+      [
+        -74.02652782159315,
+        40.68579945384395
+      ],
+      [
+        -74.02581785174128,
+        40.68579346493495
+      ],
+      [
+        -74.0258099673484,
+        40.68633488368069
+      ],
+      [
+        -74.02651994294408,
+        40.68634087270343
+      ],
+      [
+        -74.02652782159315,
+        40.68579945384395
+      ]
+    ]
+  },
+  "capturedAt": "2026-08-21T06:14:23.813Z"
+}

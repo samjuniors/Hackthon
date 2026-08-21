@@ -1,0 +1,136 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "GATE 4 — a 2200m x 800m rectangular AOI still contains all three candidates with ~1/3 the tiles",
+  "probe": "candidate-rect",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -74.01103621679339,
+                  40.70840675530004
+                ],
+                [
+                  -73.98496378320662,
+                  40.70840675530004
+                ],
+                [
+                  -73.98496378320662,
+                  40.71559324469997
+                ],
+                [
+                  -74.01103621679339,
+                  40.71559324469997
+                ],
+                [
+                  -74.01103621679339,
+                  40.70840675530004
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "date_time": {
+      "start_date": "2026-08-14",
+      "start_time": "12:00",
+      "filter_type": 1
+    },
+    "granularity": 100
+  },
+  "intendedUtcHour": "2026-08-21T08:00:00.000Z",
+  "activityId": "27e8fab6-27e6-4b18-abec-e64d3c220295",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1328
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1300
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1234
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1753
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1123
+    },
+    {
+      "attempt": 6,
+      "httpStatus": 200,
+      "status": "Completed",
+      "elapsedMs": 1472
+    }
+  ],
+  "responseSummary": {
+    "featureCount": 158,
+    "nCells": null,
+    "statsKeys": [
+      "temperature_stats",
+      "overall_temperature_distribution",
+      "normal_temperature_distribution",
+      "temperature_frequency"
+    ],
+    "samplePropertyKeys": [
+      "tile_id",
+      "average_temperature",
+      "min_temperature",
+      "max_temperature"
+    ],
+    "sampleProperties": {
+      "tile_id": 0,
+      "average_temperature": 31.5902,
+      "min_temperature": 31.5902,
+      "max_temperature": 31.5902
+    },
+    "sampleGeometryType": "Polygon",
+    "sampleRing": [
+      [
+        -74.01021687486191,
+        40.708423015098916
+      ],
+      [
+        -74.00903117138033,
+        40.708412841975374
+      ],
+      [
+        -74.00901808990716,
+        40.709295207878064
+      ],
+      [
+        -74.0102038090346,
+        40.70930538131642
+      ],
+      [
+        -74.01021687486191,
+        40.708423015098916
+      ]
+    ]
+  },
+  "capturedAt": "2026-08-21T06:19:39.304Z"
+}

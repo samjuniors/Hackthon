@@ -1,0 +1,110 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "GATE 4 — NYC is outside modeled coverage; the request itself is well-formed",
+  "probe": "coverage-auh",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  54.34769493132224,
+                  24.42695066475027
+                ],
+                [
+                  54.40690506867776,
+                  24.42695066475027
+                ],
+                [
+                  54.40690506867776,
+                  24.480849335249733
+                ],
+                [
+                  54.34769493132224,
+                  24.480849335249733
+                ],
+                [
+                  54.34769493132224,
+                  24.42695066475027
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "date_time": {
+      "start_date": "2026-08-21",
+      "start_time": "07:00",
+      "filter_type": 1
+    },
+    "granularity": 100,
+    "analytic_type": "tcm"
+  },
+  "intendedUtcHour": "2026-08-21T07:00:00.000Z",
+  "activityId": "9102e24b-b3a3-4bab-8847-c05488e83166",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 486
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 494
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 601
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 779
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 751
+    },
+    {
+      "attempt": 6,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 498
+    },
+    {
+      "attempt": 7,
+      "httpStatus": 200,
+      "status": "Completed",
+      "elapsedMs": 758
+    }
+  ],
+  "responseSummary": {
+    "featureCount": 0,
+    "nCells": 0,
+    "statsKeys": [
+      "activity_id",
+      "n_cells"
+    ],
+    "samplePropertyKeys": [],
+    "sampleProperties": null,
+    "sampleGeometryType": null,
+    "sampleRing": null
+  },
+  "capturedAt": "2026-08-21T05:59:44.413Z"
+}

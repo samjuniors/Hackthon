@@ -1,0 +1,104 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "GATE 4 — analytic_type is required to select a solver; omitting it yields zero cells",
+  "probe": "tcm-analytic",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -74.04155374570375,
+                  40.68585066475027
+                ],
+                [
+                  -73.97044625429625,
+                  40.68585066475027
+                ],
+                [
+                  -73.97044625429625,
+                  40.73974933524973
+                ],
+                [
+                  -74.04155374570375,
+                  40.73974933524973
+                ],
+                [
+                  -74.04155374570375,
+                  40.68585066475027
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "date_time": {
+      "start_date": "2026-08-21",
+      "start_time": "07:00",
+      "filter_type": 1
+    },
+    "granularity": 100,
+    "analytic_type": "tcm"
+  },
+  "intendedUtcHour": "2026-08-21T07:00:00.000Z",
+  "activityId": "8c718552-d3bf-46eb-b27d-84a63cbfe858",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 664
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 804
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1104
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 499
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 489
+    },
+    {
+      "attempt": 6,
+      "httpStatus": 200,
+      "status": "Completed",
+      "elapsedMs": 772
+    }
+  ],
+  "responseSummary": {
+    "featureCount": 0,
+    "nCells": 0,
+    "statsKeys": [
+      "activity_id",
+      "n_cells"
+    ],
+    "samplePropertyKeys": [],
+    "sampleProperties": null,
+    "sampleGeometryType": null,
+    "sampleRing": null
+  },
+  "capturedAt": "2026-08-21T05:59:18.109Z"
+}

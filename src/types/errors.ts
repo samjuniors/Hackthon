@@ -54,3 +54,29 @@ export class OutsideCoverageError extends AppError {
     super(message, 'OUTSIDE_COVERAGE', 404);
   }
 }
+
+/**
+ * A tile was located for the requested point, but it carries no usable thermal value.
+ *
+ * This exists so that a missing temperature can NEVER be silently coerced to a number.
+ * A defaulted 0 °C would be the coldest possible reading and would therefore win every
+ * minimisation the decision engine performs — turning absent data into a recommendation.
+ */
+export class MissingThermalValueError extends AppError {
+  constructor(message = 'FortyGuard tile contains no usable temperature value') {
+    super(message, 'MISSING_THERMAL_VALUE', 502);
+  }
+}
+
+/**
+ * An empty tile surface was returned for a requested timestamp.
+ *
+ * `/v1/heatmap` returns HTTP 200 with `Completed` status and an EMPTY FeatureCollection
+ * for timestamps it has no model run for (verified: future hours and roughly the most
+ * recent 12-24 hours). That is a data-absence condition, not a transport success.
+ */
+export class EmptyThermalFieldError extends AppError {
+  constructor(message = 'FortyGuard returned an empty tile surface for the requested timestamp') {
+    super(message, 'EMPTY_THERMAL_FIELD', 502);
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "endpoint": "/v1/heatmap",
+  "gate": "GATE 4 — 800m AOI is below the minimum area for granularity 60",
+  "probe": "large-aoi-60",
+  "requestBody": {
+    "polygon_aoi": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -74.04155374570375,
+                  40.68585066475027
+                ],
+                [
+                  -73.97044625429625,
+                  40.68585066475027
+                ],
+                [
+                  -73.97044625429625,
+                  40.73974933524973
+                ],
+                [
+                  -74.04155374570375,
+                  40.73974933524973
+                ],
+                [
+                  -74.04155374570375,
+                  40.68585066475027
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "date_time": {
+      "start_date": "2026-08-21",
+      "start_time": "07:00",
+      "filter_type": 1
+    },
+    "granularity": 60
+  },
+  "intendedUtcHour": "2026-08-21T07:00:00.000Z",
+  "activityId": "92f7cd4d-e9aa-43f3-aa78-3659686ff570",
+  "submitHttpStatus": 200,
+  "polls": [
+    {
+      "attempt": 1,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1282
+    },
+    {
+      "attempt": 2,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 479
+    },
+    {
+      "attempt": 3,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 760
+    },
+    {
+      "attempt": 4,
+      "httpStatus": 200,
+      "status": "Processing",
+      "elapsedMs": 1536
+    },
+    {
+      "attempt": 5,
+      "httpStatus": 200,
+      "status": "Completed",
+      "elapsedMs": 859
+    }
+  ],
+  "responseSummary": {
+    "featureCount": 0,
+    "nCells": 0,
+    "statsKeys": [
+      "activity_id",
+      "n_cells"
+    ],
+    "samplePropertyKeys": [],
+    "sampleProperties": null,
+    "sampleGeometryType": null,
+    "sampleRing": null
+  },
+  "capturedAt": "2026-08-21T05:51:08.471Z"
+}

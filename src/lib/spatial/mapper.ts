@@ -1,5 +1,5 @@
 import type { LocationPoint, PolygonAOI, TileFeature } from '@/types/domain';
-import { OutsideCoverageError } from '@/types/errors';
+import { EmptyThermalFieldError, MissingThermalValueError, OutsideCoverageError } from '@/types/errors';
 
 /**
  * Ray-casting algorithm for point-in-polygon containment.
@@ -72,18 +72,40 @@ export function findTileForPoint(point: LocationPoint, aoi: PolygonAOI): TileFea
     if (isInside) {
       const props = feature.properties;
       const tileId = props.tile_id ?? idx;
-      const averageTemp = props.average_temperature ?? props.mean_temperature ?? 0;
-      const minTemp = props.min_temperature ?? averageTemp;
-      const maxTemp = props.max_temperature ?? averageTemp;
+
+      // A missing temperature is a hard failure, never a default.
+      // `?? 0` here would make an absent reading the coldest possible value, and the
+      // decision engine minimises temperature — so missing data would win every ranking.
+      const rawAverage = props.average_temperature;
+      if (rawAverage === undefined || rawAverage === null || !Number.isFinite(Number(rawAverage))) {
+        throw new MissingThermalValueError(
+          `Tile ${String(tileId)} containing point (${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}) ` +
+            `has no finite 'average_temperature' (received: ${JSON.stringify(rawAverage)})`
+        );
+      }
+
+      const averageTemp = Number(rawAverage);
+      // FortyGuard returns min == average == max per tile on every captured response.
+      // Where a bound is absent, the average is the only value the API asserts for the
+      // tile, so it is reported as the bound rather than inventing a spread.
+      const minTemp = Number.isFinite(Number(props.min_temperature)) ? Number(props.min_temperature) : averageTemp;
+      const maxTemp = Number.isFinite(Number(props.max_temperature)) ? Number(props.max_temperature) : averageTemp;
 
       return {
         tileId: String(tileId),
-        averageTemperatureCelsius: Number(averageTemp),
-        minTemperatureCelsius: Number(minTemp),
-        maxTemperatureCelsius: Number(maxTemp),
+        averageTemperatureCelsius: averageTemp,
+        minTemperatureCelsius: minTemp,
+        maxTemperatureCelsius: maxTemp,
         geometry: feature.geometry,
       };
     }
+  }
+
+  if (aoi.features.length === 0) {
+    throw new EmptyThermalFieldError(
+      `Cannot map point (${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}): ` +
+        `the thermal field contains zero tiles`
+    );
   }
 
   throw new OutsideCoverageError(

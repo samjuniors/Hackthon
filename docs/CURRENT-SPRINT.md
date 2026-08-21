@@ -1,14 +1,15 @@
-# Current Sprint — Milestone 4: Spatial Thermal Decision Surface (Vertical Slice 1)
+# Current Sprint — Milestone 6: Joint Spatial-Temporal Decision Model (WHERE + WHEN)
 
-**Status:** COMPLETED & VERIFIED  
-**Current Milestone:** M4 — Vertical Slice 1 Execution  
+**Status:** M5 COMPLETED & VERIFIED — M6 RECONNAISSANCE ACTIVE  
+**Current Milestone:** M6 — Joint Decision Model (Reconnaissance Phase)  
 **Submission Deadline:** 2026-08-30  
-**Last Updated:** 2026-08-20  
+**Last Updated:** 2026-08-21  
 
 ---
 
 ## 🎯 Sprint Goal
-Deliver an end-to-end working vertical slice combining verified FortyGuard spatial thermal intelligence with deterministic location-specific candidate window evaluation, spatial MapLibre visualization, and data provenance tracking.
+Combine proven location selection (WHERE) and sliding window optimization (WHEN) into a unified joint decision engine evaluating the Cartesian space $\mathcal{L} \times \mathcal{W}$ to recommend the single global optimal operational deployment plan.
+
 
 ---
 

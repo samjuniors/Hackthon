@@ -72,8 +72,45 @@ Where:
 
 ---
 
-## 5. Integration Dependency Resolution (`/v1/env_params`)
+## 6. Joint Spatial-Temporal Decision Model (WHERE + WHEN)
 
-- `/v1/env_params` is strictly **EXCLUDED** from the core Slice 1 decision ranking model.
-- It remains an optional enrichment layer for supplementary telemetry presentation (wet-bulb, solar irradiance, air quality).
-- Heatmap `average_temperature` is NOT passed into `/v1/env_params` as an input unless the semantic contract is explicitly verified. Status remains `UNKNOWN — VERIFY`.
+Evaluates the joint candidate space:
+
+$$\text{CandidatePlan} = \text{CandidateLocation} \times \text{CandidateWindow}$$
+
+$$P^* = \arg\min_{(L_i, W_j)} E(L_i, W_j)$$
+
+**Deterministic 3-Tier Tie-Breaking:**
+1. Lowest Mean Exposure Score ($E(L_i, W_j)$)
+2. Earlier Window Start Time ($t_{\text{start}}$)
+3. Stable Alphabetical Location ID (`locationId`)
+
+---
+
+## 7. What-If Constraint Sensitivity Engine
+
+Computes the exact mathematical Cost of an Operational Constraint:
+
+$$C = E(P') - E(P_0)$$
+
+Where:
+- $P_0$: Unconstrained global optimum across all candidate locations and feasible sliding windows.
+- $P'$: Constrained optimum under an imposed single operational restriction (e.g. `TEMPORAL_SHIFT`, `LOCATION_LOCK`, `DURATION_EXPANSION`).
+- $C$: Arithmetic mean modeled temperature increase (in °C) resulting from the constraint.
+
+---
+
+## 8. Read-Only AI Explanation & Grounding Guardrails
+
+### Core Authority Invariant:
+The deterministic decision engine is the sole mathematical authority. The AI layer acts strictly as a read-only explainer and cannot mutate, override, interpolate, or recalculate decision outputs.
+
+### Grounding Validation Boundaries:
+1. **Schema Validation:** Enforces strict Zod parsing of operational summary, comparative rationale, and epistemic notices.
+2. **Numeric Allow-List Auditor:** Extracts all numbers from generated text and verifies that every numerical value corresponds to verified numbers in the `EvidenceBundle` within strict tolerance ($\le 0.01^\circ\text{C}$).
+3. **Evidence Timestamp/Date Recognition:** Validates that mentioned timestamps, calendar years, and clock hours match verified evidence timestamps.
+4. **Negative Semantic Guardrails:** Intercepts and rejects forbidden medical, physiological, or worker safety claims (`heat stroke`, `heat stress`, `OSHA`, `hazard`).
+5. **Physical Semantics Guardrails:** Rejects unverified assertions (`2m ambient`, `land-surface temperature`, `skin temperature`, `calibrated sensor`).
+6. **Honest Epistemic Limitation:** The validator guarantees **syntactic compliance**, **numeric accuracy**, and **negative safety boundaries**. It does not perform formal natural language causal entailment theorem proving.
+7. **Deterministic Fallback:** Any validation rejection, network timeout ($>5000\text{ms}$), or missing API key immediately routes to the synchronous, zero-dependency `generateDeterministicExplanation()`.
+

@@ -40,14 +40,17 @@ const FORBIDDEN_PHYSICAL_SEMANTICS = [
  * Extracts floating point and integer numbers from text.
  */
 export function extractNumbersFromText(text: string): number[] {
+  // Normalize date separators (e.g. 2026-08-21 -> 2026 08 21) so hyphens are not parsed as negative signs
+  const sanitized = text.replace(/(\d{4})-(\d{1,2})-(\d{1,2})/g, '$1 $2 $3');
   // Match standard numbers, floats, percentages, etc.
   const regex = /[-+]?\d*\.?\d+/g;
-  const matches = text.match(regex);
+  const matches = sanitized.match(regex);
   if (!matches) return [];
   return matches
     .map((m) => Number(m))
     .filter((n) => !isNaN(n));
 }
+
 
 export interface ValidationResult {
   valid: boolean;
@@ -99,8 +102,8 @@ export function validateGroundedExplanation(
   const textNumbers = extractNumbersFromText(`${parsed.summary} ${parsed.whyThisPlan} ${parsed.constraintImpact || ''}`);
 
   for (const num of textNumbers) {
-    // Check if number matches any allowed number within a tight delta (0.05) or integer match
-    const isAllowed = allowedNumbers.some((allowed) => Math.abs(num - allowed) < 0.05);
+    // Check if number matches any allowed number within strict delta (<= 0.01)
+    const isAllowed = allowedNumbers.some((allowed) => Math.abs(num - allowed) <= 0.01);
     if (!isAllowed) {
       return {
         valid: false,
@@ -108,6 +111,7 @@ export function validateGroundedExplanation(
       };
     }
   }
+
 
   // 5. Build clean, verified DecisionExplanation
   const rec = input.jointDecision.recommendedPlan;

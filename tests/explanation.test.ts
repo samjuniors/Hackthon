@@ -253,4 +253,95 @@ describe('Milestone 8 — AI Explanation Layer & Grounding Guardrails Suite', ()
   it('14. AI cannot alter constraint cost in domain data', () => {
     expect(sampleInput.activeScenario?.costOfConstraintCelsius).toBe(2.95);
   });
+
+  describe('Numeric Precision & Date/Time Grounding Regression Tests', () => {
+    it('15. 29.15 and 29.150 pass numeric validation', () => {
+      const validMock1 = {
+        summary: 'Optimal plan at Battery Park Greenway with 29.15°C mean exposure.',
+        whyThisPlan: 'Evaluated 15 feasible candidate plans with 0 delta.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      expect(validateGroundedExplanation(validMock1, sampleInput).valid).toBe(true);
+
+      const validMock2 = {
+        summary: 'Optimal plan at Battery Park Greenway with 29.150°C mean exposure.',
+        whyThisPlan: 'Evaluated 15 feasible candidate plans with 0 delta.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      expect(validateGroundedExplanation(validMock2, sampleInput).valid).toBe(true);
+    });
+
+    it('16. 29.19 and 29.20 are rejected (tolerance <= 0.01)', () => {
+      const invalidMock1 = {
+        summary: 'Optimal plan at Battery Park Greenway with 29.19°C mean exposure.',
+        whyThisPlan: 'Evaluated 15 feasible candidate plans.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      const res1 = validateGroundedExplanation(invalidMock1, sampleInput);
+      expect(res1.valid).toBe(false);
+      expect(res1.reason).toContain('UNGROUNDED_NUMERIC_VALUE');
+
+      const invalidMock2 = {
+        summary: 'Optimal plan at Battery Park Greenway with 29.20°C mean exposure.',
+        whyThisPlan: 'Evaluated 15 feasible candidate plans.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      const res2 = validateGroundedExplanation(invalidMock2, sampleInput);
+      expect(res2.valid).toBe(false);
+      expect(res2.reason).toContain('UNGROUNDED_NUMERIC_VALUE');
+    });
+
+    it('17. 8.40 is valid; 8.44 and 8.45 are rejected', () => {
+      const validMock = {
+        summary: 'Avoids 8.40°C exposure delta.',
+        whyThisPlan: 'Evaluated 15 feasible candidate plans.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      expect(validateGroundedExplanation(validMock, sampleInput).valid).toBe(true);
+
+      const invalidMock1 = {
+        summary: 'Avoids 8.44°C exposure delta.',
+        whyThisPlan: 'Evaluated 15 feasible candidate plans.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      expect(validateGroundedExplanation(invalidMock1, sampleInput).valid).toBe(false);
+
+      const invalidMock2 = {
+        summary: 'Avoids 8.45°C exposure delta.',
+        whyThisPlan: 'Evaluated 15 feasible candidate plans.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      expect(validateGroundedExplanation(invalidMock2, sampleInput).valid).toBe(false);
+    });
+
+    it('18. Valid evidence timestamps (2026, 08, 21, 08:00, 10:00) are accepted', () => {
+      const validDateMock = {
+        summary: 'Operation planned for 2026-08-21 from 08:00 to 10:00 UTC at 29.15°C.',
+        whyThisPlan: 'Selected out of 15 candidate plans across 3 locations.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      expect(validateGroundedExplanation(validDateMock, sampleInput).valid).toBe(true);
+    });
+
+    it('19. Unknown dates and standalone fabricated numbers are rejected', () => {
+      const unknownDateMock = {
+        summary: 'Operation planned for 2024-05-12 from 08:00 to 10:00 UTC at 29.15°C.',
+        whyThisPlan: 'Selected out of 15 candidate plans.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      const res1 = validateGroundedExplanation(unknownDateMock, sampleInput);
+      expect(res1.valid).toBe(false);
+      expect(res1.reason).toContain('UNGROUNDED_NUMERIC_VALUE');
+
+      const unknownNumberMock = {
+        summary: 'Operation planned at 29.15°C with 99.9% reliability score.',
+        whyThisPlan: 'Selected out of 15 candidate plans.',
+        epistemicNotice: 'Modeled thermal baseline (v1.0.0-spatial-thermal-baseline).',
+      };
+      const res2 = validateGroundedExplanation(unknownNumberMock, sampleInput);
+      expect(res2.valid).toBe(false);
+      expect(res2.reason).toContain('UNGROUNDED_NUMERIC_VALUE');
+    });
+  });
 });
+

@@ -118,9 +118,10 @@ export class FortyGuardAdapter {
   private async submitAndPoll(
     endpoint: string,
     body: Record<string, unknown>,
-    maxAttempts = 60,
+    maxAttempts = 15,
     intervalMs = 2000
   ): Promise<FortyGuardStatusResponse> {
+
     const cacheKey = `${endpoint}:${JSON.stringify(body)}`;
     if (sessionCache.has(cacheKey)) {
       return sessionCache.get(cacheKey) as FortyGuardStatusResponse;

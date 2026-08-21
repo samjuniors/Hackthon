@@ -23,11 +23,29 @@ export function extractAllowedNumbers(input: ExplainableDecisionInput): number[]
     nums.add(plan.rank);
   }
 
-  // Hours
-  const recStart = new Date(rec.window.startTime).getUTCHours();
-  const recEnd = new Date(rec.window.endTime).getUTCHours();
-  nums.add(recStart);
-  nums.add(recEnd);
+  // Hours & Evidence Timestamps
+  const timestamps = [
+    rec.window.startTime,
+    rec.window.endTime,
+    input.jointDecision.spatialFieldMetadata?.baseTimestamp,
+  ];
+  if (input.activeScenario?.constrainedPlan) {
+    timestamps.push(input.activeScenario.constrainedPlan.window.startTime);
+    timestamps.push(input.activeScenario.constrainedPlan.window.endTime);
+  }
+
+  for (const ts of timestamps) {
+    if (ts) {
+      const d = new Date(ts);
+      if (!isNaN(d.getTime())) {
+        nums.add(d.getUTCFullYear());
+        nums.add(d.getUTCMonth() + 1);
+        nums.add(d.getUTCDate());
+        nums.add(d.getUTCHours());
+        nums.add(d.getUTCMinutes());
+      }
+    }
+  }
 
   if (input.activeScenario) {
     if (input.activeScenario.costOfConstraintCelsius !== null) {
@@ -37,14 +55,13 @@ export function extractAllowedNumbers(input: ExplainableDecisionInput): number[]
       const cPlan = input.activeScenario.constrainedPlan;
       nums.add(cPlan.exposureScore);
       nums.add(cPlan.window.durationHours);
-      nums.add(new Date(cPlan.window.startTime).getUTCHours());
-      nums.add(new Date(cPlan.window.endTime).getUTCHours());
     }
   }
 
-  // Common descriptive small numbers (1 for rank #1, 24 for daily hours)
+  // Common descriptive small numbers (1 for rank #1, 0 for delta baseline)
   nums.add(1);
   nums.add(0);
+
 
   return Array.from(nums).sort((a, b) => a - b);
 }

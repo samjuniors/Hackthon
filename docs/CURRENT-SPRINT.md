@@ -1,14 +1,14 @@
-# Current Sprint — Milestone 8: Grounded AI Explanation Layer
+# Current Sprint — Milestone 9: System Hardening & Failure States
 
 **Status:** COMPLETED & VERIFIED  
-**Current Milestone:** M8 — Grounded AI Explanation Layer  
+**Current Milestone:** M9 — System Hardening & Failure States  
 **Submission Deadline:** 2026-08-30  
 **Last Updated:** 2026-08-21  
 
 ---
 
 ## 🎯 Sprint Goal
-Integrate a strictly read-only, grounded AI explanation layer over verified deterministic decision outputs and What-If constraint sensitivity results, protected by multi-layered numeric allow-lists, forbidden medical/safety claim rejection, and zero-dependency deterministic rule-based fallback.
+Harden the entire Thermal Decision Engine pipeline under failure, strictly enforce numeric grounding precision ($\le 0.01^\circ\text{C}$), enforce semantic date/time handling, cap FortyGuard interactive polling timeout to 30s, ensure clean state transitions on error recovery, and add a comprehensive 13-test failure-state invariant suite.
 
 ---
 
@@ -51,7 +51,13 @@ Integrate a strictly read-only, grounded AI explanation layer over verified dete
 - [x] **AI Explainer Engine:** Implemented `explainDecision()` with OpenAI/Gemini support, grounding prompt, timeout handling, and automatic fallback to rule-based explanation on failure or grounding violation.
 - [x] **Server Explanation Route (`/api/explain`):** Created standalone server-side route completely decoupled from FortyGuard credentials.
 - [x] **Explanation UI:** Added `Decision Explanation & Evidence Synthesis` section with operational summary, why it wins, constraint impact, epistemic notice, and refresh button.
-- [x] **Verification & Parity:** 66 Vitest tests passing across 10 test suites (100% pass rate). Playwright smoke test verified with screenshot.
+### Milestone 9 — System Hardening & Failure States (`COMPLETED & VERIFIED`)
+- [x] **Numeric Grounding Hardening:** Tightened float comparison tolerance from $\pm 0.05 \to \pm 0.01$. Added date separator sanitization (`2026-08-21` $\to$ `2026 08 21`) and semantic date component extraction.
+- [x] **FortyGuard Polling Timeout Hardening:** Reduced interactive polling ceiling from 120s (60 attempts) to 30s (15 attempts).
+- [x] **State Transition Invariants:** Verified clean state reset on error in React state (`setDecision(null)`, `setJointDecision(null)`, `setExplanation(null)`).
+- [x] **Comprehensive Failure-State Test Suite:** Added `tests/failure_states.test.ts` (13 tests) covering 401 missing key, 401 invalid key, 500 error, malformed activity_id, polling timeout, missing hourly snapshot, +12h lead time boundary, outside coverage, explanation timeout fallback, grounding rejection fallback, decision immutability, LIVE failure isolation, and FIXTURE preservation.
+- [x] **Verification & Parity:** 84 Vitest tests passing across 11 test suites (100% pass rate). Next.js build clean. Playwright E2E smoke test passing.
+
 
 
 

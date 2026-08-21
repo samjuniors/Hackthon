@@ -277,6 +277,40 @@
 - **Next.js Production Build (`pnpm build`):** Clean (6 static/dynamic pages compiled cleanly).
 - **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (13.2s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
 
+---
+
+# Engineering Worklog — Milestone 9 / System Hardening & Failure States Report
+
+**Date:** 2026-08-21  
+**Milestone:** Milestone 9 — System Hardening & Failure States  
+**Status:** COMPLETED & VERIFIED  
+
+---
+
+## 1. What Was Implemented
+- **Numeric Grounding Hardening (`src/lib/explanation/grounding-validator.ts`):**
+  - Tightened float difference tolerance from $\pm 0.05 \to \pm 0.01$, ensuring ungrounded numbers (e.g. `29.19` vs `29.15`, `8.44` vs `8.40`) are strictly rejected.
+  - Sanitized ISO hyphenated dates (`2026-08-21` $\to$ `2026 08 21`) before numeric extraction to prevent negative sign tokenization collisions.
+  - Added semantic date/timestamp components (year, month, day, hours, minutes) from verified input timestamps to the allow-list.
+- **FortyGuard Polling Timeout Hardening (`src/lib/fortyguard/adapter.ts`):**
+  - Reduced interactive polling ceiling from 120s (60 attempts) to 30s (15 attempts).
+- **Comprehensive Failure-State Test Suite (`tests/failure_states.test.ts`):**
+  - Added 13 invariant and failure-state tests covering missing FortyGuard credentials (401), invalid credentials (401), HTTP 500 errors, malformed responses, polling timeouts, missing hourly snapshots, +12h forecast lead time violations, outside spatial coverage, explanation timeouts, grounding rejection fallback, decision immutability, LIVE failure isolation, and FIXTURE data source preservation.
+- **State Transition Robustness (`src/app/page.tsx`):**
+  - Confirmed and verified that all decision, scenario, and explanation states are completely cleared on request failure, preventing stale results.
+- **Documentation Hardening (`docs/DECISION-ENGINE.md`):**
+  - Formally documented the grounding validator's exact guarantees (syntactic validation, numeric accuracy, negative safety guardrails, prompt grounding, deterministic fallback) and its non-entailment boundary.
+
+---
+
+## 2. Test & Verification Results
+- **Vitest Unit, Grounding & Failure Tests (`pnpm test`):** 11 test suites passed, 84 unit tests passed (100% pass rate).
+- **TypeScript Typecheck (`pnpm typecheck`):** Clean (0 errors).
+- **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
+- **Next.js Production Build (`pnpm build`):** Clean (6 static/dynamic pages compiled cleanly).
+- **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (9.0s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
+
+
 
 
 

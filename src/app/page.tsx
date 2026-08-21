@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { DecisionResult, PolygonAOI } from '@/types/domain';
+import type { DataSourceMode } from '@/types/provenance';
 
 // Dynamically import MapLibre map component to bypass SSR canvas requirement
 const ThermalMap = dynamic(
@@ -25,12 +26,18 @@ export default function WorkspacePage() {
   const [lat, setLat] = useState<number>(40.7128);
   const [lon, setLon] = useState<number>(-74.006);
   const [duration, setDuration] = useState<number>(2);
+  const [mode, setMode] = useState<DataSourceMode>('FIXTURE');
   const [loading, setLoading] = useState<boolean>(false);
   const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [spatialField, setSpatialField] = useState<PolygonAOI | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const runDecisionPipeline = useCallback(async (latitude = lat, longitude = lon, durationHours = duration) => {
+  const runDecisionPipeline = useCallback(async (
+    latitude = lat,
+    longitude = lon,
+    durationHours = duration,
+    dataSourceMode = mode
+  ) => {
     setLoading(true);
     setErrorMsg(null);
 
@@ -42,6 +49,7 @@ export default function WorkspacePage() {
           latitude,
           longitude,
           durationHours,
+          mode: dataSourceMode,
         }),
       });
 
@@ -59,7 +67,7 @@ export default function WorkspacePage() {
     } finally {
       setLoading(false);
     }
-  }, [lat, lon, duration]);
+  }, [lat, lon, duration, mode]);
 
   useEffect(() => {
     let isMounted = true;
@@ -71,6 +79,7 @@ export default function WorkspacePage() {
         latitude: 40.7128,
         longitude: -74.006,
         durationHours: 2,
+        mode: 'FIXTURE',
       }),
     })
       .then((res) => res.json())
@@ -114,8 +123,21 @@ export default function WorkspacePage() {
             FortyGuard Hyperlocal Thermal Intelligence & Deterministic Window Optimization
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge className="bg-emerald-950/60 text-emerald-400 border border-emerald-500/30 px-3 py-1 font-mono text-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Prominent UI Data Source Indicator */}
+          {decision?.dataSource === 'LIVE' || mode === 'LIVE' ? (
+            <Badge className="bg-emerald-950/90 text-emerald-300 border-2 border-emerald-500/60 px-3.5 py-1.5 font-mono text-xs shadow-lg shadow-emerald-950/50 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>LIVE — FORTYGUARD API</span>
+            </Badge>
+          ) : (
+            <Badge className="bg-amber-950/90 text-amber-300 border-2 border-amber-500/60 px-3.5 py-1.5 font-mono text-xs shadow-lg shadow-amber-950/50 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span>DEMO — CAPTURED FORTYGUARD DATA</span>
+            </Badge>
+          )}
+
+          <Badge className="bg-slate-900 text-slate-300 border border-slate-700 px-3 py-1 font-mono text-xs">
             MODEL: v1.0.0-spatial-thermal-baseline
           </Badge>
         </div>
@@ -125,6 +147,42 @@ export default function WorkspacePage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Spatial & Temporal Controls */}
         <div className="lg:col-span-4 space-y-6">
+          {/* Explicit Mode Selector Card */}
+          <Card className="bg-slate-900/80 border-slate-800 backdrop-blur-md">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base text-slate-200">Execution Mode</CardTitle>
+              <CardDescription className="text-xs text-slate-400">
+                Explicitly toggle between Live FortyGuard API and Captured Fixture Data
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant={mode === 'FIXTURE' ? 'default' : 'outline'}
+                  size="sm"
+                  className={`text-xs font-semibold ${mode === 'FIXTURE' ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'text-slate-300 border-slate-700'}`}
+                  onClick={() => {
+                    setMode('FIXTURE');
+                    runDecisionPipeline(lat, lon, duration, 'FIXTURE');
+                  }}
+                >
+                  DEMO (Fixture)
+                </Button>
+                <Button
+                  variant={mode === 'LIVE' ? 'default' : 'outline'}
+                  size="sm"
+                  className={`text-xs font-semibold ${mode === 'LIVE' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'text-slate-300 border-slate-700'}`}
+                  onClick={() => {
+                    setMode('LIVE');
+                    runDecisionPipeline(lat, lon, duration, 'LIVE');
+                  }}
+                >
+                  LIVE (API)
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="bg-slate-900/80 border-slate-800 backdrop-blur-md">
             <CardHeader className="pb-3">
               <CardTitle className="text-base text-slate-200">Candidate Spatial Location</CardTitle>
@@ -145,7 +203,7 @@ export default function WorkspacePage() {
                       onClick={() => {
                         setLat(loc.lat);
                         setLon(loc.lon);
-                        runDecisionPipeline(loc.lat, loc.lon, duration);
+                        runDecisionPipeline(loc.lat, loc.lon, duration, mode);
                       }}
                     >
                       {loc.name}
@@ -192,7 +250,7 @@ export default function WorkspacePage() {
                   onValueChange={(vals) => {
                     const dur = vals[0];
                     setDuration(dur);
-                    runDecisionPipeline(lat, lon, dur);
+                    runDecisionPipeline(lat, lon, dur, mode);
                   }}
                   className="py-2"
                 />
@@ -200,7 +258,7 @@ export default function WorkspacePage() {
 
               <Button
                 disabled={loading}
-                onClick={() => runDecisionPipeline(lat, lon, duration)}
+                onClick={() => runDecisionPipeline(lat, lon, duration, mode)}
                 className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs mt-2"
               >
                 {loading ? 'Evaluating Spatial Field...' : 'Recalculate Decision'}
@@ -236,6 +294,9 @@ export default function WorkspacePage() {
                       <span>Optimal Operating Window</span>
                       <Badge className="bg-cyan-950 text-cyan-300 border-cyan-500/40 text-[10px]">
                         Rank #1
+                      </Badge>
+                      <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px] font-mono">
+                        Source: {decision.dataSource}
                       </Badge>
                     </CardTitle>
                     <CardDescription className="text-xs text-slate-400 mt-1">
@@ -294,7 +355,7 @@ export default function WorkspacePage() {
                               <td className="py-2 px-3 font-bold">#{rw.rank}</td>
                               <td className="py-2 px-3">{rw.windowId}</td>
                               <td className="py-2 px-3">
-                                {new Date(rw.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(rw.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {new Date(rw.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} - {new Date(rw.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                               </td>
                               <td className="py-2 px-3 font-bold">{rw.exposureScore.toFixed(1)}°C</td>
                               <td className="py-2 px-3">
@@ -313,27 +374,30 @@ export default function WorkspacePage() {
                       <div className="bg-slate-950 p-3 rounded border border-cyan-500/30 space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full bg-[#22d3ee]"></span>
-                          <span className="font-bold text-cyan-400">OBSERVED</span>
+                          <span className="font-bold text-cyan-400">DATA SOURCE</span>
                         </div>
-                        <p className="text-[11px] text-slate-300">
-                          Tile <span className="font-mono text-white">{decision.evidenceBundle.selectedTileId}</span> mean temperature: {decision.evidenceBundle.observedValues.averageTemperatureCelsius}°C. Source: {decision.evidenceBundle.sourceEndpoint}
+                        <p className="text-[11px] text-slate-300 font-mono">
+                          Mode: <span className="text-white font-bold">{decision.dataSource}</span> ({decision.evidenceBundle.sourceEndpoint})
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          Tile <span className="font-mono text-white">{decision.evidenceBundle.selectedTileId}</span> baseline temperature: {decision.evidenceBundle.observedValues.averageTemperatureCelsius}°C
                         </p>
                       </div>
 
                       <div className="bg-slate-950 p-3 rounded border border-indigo-500/30 space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full bg-[#818cf8]"></span>
-                          <span className="font-bold text-indigo-400">DERIVED</span>
+                          <span className="font-bold text-indigo-400">DERIVED EXPOSURE</span>
                         </div>
                         <p className="text-[11px] text-slate-300">
-                          Evaluated score: {decision.evidenceBundle.derivedValues.recommendedWindowScore}°C across {decision.evidenceBundle.derivedValues.candidateWindowCount} candidate windows.
+                          Optimal score: {decision.evidenceBundle.derivedValues.recommendedWindowScore}°C across {decision.evidenceBundle.derivedValues.candidateWindowCount} candidate windows.
                         </p>
                       </div>
 
                       <div className="bg-slate-950 p-3 rounded border border-amber-500/30 space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b]"></span>
-                          <span className="font-bold text-amber-400">PREDICTED</span>
+                          <span className="font-bold text-amber-400">PREDICTED HORIZON</span>
                         </div>
                         <p className="text-[11px] text-slate-300">
                           Forecast horizon check: Window end strictly within FortyGuard +12h forecast limit.
@@ -343,7 +407,7 @@ export default function WorkspacePage() {
                       <div className="bg-slate-950 p-3 rounded border border-slate-500/30 space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full bg-[#94a3b8]"></span>
-                          <span className="font-bold text-slate-400">ASSUMED</span>
+                          <span className="font-bold text-slate-400">ASSUMED CONSTRAINTS</span>
                         </div>
                         <p className="text-[11px] text-slate-300">
                           Model version: <span className="font-mono text-slate-200">{decision.modelVersion}</span>
@@ -360,3 +424,4 @@ export default function WorkspacePage() {
     </main>
   );
 }
+

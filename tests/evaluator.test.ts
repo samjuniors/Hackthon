@@ -19,34 +19,39 @@ describe('Decision Engine Evaluator & Pipeline', () => {
       location: { latitude: 40.7128, longitude: -74.006 },
       selectedTileId: 'tile-101',
       sourceEndpoint: '/v1/heatmap',
+      dataSource: 'FIXTURE',
       metrics: { temperatureCelsius: 34.0 },
-      provenance: 'OBSERVED',
+      provenance: 'DERIVED',
     },
     {
       timestamp: '2026-08-20T13:00:00.000Z',
       location: { latitude: 40.7128, longitude: -74.006 },
       selectedTileId: 'tile-101',
       sourceEndpoint: '/v1/heatmap',
+      dataSource: 'FIXTURE',
       metrics: { temperatureCelsius: 36.0 },
-      provenance: 'OBSERVED',
+      provenance: 'PREDICTED',
     },
     {
       timestamp: '2026-08-20T14:00:00.000Z',
       location: { latitude: 40.7128, longitude: -74.006 },
       selectedTileId: 'tile-101',
       sourceEndpoint: '/v1/heatmap',
+      dataSource: 'FIXTURE',
       metrics: { temperatureCelsius: 30.0 },
-      provenance: 'OBSERVED',
+      provenance: 'PREDICTED',
     },
     {
       timestamp: '2026-08-20T15:00:00.000Z',
       location: { latitude: 40.7128, longitude: -74.006 },
       selectedTileId: 'tile-101',
       sourceEndpoint: '/v1/heatmap',
+      dataSource: 'FIXTURE',
       metrics: { temperatureCelsius: 28.0 },
-      provenance: 'OBSERVED',
+      provenance: 'PREDICTED',
     },
   ];
+
 
   it('generates sliding candidate windows correctly', () => {
     const constraints: DecisionConstraints = {

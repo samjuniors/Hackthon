@@ -7,3 +7,6 @@ export type DataProvenance =
   | 'PREDICTED'                 // Verified FortyGuard forecast intervals
   | 'ASSUMED'                   // User-specified scenario parameters (duration, bounds)
   | 'AI_GENERATED_EXPLANATION'; // Grounded LLM narrative outputs
+
+export type DataSourceMode = 'LIVE' | 'FIXTURE';
+

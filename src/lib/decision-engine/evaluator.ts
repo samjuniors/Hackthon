@@ -197,8 +197,10 @@ export function evaluateCandidateWindows(
 
   const firstObs = observations[0];
   const selectedTileId = firstObs ? firstObs.selectedTileId : 'unknown';
+  const dataSource = firstObs ? firstObs.dataSource : 'FIXTURE';
 
   const evidenceBundle: EvidenceBundle = {
+    dataSource,
     sourceEndpoint: firstObs ? firstObs.sourceEndpoint : '/v1/heatmap',
     requestLocation: location,
     selectedTileId,
@@ -237,6 +239,7 @@ export function evaluateCandidateWindows(
   };
 
   return {
+    dataSource,
     recommendedWindow: {
       windowId: best.windowId,
       startTime: best.startTime,
@@ -256,3 +259,4 @@ export function evaluateCandidateWindows(
     modelVersion: BASELINE_MODEL_VERSION,
   };
 }
+

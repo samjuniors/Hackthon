@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortyGuardAdapter } from '@/lib/fortyguard/adapter';
 import type { PolygonAOI } from '@/types/domain';
-import { OutsideCoverageError } from '@/types/errors';
+import { OutsideCoverageError, AuthenticationError, IncompleteTemporalCoverageError } from '@/types/errors';
 
 describe('FortyGuard Adapter Unit Tests', () => {
   let adapter: FortyGuardAdapter;
 
   beforeEach(() => {
     process.env.FORTYGUARD_API_KEY = 'test-key-12345';
-    adapter = new FortyGuardAdapter();
+    adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
   });
 
   const sampleAOI: PolygonAOI = {
@@ -46,6 +46,7 @@ describe('FortyGuard Adapter Unit Tests', () => {
 
     expect(obs.timestamp).toBe(timestamp);
     expect(obs.selectedTileId).toBe('tile-alpha');
+    expect(obs.dataSource).toBe('FIXTURE');
     expect(obs.metrics.temperatureCelsius).toBe(32.4);
     expect(obs.metrics.tileMinTemperatureCelsius).toBe(30.1);
     expect(obs.metrics.tileMaxTemperatureCelsius).toBe(35.0);
@@ -60,4 +61,38 @@ describe('FortyGuard Adapter Unit Tests', () => {
       adapter.normalizePointObservation(sampleAOI, outsidePoint, timestamp)
     ).toThrow(OutsideCoverageError);
   });
+
+  it('throws AuthenticationError in LIVE mode when API key is missing', async () => {
+    const liveAdapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: '' });
+    await expect(
+      liveAdapter.getHeatmap({
+        polygon_aoi: sampleAOI,
+        date_time: { start_date: '2026-08-21', start_time: '10:00', filter_type: 1 },
+        granularity: 60,
+      })
+    ).rejects.toThrow(AuthenticationError);
+  });
+
+  it('fetches discrete hourly snapshots in FIXTURE mode without inventing data', async () => {
+    const fixtureAdapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
+    const snapshots = await fixtureAdapter.getHourlyHeatmapSnapshots(
+      { latitude: 40.7128, longitude: -74.006 },
+      ['2026-08-21T08:00:00.000Z', '2026-08-21T09:00:00.000Z']
+    );
+
+    expect(snapshots.size).toBe(2);
+    expect(snapshots.has('2026-08-21T08:00:00.000Z')).toBe(true);
+    expect(snapshots.has('2026-08-21T09:00:00.000Z')).toBe(true);
+  });
+
+  it('throws IncompleteTemporalCoverageError when requested timestamp is missing from fixture', async () => {
+    const fixtureAdapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
+    await expect(
+      fixtureAdapter.getHourlyHeatmapSnapshots(
+        { latitude: 40.7128, longitude: -74.006 },
+        ['2029-01-01T00:00:00.000Z']
+      )
+    ).rejects.toThrow(IncompleteTemporalCoverageError);
+  });
 });
+

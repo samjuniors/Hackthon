@@ -112,5 +112,30 @@
 
 ---
 
-## 14. Recommended Next Vertical Slice
-- **Milestone 5 — Spatial Multi-Location Decision (Slice 2):** Compare multiple candidate operating locations simultaneously (Location A vs Location B vs Location C) across the same time window to recommend the location with lowest thermal exposure.
+---
+
+# Engineering Worklog — Milestone 4.1 / Evidence Integrity Fix Report
+
+**Date:** 2026-08-21  
+**Milestone:** Milestone 4.1 — Evidence Integrity & Parity Fix  
+**Status:** COMPLETED & VERIFIED  
+
+---
+
+## 1. What Was Fixed
+- **Excised Fabricated Diurnal Temperature Curve:** Completely removed `Math.sin(((hour - 8) / 12) * Math.PI) * 2.5` from `src/app/api/decision/route.ts`. Decision evaluation strictly operates on observations from actual FortyGuard API snapshots or verified FortyGuard fixtures.
+- **Eliminated Silent Synthetic Fallback:** Removed `createDemoThermalAOI(location)` synthetic fallback. LIVE mode and FIXTURE mode are explicitly separated. If LIVE mode fails or credentials are missing, the route returns an explicit HTTP error state (401/502/400) without substituting synthetic data.
+- **Real Hourly Snapshot Acquisition & Caching:** Multi-hour candidate evaluations fetch real hourly snapshots (`filter_type: 1`) cached in-memory by request hash.
+- **Enforced Temporal Horizon:** Requests exceeding FortyGuard's verified +12h forecast lead time throw `IncompleteTemporalCoverageError`. Zero missing hours are fabricated.
+- **Prominent UI Source Indicator:** Decision Workspace header and control surface prominently display `LIVE — FORTYGUARD API` vs `DEMO — CAPTURED FORTYGUARD DATA`.
+- **Typed DataSourceMode Domain Contract:** Replaced arbitrary strings with strongly typed `DataSourceMode = 'LIVE' | 'FIXTURE'` in `NormalizedThermalObservation`, `EvidenceBundle`, and `DecisionResult`.
+- **LIVE/FIXTURE Decision Parity:** Added deterministic test suite verifying that identical normalized observations produce 100% parity across decision scoring, rankings, and recommendations regardless of data source.
+
+---
+
+## 2. Test & Verification Results
+- **Vitest Unit & Parity Tests (`pnpm test`):** 5 test suites passed, 24 unit tests passed (100% pass rate).
+- **TypeScript Typecheck (`pnpm typecheck`):** Clean (0 errors).
+- **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
+- **Next.js Production Build (`pnpm build`):** Clean (5 static/dynamic pages compiled cleanly).
+- **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (10.6s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).

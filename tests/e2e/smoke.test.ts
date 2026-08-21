@@ -5,8 +5,9 @@ test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
     // 1. Load primary workspace
     await page.goto('/');
 
-    // 2. Verify workspace header title is present
+    // 2. Verify workspace header title and prominent Data Source indicator are present
     await expect(page.locator('h1')).toContainText('Thermal Decision Engine');
+    await expect(page.getByText('DEMO — CAPTURED FORTYGUARD DATA')).toBeVisible();
 
     // 3. Click recalculate decision button to trigger decision pipeline
     const recalculateBtn = page.getByRole('button', { name: 'Recalculate Decision' });
@@ -24,3 +25,4 @@ test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
     await page.screenshot({ path: 'tests/e2e/workspace-smoke.png', fullPage: true });
   });
 });
+

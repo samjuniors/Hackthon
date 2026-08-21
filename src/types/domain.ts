@@ -1,4 +1,4 @@
-import { type DataProvenance } from './provenance';
+import { type DataProvenance, type DataSourceMode } from './provenance';
 
 export interface LocationPoint {
   latitude: number;
@@ -41,6 +41,7 @@ export interface NormalizedThermalObservation {
   location: LocationPoint;
   selectedTileId: string | number;
   sourceEndpoint: string;
+  dataSource: DataSourceMode;
   metrics: {
     temperatureCelsius: number; // Location-specific average_temperature
     tileMinTemperatureCelsius?: number;
@@ -87,6 +88,7 @@ export interface ExposureModel {
 }
 
 export interface EvidenceBundle {
+  dataSource: DataSourceMode;
   sourceEndpoint: string;
   requestLocation: LocationPoint;
   selectedTileId: string | number;
@@ -113,9 +115,11 @@ export interface EvidenceBundle {
 }
 
 export interface DecisionResult {
+  dataSource: DataSourceMode;
   recommendedWindow: CandidateWindow & { exposureScore: number };
   rankedWindows: Array<CandidateWindow & { exposureScore: number; rank: number; isFeasible: boolean }>;
   rejectedWindows: Array<CandidateWindow & { reason: string }>;
   evidenceBundle: EvidenceBundle;
   modelVersion: 'v1.0.0-spatial-thermal-baseline';
 }
+

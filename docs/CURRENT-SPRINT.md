@@ -22,4 +22,10 @@ Deliver an end-to-end working vertical slice combining verified FortyGuard spati
 - [x] **Deterministic Exposure Evaluator (`src/lib/decision-engine/evaluator.ts`):** Calculates mean temperature exposure score $E(W_i) = \frac{1}{n} \sum T(\text{location}, t)$ across sliding candidate windows. Enforces +12h forecast lead boundary.
 - [x] **Decision Pipeline & API Boundary (`src/app/api/decision/route.ts`):** Server-side use-case boundary returning `DecisionResult` and raw GeoJSON thermal surface.
 - [x] **Decision Workspace UI (`src/app/page.tsx` & `src/components/ThermalMap.tsx`):** Spatial MapLibre GL tile rendering, candidate location presets, duration sliders, optimal operating window card, and data provenance breakdown.
-- [x] **Automated Testing & Playwright Smoke Test:** 12 Vitest unit tests passed (100% pass rate). Automated Playwright e2e smoke test verifying UI rendering, recalculation, and screenshot capture.
+### Milestone 4.1 — Evidence Integrity Fix (`COMPLETED & VERIFIED`)
+- [x] **Excised Fabricated Diurnal Curve:** Completely removed `Math.sin` curve formula. Observations strictly reflect FortyGuard API or verified FortyGuard fixtures.
+- [x] **Eliminated Silent Fallbacks & Explicit Mode Separation:** Decoupled `LIVE` mode (pure API, hard failures on network/auth error) and `FIXTURE` mode (captured FortyGuard data, explicitly tagged).
+- [x] **Discrete Hourly Snapshot Acquisition & Caching:** Multi-hour candidate evaluations fetch real hourly snapshots (`filter_type: 1`) cached in-memory by request hash.
+- [x] **Enforced Temporal Horizon:** Requests exceeding FortyGuard's +12h forecast lead time throw `IncompleteTemporalCoverageError`. Zero fabricated missing hours.
+- [x] **Prominent UI Source Indicator:** Decision Workspace prominently displays `LIVE — FORTYGUARD API` vs `DEMO — CAPTURED FORTYGUARD DATA`.
+- [x] **LIVE/FIXTURE Decision Parity Testing:** Added comprehensive test suite verifying 100% parity across decision scoring and candidate window rankings.

@@ -1,19 +1,58 @@
 import { NextResponse } from 'next/server';
 import { FortyGuardAdapter } from '@/lib/fortyguard/adapter';
-import { evaluateCandidateWindows } from '@/lib/decision-engine/evaluator';
-import type { LocationPoint, DecisionConstraints, NormalizedThermalObservation } from '@/types/domain';
+import {
+  evaluateCandidateWindows,
+  evaluateCandidateLocations,
+} from '@/lib/decision-engine/evaluator';
+import type {
+  LocationPoint,
+  DecisionConstraints,
+  NormalizedThermalObservation,
+  CandidateLocation,
+  CandidateWindow,
+} from '@/types/domain';
 import type { DataSourceMode } from '@/types/provenance';
-import { AppError, IncompleteTemporalCoverageError } from '@/types/errors';
+import {
+  AppError,
+  IncompleteTemporalCoverageError,
+  ValidationError,
+} from '@/types/errors';
 import { z } from 'zod';
+
+const CandidateSchema = z.object({
+  locationId: z.string().min(1),
+  name: z.string().min(1),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
 
 const DecisionRequestSchema = z.object({
   latitude: z.number().min(-90).max(90).default(40.7128),
   longitude: z.number().min(-180).max(180).default(-74.006),
+  candidates: z.array(CandidateSchema).optional(),
   durationHours: z.number().int().min(1).max(12).default(2),
   allowedStart: z.string().optional(),
   allowedEnd: z.string().optional(),
   mode: z.enum(['LIVE', 'FIXTURE']).optional(),
 });
+
+const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
+  {
+    locationId: 'LOC-A',
+    name: 'Battery Park Greenway (Waterfront)',
+    location: { latitude: 40.7120, longitude: -74.0080 },
+  },
+  {
+    locationId: 'LOC-B',
+    name: 'City Hall Civic Center (Mid-Density)',
+    location: { latitude: 40.7120, longitude: -73.9980 },
+  },
+  {
+    locationId: 'LOC-C',
+    name: 'Chinatown / Bowery Staging (Asphalt Canyon)',
+    location: { latitude: 40.7120, longitude: -73.9880 },
+  },
+];
 
 export async function POST(request: Request) {
   try {
@@ -38,7 +77,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const { latitude, longitude, durationHours, allowedStart: reqStart, allowedEnd: reqEnd, mode: reqMode } = parseResult.data;
+    const {
+      latitude,
+      longitude,
+      candidates: reqCandidates,
+      durationHours,
+      allowedStart: reqStart,
+      allowedEnd: reqEnd,
+      mode: reqMode,
+    } = parseResult.data;
 
     // Explicit DataSourceMode: request override or server default
     const mode: DataSourceMode = reqMode ?? (process.env.FORTYGUARD_DATA_SOURCE === 'LIVE' ? 'LIVE' : 'FIXTURE');
@@ -77,33 +124,84 @@ export async function POST(request: Request) {
       throw new IncompleteTemporalCoverageError('Empty hourly sequence for requested time span');
     }
 
+    // Build candidates to evaluate
+    const candidatesToEvaluate: CandidateLocation[] = reqCandidates && reqCandidates.length > 0
+      ? reqCandidates.map((c) => ({
+          locationId: c.locationId,
+          name: c.name,
+          location: { latitude: c.latitude, longitude: c.longitude },
+        }))
+      : DEFAULT_CANDIDATE_LOCATIONS;
+
+    // Reject duplicate candidate IDs or duplicate coordinates
+    const seenLocIds = new Set<string>();
+    const seenCoords = new Set<string>();
+    for (const cand of candidatesToEvaluate) {
+      if (seenLocIds.has(cand.locationId)) {
+        throw new ValidationError(`Duplicate candidate locationId: ${cand.locationId}`);
+      }
+      seenLocIds.add(cand.locationId);
+
+      const coordKey = `${cand.location.latitude.toFixed(6)},${cand.location.longitude.toFixed(6)}`;
+      if (seenCoords.has(coordKey)) {
+        throw new ValidationError(`Duplicate candidate coordinates for location ${cand.locationId}`);
+      }
+      seenCoords.add(coordKey);
+    }
+
     // Fetch discrete hourly snapshots from selected source (LIVE API or FIXTURE)
     const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps);
 
-    const observations: NormalizedThermalObservation[] = [];
+    // Normalize observations per candidate location across all timestamps (zero cross-location leakage)
+    const observationsByCandidate = new Map<string, NormalizedThermalObservation[]>();
 
-    for (const timestamp of hourlyTimestamps) {
-      const snapshotAoi = snapshotsMap.get(timestamp);
-      if (!snapshotAoi) {
-        throw new IncompleteTemporalCoverageError(`Missing thermal observation at timestamp ${timestamp}`);
+    for (const cand of candidatesToEvaluate) {
+      const obsList: NormalizedThermalObservation[] = [];
+      for (const timestamp of hourlyTimestamps) {
+        const snapshotAoi = snapshotsMap.get(timestamp);
+        if (!snapshotAoi) {
+          throw new IncompleteTemporalCoverageError(`Missing thermal observation at timestamp ${timestamp}`);
+        }
+
+        // Heatmap tile values represent spatial polygon model aggregations (provenance: DERIVED)
+        const obs = adapter.normalizePointObservation(
+          snapshotAoi,
+          cand.location,
+          timestamp,
+          '/v1/heatmap',
+          'DERIVED'
+        );
+        obsList.push(obs);
       }
-
-      // Heatmap tile values represent spatial polygon model aggregations (provenance: DERIVED)
-      const obs = adapter.normalizePointObservation(
-        snapshotAoi,
-        location,
-        timestamp,
-        '/v1/heatmap',
-        'DERIVED'
-      );
-      observations.push(obs);
+      observationsByCandidate.set(cand.locationId, obsList);
     }
 
+    // Evaluate temporal candidate windows for the primary candidate (WHEN decision)
+    const primaryCandidateObs = observationsByCandidate.get(candidatesToEvaluate[0].locationId) || [];
     const decision = evaluateCandidateWindows(
       location,
-      observations,
+      primaryCandidateObs,
       constraints,
       allowedStart
+    );
+
+    // Evaluate spatial multi-location ranking for the recommended operating window (WHERE decision)
+    const activeWindow: CandidateWindow = {
+      windowId: decision.recommendedWindow.windowId,
+      startTime: decision.recommendedWindow.startTime,
+      endTime: decision.recommendedWindow.endTime,
+      durationHours: decision.recommendedWindow.durationHours,
+    };
+
+    const spatialDecision = evaluateCandidateLocations(
+      candidatesToEvaluate,
+      observationsByCandidate,
+      activeWindow,
+      {
+        dataSource: mode,
+        baseTimestamp: hourlyTimestamps[0],
+        totalEvaluatedHours: hourlyTimestamps.length,
+      }
     );
 
     const baseTimestamp = hourlyTimestamps[0];
@@ -112,6 +210,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       decision,
+      spatialDecision,
       spatialField: baseSpatialField,
       spatialFieldMetadata: {
         baseTimestamp,
@@ -120,6 +219,7 @@ export async function POST(request: Request) {
         totalEvaluatedHours: hourlyTimestamps.length,
       },
     });
+
 
   } catch (error) {
     if (error instanceof AppError) {

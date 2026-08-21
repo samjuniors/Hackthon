@@ -1,18 +1,24 @@
 import type {
+  CandidateLocation,
   CandidateWindow,
   DecisionConstraints,
   DecisionResult,
   EvidenceBundle,
   ExposureResult,
   ExposureModel,
+  HourlyTileTemperature,
   LocationPoint,
   NormalizedThermalObservation,
+  RankedLocationResult,
+  SpatialDecisionResult,
 } from '@/types/domain';
+import type { DataSourceMode } from '@/types/provenance';
 import {
   IncompleteTemporalCoverageError,
   InfeasibleConstraintsError,
   ValidationError,
 } from '@/types/errors';
+
 
 export const BASELINE_MODEL_VERSION = 'v1.0.0-spatial-thermal-baseline';
 
@@ -259,4 +265,126 @@ export function evaluateCandidateWindows(
     modelVersion: BASELINE_MODEL_VERSION,
   };
 }
+
+/**
+ * Execute deterministic spatial decision ranking across candidate locations for a chosen operating window.
+ * Mathematically ranks candidate locations by modeled thermal exposure without baseObservationTime bias.
+ */
+export function evaluateCandidateLocations(
+  candidates: CandidateLocation[],
+  observationsByLocation: Map<string, NormalizedThermalObservation[]>,
+  window: CandidateWindow,
+  options?: {
+    dataSource?: DataSourceMode;
+    baseTimestamp?: string;
+    totalEvaluatedHours?: number;
+  }
+): SpatialDecisionResult {
+  if (!candidates || candidates.length === 0) {
+    throw new ValidationError('At least one candidate location is required for spatial decision evaluation');
+  }
+
+  // Reject duplicate locationIds
+  const seenIds = new Set<string>();
+  for (const cand of candidates) {
+    if (seenIds.has(cand.locationId)) {
+      throw new ValidationError(`Duplicate candidate locationId: ${cand.locationId}`);
+    }
+    seenIds.add(cand.locationId);
+  }
+
+  const evaluator = new BaselineSpatialThermalEvaluator();
+  const evaluatedResults: Array<{
+    candidate: CandidateLocation;
+    score: number;
+    tileId: string | number;
+    thermalValues: HourlyTileTemperature[];
+  }> = [];
+
+  let detectedDataSource: DataSourceMode = options?.dataSource || 'FIXTURE';
+  let firstEndpoint = '/v1/heatmap';
+
+  for (const cand of candidates) {
+    const obsList = observationsByLocation.get(cand.locationId);
+    if (!obsList || obsList.length === 0) {
+      throw new IncompleteTemporalCoverageError(`No thermal observations provided for candidate ${cand.locationId}`);
+    }
+
+    if (obsList[0]) {
+      detectedDataSource = obsList[0].dataSource;
+      firstEndpoint = obsList[0].sourceEndpoint;
+    }
+
+    const evalResult = evaluator.evaluate(obsList, window);
+
+    const thermalValues: HourlyTileTemperature[] = obsList.map((obs) => ({
+      timestamp: obs.timestamp,
+      temperatureCelsius: obs.metrics.temperatureCelsius,
+      provenance: 'DERIVED',
+      tileId: obs.selectedTileId,
+      evidenceReference: obs.sourceEndpoint,
+    }));
+
+    evaluatedResults.push({
+      candidate: cand,
+      score: evalResult.score,
+      tileId: obsList[0]?.selectedTileId || 'unknown',
+      thermalValues,
+    });
+  }
+
+  // Deterministic tie-breaking:
+  // 1. Lowest exposureScore ascending
+  // 2. Stable locationId ascending (lexicographical)
+  evaluatedResults.sort((a, b) => {
+    if (a.score !== b.score) {
+      return a.score - b.score;
+    }
+    return a.candidate.locationId.localeCompare(b.candidate.locationId);
+  });
+
+  const bestScore = evaluatedResults[0].score;
+
+  const rankedLocations: RankedLocationResult[] = evaluatedResults.map((item, idx) => ({
+    rank: idx + 1,
+    locationId: item.candidate.locationId,
+    name: item.candidate.name,
+    location: item.candidate.location,
+    tileId: item.tileId,
+    exposureScore: item.score,
+    deltaVsBest: Number((item.score - bestScore).toFixed(2)),
+    status: 'Feasible',
+    thermalValues: item.thermalValues,
+  }));
+
+  const baseTimestamp = options?.baseTimestamp || window.startTime;
+  const totalEvaluatedHours = options?.totalEvaluatedHours || window.durationHours;
+
+  return {
+    decisionType: 'SPATIAL_LOCATION_CHOICE',
+    recommendedLocation: rankedLocations[0],
+    rankedLocations,
+    timeWindow: {
+      startTime: window.startTime,
+      endTime: window.endTime,
+      durationHours: window.durationHours,
+    },
+    dataSource: detectedDataSource,
+    modelVersion: BASELINE_MODEL_VERSION,
+    spatialFieldMetadata: {
+      baseTimestamp,
+      coverageType: 'BASE_TIMESTAMP_SNAPSHOT',
+      totalEvaluatedHours,
+      description: 'Spatial thermal surface represents the initial observation snapshot (t₀)',
+    },
+    evidenceBundle: {
+      candidateCount: candidates.length,
+      sourceEndpoint: firstEndpoint,
+      dataSource: detectedDataSource,
+      provenance: 'DERIVED',
+      evaluatedWindow: window,
+    },
+  };
+}
+
 

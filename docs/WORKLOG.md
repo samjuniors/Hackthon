@@ -139,3 +139,38 @@
 - **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
 - **Next.js Production Build (`pnpm build`):** Clean (5 static/dynamic pages compiled cleanly).
 - **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (10.6s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
+
+---
+
+# Engineering Worklog — Milestone 5 / Spatial Decision Slice Report
+
+**Date:** 2026-08-21  
+**Milestone:** Milestone 5 — Spatial Multi-Location Decision Slice  
+**Status:** COMPLETED & VERIFIED  
+
+---
+
+## 1. What Was Implemented
+- **3-Location Evidence Lock (`tests/fixtures/heatmap_hourly_fixture.json`):** Locked canonical 3-location hourly snapshot dataset across 3 distinct tile IDs (`LOC-A` in `tile-11`, `LOC-B` in `tile-12`, `LOC-C` in `tile-13`). Zero boundary ambiguity or synthetic values.
+- **Spatial Decision Domain Model (`src/types/domain.ts`):** Added `CandidateLocation`, `HourlyTileTemperature` (with `provenance: 'DERIVED'`), `RankedLocationResult`, and `SpatialDecisionResult`.
+- **Deterministic Multi-Location Evaluator (`src/lib/decision-engine/evaluator.ts`):** Implemented `evaluateCandidateLocations()`. Ranks candidate locations by modeled thermal exposure ($E(\text{loc})$) with deterministic tie-breaking. Kept `baseObservationTime` out of mathematical ranking logic.
+- **Route Extension (`src/app/api/decision/route.ts`):** Extended POST endpoint to accept candidate locations, validate against duplicate IDs/coordinates, normalize hourly observations per candidate with zero cross-location leakage, and return `spatialDecision`.
+- **Spatial Decision Workspace UI (`src/app/page.tsx` & `src/components/ThermalMap.tsx`):**
+  - Displays 3 candidate markers on MapLibre map with winning site highlighted (`★ Rank #1 Winner`).
+  - Displays Optimal Operating Location Card with winning site (`LOC-A - Battery Park Greenway`) and exposure score (`29.15°C`).
+  - Displays FortyGuard Spatial Advantage banner showing continuous thermal savings (`+2.20°C` savings vs `LOC-C Chinatown`).
+  - Candidate comparison matrix displaying rank, site name, tile ID, modeled exposure, and $\Delta$ vs best.
+  - Interactive duration slider with local scenario recalculation.
+- **Automated Verification & E2E Tests (`tests/spatial_decision.test.ts` & `tests/e2e/smoke.test.ts`):**
+  - Added 8 deterministic tests verifying 3-location ranking, score calculation, delta calculation, tie-breaking, duplicate rejection, missing hourly observation errors, LIVE/FIXTURE parity, and scenario recalculation.
+  - Playwright smoke test verifies the full UI flow and updates `tests/e2e/workspace-smoke.png`.
+
+---
+
+## 2. Test & Verification Results
+- **Vitest Unit & Parity Tests (`pnpm test`):** 7 test suites passed, 36 unit tests passed (100% pass rate).
+- **TypeScript Typecheck (`pnpm typecheck`):** Clean (0 errors).
+- **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
+- **Next.js Production Build (`pnpm build`):** Clean (5 static/dynamic pages compiled cleanly).
+- **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (8.6s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
+

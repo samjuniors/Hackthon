@@ -22,10 +22,11 @@ Deliver an end-to-end working vertical slice combining verified FortyGuard spati
 - [x] **Deterministic Exposure Evaluator (`src/lib/decision-engine/evaluator.ts`):** Calculates mean temperature exposure score $E(W_i) = \frac{1}{n} \sum T(\text{location}, t)$ across sliding candidate windows. Enforces +12h forecast lead boundary.
 - [x] **Decision Pipeline & API Boundary (`src/app/api/decision/route.ts`):** Server-side use-case boundary returning `DecisionResult` and raw GeoJSON thermal surface.
 - [x] **Decision Workspace UI (`src/app/page.tsx` & `src/components/ThermalMap.tsx`):** Spatial MapLibre GL tile rendering, candidate location presets, duration sliders, optimal operating window card, and data provenance breakdown.
-### Milestone 4.1 — Evidence Integrity Fix (`COMPLETED & VERIFIED`)
-- [x] **Excised Fabricated Diurnal Curve:** Completely removed `Math.sin` curve formula. Observations strictly reflect FortyGuard API or verified FortyGuard fixtures.
-- [x] **Eliminated Silent Fallbacks & Explicit Mode Separation:** Decoupled `LIVE` mode (pure API, hard failures on network/auth error) and `FIXTURE` mode (captured FortyGuard data, explicitly tagged).
-- [x] **Discrete Hourly Snapshot Acquisition & Caching:** Multi-hour candidate evaluations fetch real hourly snapshots (`filter_type: 1`) cached in-memory by request hash.
-- [x] **Enforced Temporal Horizon:** Requests exceeding FortyGuard's +12h forecast lead time throw `IncompleteTemporalCoverageError`. Zero fabricated missing hours.
-- [x] **Prominent UI Source Indicator:** Decision Workspace prominently displays `LIVE — FORTYGUARD API` vs `DEMO — CAPTURED FORTYGUARD DATA`.
-- [x] **LIVE/FIXTURE Decision Parity Testing:** Added comprehensive test suite verifying 100% parity across decision scoring and candidate window rankings.
+### Milestone 5 — Spatial Location Decision Slice (`COMPLETED & VERIFIED`)
+- [x] **Empirical Evidence Lock:** Locked 3-location hourly snapshot dataset across 3 distinct tile IDs (`LOC-A` in `tile-11`, `LOC-B` in `tile-12`, `LOC-C` in `tile-13`). Zero boundary ambiguity or synthetic values.
+- [x] **Spatial Decision Domain Model:** Implemented `CandidateLocation`, `HourlyTileTemperature` (with `provenance: 'DERIVED'`), `RankedLocationResult`, and `SpatialDecisionResult`.
+- [x] **Deterministic Multi-Location Evaluator:** Extended `evaluateCandidateLocations()` to rank candidate sites by modeled thermal exposure with stable `locationId` tie-breaking. Kept `baseObservationTime` out of mathematical ranking logic.
+- [x] **Decision Route Extension (`/api/decision`):** Supports candidate arrays, validates duplicate candidate IDs/coordinates, normalizes observations per candidate with zero cross-location leakage.
+- [x] **Spatial Decision Workspace UI:** Displays 3 candidate markers on MapLibre map, highlights winning site with `★ Rank #1 Winner`, displays savings banner (`+2.20°C` savings vs worst site), and provides interactive duration recalculation.
+- [x] **Verification & Adversarial Testing:** 36 Vitest tests passing across 7 test suites (100% pass rate). Playwright smoke test verified with screenshot saved at `tests/e2e/workspace-smoke.png`.
+

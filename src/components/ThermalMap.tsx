@@ -2,15 +2,23 @@
 
 import { useEffect, useRef } from 'react';
 import { Map, Marker, Popup, type GeoJSONSource, type GeoJSONSourceSpecification } from 'maplibre-gl';
-import type { LocationPoint, PolygonAOI } from '@/types/domain';
+import type { LocationPoint, PolygonAOI, CandidateLocation } from '@/types/domain';
 
 interface ThermalMapProps {
   location: LocationPoint;
   spatialField: PolygonAOI | null;
   selectedTileId?: string | number;
+  candidates?: CandidateLocation[];
+  recommendedLocationId?: string;
 }
 
-export function ThermalMap({ location, spatialField, selectedTileId }: ThermalMapProps) {
+export function ThermalMap({
+  location,
+  spatialField,
+  selectedTileId,
+  candidates,
+  recommendedLocationId,
+}: ThermalMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<Map | null>(null);
 
@@ -49,16 +57,41 @@ export function ThermalMap({ location, spatialField, selectedTileId }: ThermalMa
     mapInstance.current = map;
 
     map.on('load', () => {
-      // Add target location marker
-      new Marker({ color: '#22d3ee' })
-        .setLngLat([location.longitude, location.latitude])
-        .setPopup(
-          new Popup({ offset: 25 }).setHTML(
-            `<div style="color: #0f172a; font-weight: bold; font-size: 13px;">Candidate Location</div>
-             <div style="color: #475569; font-size: 11px;">Lat: ${location.latitude.toFixed(4)}, Lon: ${location.longitude.toFixed(4)}</div>`
+      // Add candidate locations or single target location marker
+      const locsToRender: Array<{ id: string; name: string; loc: LocationPoint; isWinner: boolean }> =
+        candidates && candidates.length > 0
+          ? candidates.map((c) => ({
+              id: c.locationId,
+              name: c.name,
+              loc: c.location,
+              isWinner: c.locationId === recommendedLocationId,
+            }))
+          : [
+              {
+                id: 'target',
+                name: 'Candidate Location',
+                loc: location,
+                isWinner: true,
+              },
+            ];
+
+      for (const locItem of locsToRender) {
+        const markerColor = locItem.isWinner ? '#10b981' : '#38bdf8';
+        new Marker({ color: markerColor })
+          .setLngLat([locItem.loc.longitude, locItem.loc.latitude])
+          .setPopup(
+            new Popup({ offset: 25 }).setHTML(
+              `<div style="color: #0f172a; font-weight: bold; font-size: 13px;">
+                ${locItem.isWinner ? '★ ' : ''}${locItem.name}
+              </div>
+              <div style="color: #475569; font-size: 11px; margin-top: 2px;">
+                ${locItem.id} | Lat: ${locItem.loc.latitude.toFixed(4)}, Lon: ${locItem.loc.longitude.toFixed(4)}
+              </div>`
+            )
           )
-        )
-        .addTo(map);
+          .addTo(map);
+      }
+
 
       if (spatialField && spatialField.features?.length > 0) {
         map.addSource('thermal-tiles', {
@@ -100,7 +133,7 @@ export function ThermalMap({ location, spatialField, selectedTileId }: ThermalMa
     return () => {
       map.remove();
     };
-  }, [location.latitude, location.longitude, spatialField]);
+  }, [location, spatialField, candidates, recommendedLocationId]);
 
   // Update GeoJSON source data when spatialField changes
   useEffect(() => {
@@ -143,3 +176,6 @@ export function ThermalMap({ location, spatialField, selectedTileId }: ThermalMa
     </div>
   );
 }
+
+export default ThermalMap;
+

@@ -123,3 +123,60 @@ export interface DecisionResult {
   modelVersion: 'v1.0.0-spatial-thermal-baseline';
 }
 
+// ==========================================
+// Milestone 5: Spatial Decision Domain Types
+// ==========================================
+
+export interface CandidateLocation {
+  locationId: string;
+  name: string;
+  location: LocationPoint;
+}
+
+export interface HourlyTileTemperature {
+  timestamp: string; // ISO 8601 UTC
+  temperatureCelsius: number;
+  provenance: 'DERIVED';
+  tileId: string | number;
+  evidenceReference?: string;
+}
+
+export interface RankedLocationResult {
+  rank: number;
+  locationId: string;
+  name: string;
+  location: LocationPoint;
+  tileId: string | number;
+  exposureScore: number;
+  deltaVsBest: number;
+  status: 'Feasible' | 'Infeasible';
+  thermalValues: HourlyTileTemperature[];
+}
+
+export interface SpatialDecisionResult {
+  decisionType: 'SPATIAL_LOCATION_CHOICE';
+  recommendedLocation: RankedLocationResult;
+  rankedLocations: RankedLocationResult[];
+  timeWindow: {
+    startTime: string; // ISO 8601 UTC
+    endTime: string;   // ISO 8601 UTC
+    durationHours: number;
+  };
+  dataSource: DataSourceMode;
+  modelVersion: 'v1.0.0-spatial-thermal-baseline';
+  spatialFieldMetadata: {
+    baseTimestamp: string;
+    coverageType: 'BASE_TIMESTAMP_SNAPSHOT';
+    totalEvaluatedHours: number;
+    description: string;
+  };
+  evidenceBundle: {
+    candidateCount: number;
+    sourceEndpoint: string;
+    dataSource: DataSourceMode;
+    provenance: 'DERIVED';
+    evaluatedWindow: CandidateWindow;
+  };
+}
+
+

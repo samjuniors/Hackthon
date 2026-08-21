@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e',
-  fullyParallel: true,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,
   workers: 1,
@@ -19,6 +19,21 @@ export default defineConfig({
         launchOptions: {
           args: ['--no-sandbox', '--ignore-gpu-blocklist', '--use-gl=angle'],
         },
+      },
+    },
+    {
+      name: 'mobile-chrome',
+      use: {
+        ...devices['Pixel 7'],
+        launchOptions: {
+          args: ['--no-sandbox', '--ignore-gpu-blocklist', '--use-gl=angle'],
+        },
+      },
+    },
+    {
+      name: 'mobile-safari',
+      use: {
+        ...devices['iPhone 15'],
       },
     },
   ],

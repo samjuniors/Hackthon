@@ -271,37 +271,53 @@ export class FortyGuardAdapter {
     const results = new Map<string, PolygonAOI>();
     const aoiToQuery = baseAoi || createBoundingAOI(location);
 
+    if (this.mode === 'LIVE') {
+      // Fetch all hourly snapshots concurrently — each timestamp is an independent
+      // FortyGuard request. The session cache deduplicates identical request bodies.
+      const entries = await Promise.all(
+        timestamps.map(async (timestamp) => {
+          const d = new Date(timestamp);
+          const dateStr = d.toISOString().slice(0, 10);
+          const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
+
+          const heatmapResult = await this.getHeatmap({
+            polygon_aoi: aoiToQuery,
+            date_time: {
+              start_date: dateStr,
+              start_time: hourStr,
+              filter_type: 1,
+            },
+            granularity: 60,
+          });
+          return [timestamp, heatmapResult.aoi] as [string, PolygonAOI];
+        })
+      );
+
+      for (const [ts, aoi] of entries) {
+        results.set(ts, aoi);
+      }
+
+      return results;
+    }
+
+    // FIXTURE MODE — sequential is fine (synchronous in-memory lookup)
     for (const timestamp of timestamps) {
       const d = new Date(timestamp);
-      const dateStr = d.toISOString().slice(0, 10);
       const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
 
-      if (this.mode === 'LIVE') {
-        const heatmapResult = await this.getHeatmap({
-          polygon_aoi: aoiToQuery,
-          date_time: {
-            start_date: dateStr,
-            start_time: hourStr,
-            filter_type: 1,
-          },
-          granularity: 60,
-        });
-        results.set(timestamp, heatmapResult.aoi);
-      } else {
-        // FIXTURE MODE
-        const snapshot = hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp === timestamp)
-          || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStr);
+      const snapshot = hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp === timestamp)
+        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStr);
 
-        if (!snapshot) {
-          throw new IncompleteTemporalCoverageError(`No fixture coverage available for timestamp ${timestamp}`);
-        }
-
-        results.set(timestamp, snapshot.aoi as PolygonAOI);
+      if (!snapshot) {
+        throw new IncompleteTemporalCoverageError(`No fixture coverage available for timestamp ${timestamp}`);
       }
+
+      results.set(timestamp, snapshot.aoi as PolygonAOI);
     }
 
     return results;
   }
+
 
   /**
    * Normalize heatmap response to point observation via point-in-polygon mapping.

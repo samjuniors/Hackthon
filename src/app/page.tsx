@@ -268,29 +268,53 @@ export default function WorkspacePage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base text-slate-200">Operational Candidate Set</CardTitle>
               <CardDescription className="text-xs text-slate-400">
-                Candidate deployment sites evaluated simultaneously across contiguous FortyGuard microclimate surface
+                {mode === 'FIXTURE'
+                  ? 'DEMO mode — fixed Manhattan dataset. Candidates are pre-labeled FortyGuard capture sites.'
+                  : 'LIVE mode — geo-adjacent candidates derived from your selected coordinates and evaluated against live FortyGuard tiles.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <span className="text-xs font-semibold text-slate-300 block">Evaluated Sites (Select to Center Map)</span>
-                <div className="flex flex-col gap-2">
-                  {PRESET_LOCATIONS.map((loc) => (
-                    <Button
-                      key={loc.name}
-                      variant={lat === loc.lat && lon === loc.lon ? 'default' : 'outline'}
-                      size="sm"
-                      className="justify-start text-xs font-normal"
-                      onClick={() => {
-                        setLat(loc.lat);
-                        setLon(loc.lon);
-                        runDecisionPipeline(loc.lat, loc.lon, duration, mode);
-                      }}
-                    >
-                      {loc.name}
-                    </Button>
-                  ))}
-                </div>
+                {mode === 'FIXTURE' ? (
+                  <>
+                    <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-amber-950/50 border border-amber-800/40 mb-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                      <span className="text-xs text-amber-300 font-mono">DEMO — Manhattan Scenario Only</span>
+                    </div>
+                    <span className="text-xs font-semibold text-slate-300 block">Demo Sites (Select to Center Map)</span>
+                    <div className="flex flex-col gap-2">
+                      {PRESET_LOCATIONS.map((loc) => (
+                        <Button
+                          key={loc.name}
+                          variant={lat === loc.lat && lon === loc.lon ? 'default' : 'outline'}
+                          size="sm"
+                          className="justify-start text-xs font-normal"
+                          onClick={() => {
+                            setLat(loc.lat);
+                            setLon(loc.lon);
+                            runDecisionPipeline(loc.lat, loc.lon, duration, mode);
+                          }}
+                        >
+                          {loc.name}
+                        </Button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="px-3 py-3 rounded bg-emerald-950/40 border border-emerald-800/40 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                      <span className="text-xs text-emerald-300 font-mono font-semibold">LIVE — Geographic Analysis</span>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Candidates: <span className="font-mono text-slate-200">SITE-N · SITE-CENTER · SITE-S</span>
+                      <br />centered at <span className="font-mono text-cyan-300">{lat.toFixed(4)}, {lon.toFixed(4)}</span>
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Switch to DEMO mode to use the named Manhattan scenario sites.
+                    </p>
+                  </div>
+                )}
               </div>
 
 

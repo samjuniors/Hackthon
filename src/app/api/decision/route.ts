@@ -58,6 +58,37 @@ const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
   },
 ];
 
+/**
+ * Generate 3 geo-adjacent candidates around a user-selected location for LIVE analysis.
+ *
+ * Candidates are spaced 400m apart on the north/south axis so all 3 fall inside the
+ * createBoundingAOI() polygon (halfSideMetres=400) already submitted to FortyGuard.
+ * This ensures the decision engine evaluates real FortyGuard tiles at the user's location.
+ *
+ * Naming convention: SITE-N (north offset), SITE-CENTER (exact point), SITE-S (south offset).
+ */
+function generateLiveCandidates(center: LocationPoint): CandidateLocation[] {
+  const dLat = 400 / 111320; // ~0.0036° per 400m
+  return [
+    {
+      locationId: 'SITE-N',
+      name: 'Site North (Upper Zone)',
+      location: { latitude: center.latitude + dLat * 0.6, longitude: center.longitude },
+    },
+    {
+      locationId: 'SITE-CENTER',
+      name: 'Site Center (Selected Location)',
+      location: { latitude: center.latitude, longitude: center.longitude },
+    },
+    {
+      locationId: 'SITE-S',
+      name: 'Site South (Lower Zone)',
+      location: { latitude: center.latitude - dLat * 0.6, longitude: center.longitude },
+    },
+  ];
+}
+
+
 export async function POST(request: Request) {
   try {
     let rawBody: unknown;
@@ -128,14 +159,21 @@ export async function POST(request: Request) {
       throw new IncompleteTemporalCoverageError('Empty hourly sequence for requested time span');
     }
 
-    // Build candidates to evaluate
+    // Build candidates to evaluate.
+    // - Explicit caller-provided candidates always take precedence.
+    // - LIVE mode: derive geo-adjacent candidates from user's actual location so the
+    //   decision engine evaluates real FortyGuard tiles at the requested geographic area.
+    // - FIXTURE mode: always use Manhattan defaults — the fixture only covers Manhattan tiles.
     const candidatesToEvaluate: CandidateLocation[] = reqCandidates && reqCandidates.length > 0
       ? reqCandidates.map((c) => ({
           locationId: c.locationId,
           name: c.name,
           location: { latitude: c.latitude, longitude: c.longitude },
         }))
-      : DEFAULT_CANDIDATE_LOCATIONS;
+      : mode === 'LIVE'
+        ? generateLiveCandidates({ latitude, longitude })
+        : DEFAULT_CANDIDATE_LOCATIONS;
+
 
     // Reject duplicate candidate IDs or duplicate coordinates
     const seenLocIds = new Set<string>();

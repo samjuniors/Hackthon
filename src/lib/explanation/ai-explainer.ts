@@ -45,7 +45,7 @@ export async function explainDecision(
     return generateDeterministicExplanation(input, validation.reason || 'MOCK_VALIDATION_FAILED');
   }
 
-  const apiKey = options?.apiKey || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY;
+  const apiKey = options?.apiKey || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.AI_API_KEY;
   if (!apiKey) {
     return generateDeterministicExplanation(
       input,

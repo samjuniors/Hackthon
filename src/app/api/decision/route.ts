@@ -4,7 +4,9 @@ import {
   evaluateCandidateWindows,
   evaluateCandidateLocations,
   evaluateJointDecision,
+  evaluateWhatIfScenarios,
 } from '@/lib/decision-engine/evaluator';
+
 
 import type {
   LocationPoint,
@@ -217,6 +219,17 @@ export async function POST(request: Request) {
       }
     );
 
+    // Evaluate Milestone 7 What-If constraint sensitivity analysis
+    const scenarioAnalysis = evaluateWhatIfScenarios(
+      candidatesToEvaluate,
+      observationsByCandidate,
+      constraints,
+      {
+        dataSource: mode,
+        baseTimestamp: hourlyTimestamps[0],
+      }
+    );
+
     const baseTimestamp = hourlyTimestamps[0];
     const baseSpatialField = snapshotsMap.get(baseTimestamp);
 
@@ -225,6 +238,7 @@ export async function POST(request: Request) {
       decision,
       spatialDecision,
       jointDecision,
+      scenarioAnalysis,
       spatialField: baseSpatialField,
       spatialFieldMetadata: {
         baseTimestamp,
@@ -233,6 +247,7 @@ export async function POST(request: Request) {
         totalEvaluatedHours: hourlyTimestamps.length,
       },
     });
+
 
 
 

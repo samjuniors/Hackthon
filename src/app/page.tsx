@@ -7,7 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { DecisionResult, SpatialDecisionResult, JointDecisionResult, PolygonAOI } from '@/types/domain';
+import type {
+  DecisionResult,
+  SpatialDecisionResult,
+  JointDecisionResult,
+  ScenarioAnalysisResult,
+  PolygonAOI,
+} from '@/types/domain';
 import type { DataSourceMode } from '@/types/provenance';
 
 // Dynamically import MapLibre map component to bypass SSR canvas requirement
@@ -30,6 +36,8 @@ export default function WorkspacePage() {
   const [decision, setDecision] = useState<DecisionResult | null>(null);
   const [spatialDecision, setSpatialDecision] = useState<SpatialDecisionResult | null>(null);
   const [jointDecision, setJointDecision] = useState<JointDecisionResult | null>(null);
+  const [scenarioAnalysis, setScenarioAnalysis] = useState<ScenarioAnalysisResult | null>(null);
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>('scenario-temporal-shift');
   const [spatialField, setSpatialField] = useState<PolygonAOI | null>(null);
   const [spatialFieldMeta, setSpatialFieldMeta] = useState<{
     baseTimestamp: string;
@@ -38,6 +46,7 @@ export default function WorkspacePage() {
     totalEvaluatedHours: number;
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
 
   const runDecisionPipeline = useCallback(async (
     latitude = lat,
@@ -69,12 +78,14 @@ export default function WorkspacePage() {
       setDecision(data.decision);
       setSpatialDecision(data.spatialDecision || null);
       setJointDecision(data.jointDecision || null);
+      setScenarioAnalysis(data.scenarioAnalysis || null);
       setSpatialField(data.spatialField);
       setSpatialFieldMeta(data.spatialFieldMetadata || null);
     } catch (err) {
       setDecision(null);
       setSpatialDecision(null);
       setJointDecision(null);
+      setScenarioAnalysis(null);
       setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
     } finally {
       setLoading(false);
@@ -103,6 +114,7 @@ export default function WorkspacePage() {
         setDecision(data.decision);
         setSpatialDecision(data.spatialDecision || null);
         setJointDecision(data.jointDecision || null);
+        setScenarioAnalysis(data.scenarioAnalysis || null);
         setSpatialField(data.spatialField);
         setSpatialFieldMeta(data.spatialFieldMetadata || null);
       })
@@ -111,12 +123,14 @@ export default function WorkspacePage() {
           setDecision(null);
           setSpatialDecision(null);
           setJointDecision(null);
+          setScenarioAnalysis(null);
           setErrorMsg(err instanceof Error ? err.message : 'Failed to execute decision pipeline');
         }
       })
       .finally(() => {
         if (isMounted) setLoading(false);
       });
+
 
     return () => {
       isMounted = false;
@@ -133,11 +147,11 @@ export default function WorkspacePage() {
               Thermal Decision Engine
             </h1>
             <Badge variant="outline" className="border-cyan-500/40 text-cyan-400 bg-cyan-950/40 font-mono text-xs">
-              M6 Joint Decision Model
+              M7 What-If Constraint Sensitivity
             </Badge>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Hyperlocal FortyGuard Thermal Intelligence & Joint Spatial-Temporal Operational Optimization (WHERE + WHEN)
+            Hyperlocal FortyGuard Thermal Intelligence & Operational Constraint Sensitivity Analysis (WHERE + WHEN + WHAT-IF)
           </p>
         </div>
 
@@ -203,12 +217,13 @@ export default function WorkspacePage() {
 
           <Card className="bg-slate-900/80 border-slate-800 backdrop-blur-md">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base text-slate-200">Candidate Spatial Locations</CardTitle>
+              <CardTitle className="text-base text-slate-200">Operational Candidate Cluster</CardTitle>
               <CardDescription className="text-xs text-slate-400">
-                Compare simultaneous candidate sites within FortyGuard AOI
+                Simultaneously evaluated candidate sites within contiguous FortyGuard AOI
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+
               <div className="space-y-2">
                 <span className="text-xs font-semibold text-slate-300 block">Candidate Focus Points</span>
                 <div className="flex flex-col gap-2">
@@ -616,6 +631,169 @@ export default function WorkspacePage() {
               </CardContent>
             </Card>
           ) : null}
+
+          {/* M7 What-If Constraint Sensitivity Section */}
+          {scenarioAnalysis && scenarioAnalysis.scenarios.length > 0 && (
+            <Card className="bg-slate-900/90 border-slate-800">
+              <CardHeader className="pb-3 border-b border-slate-800/80">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base text-slate-100 flex items-center gap-2">
+                      <span>What-If Operational Constraint Analysis</span>
+                      <Badge className="bg-indigo-950 text-indigo-300 border-indigo-500/40 text-[10px]">
+                        Constraint Sensitivity
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription className="text-xs text-slate-400 mt-1">
+                      Evaluate exact modeled temperature increase when operational constraints restrict the unconstrained global optimum (P₀).
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-4">
+                {/* Scenario Selector Buttons */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {scenarioAnalysis.scenarios.map((sc) => (
+                    <Button
+                      key={sc.scenarioId}
+                      variant={selectedScenarioId === sc.scenarioId ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSelectedScenarioId(sc.scenarioId)}
+                      className={`text-xs justify-start h-auto py-2 px-3 ${
+                        selectedScenarioId === sc.scenarioId
+                          ? 'bg-indigo-600 hover:bg-indigo-500 text-white font-semibold'
+                          : 'border-slate-800 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="text-left">
+                        <div className="font-bold">{sc.scenarioName}</div>
+                        <div className="text-[10px] opacity-80">{sc.constraintType}</div>
+                      </div>
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Selected Scenario Comparison Display */}
+                {(() => {
+                  const activeScenario =
+                    scenarioAnalysis.scenarios.find((s) => s.scenarioId === selectedScenarioId) ||
+                    scenarioAnalysis.scenarios[0];
+                  if (!activeScenario) return null;
+
+                  return (
+                    <div className="space-y-4">
+                      {/* 3-Box Flow: Baseline -> Constraint -> Constrained Optimum */}
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                        {/* Box 1: Baseline P0 */}
+                        <div className="md:col-span-4 bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="border-cyan-500/40 text-cyan-300 text-[10px] font-mono">
+                              BASELINE PLAN (P₀)
+                            </Badge>
+                            <span className="text-lg font-black text-cyan-400 font-mono">
+                              {activeScenario.baselinePlan.exposureScore.toFixed(2)}°C
+                            </span>
+                          </div>
+                          <div className="text-xs text-white font-semibold">
+                            {activeScenario.baselinePlan.location.name}
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-400">
+                            {new Date(activeScenario.baselinePlan.window.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} –{' '}
+                            {new Date(activeScenario.baselinePlan.window.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC ({activeScenario.baselinePlan.window.durationHours}h)
+                          </div>
+                        </div>
+
+                        {/* Box 2: Constraint Arrow */}
+                        <div className="md:col-span-4 bg-indigo-950/40 border border-indigo-500/30 p-3 rounded-lg text-center space-y-1">
+                          <div className="text-[10px] font-mono text-indigo-300 uppercase font-bold">
+                            IMPOSED CONSTRAINT
+                          </div>
+                          <div className="text-xs font-semibold text-white">
+                            {activeScenario.constraintDescription}
+                          </div>
+                          <Badge variant="outline" className="border-indigo-400/40 text-indigo-300 text-[9px] font-mono">
+                            {activeScenario.constraintType}
+                          </Badge>
+                        </div>
+
+                        {/* Box 3: Constrained P' */}
+                        <div className="md:col-span-4 bg-slate-950 p-3 rounded-lg border border-amber-500/30 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-[10px] font-mono">
+                              CONSTRAINED OPTIMUM (P&apos;)
+                            </Badge>
+                            <span className="text-lg font-black text-amber-400 font-mono">
+                              {activeScenario.constrainedPlan ? `${activeScenario.constrainedPlan.exposureScore.toFixed(2)}°C` : 'N/A'}
+                            </span>
+                          </div>
+                          <div className="text-xs text-white font-semibold">
+                            {activeScenario.constrainedPlan?.location.name || 'No Feasible Plan'}
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-400">
+                            {activeScenario.constrainedPlan
+                              ? `${new Date(activeScenario.constrainedPlan.window.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} – ${new Date(activeScenario.constrainedPlan.window.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC (${activeScenario.constrainedPlan.window.durationHours}h)`
+                              : activeScenario.infeasibleReason || 'Infeasible'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Constraint Cost & Shift Status Banner */}
+                      {activeScenario.status === 'FEASIBLE' && activeScenario.costOfConstraintCelsius !== null ? (
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-3">
+                            <div className="text-xl font-mono font-black text-amber-400">
+                              +{activeScenario.costOfConstraintCelsius.toFixed(2)}°C
+                            </div>
+                            <div>
+                              <span className="font-bold text-slate-200">Constraint Cost:</span>{' '}
+                              <span className="text-slate-400">Mean Modeled Temperature Increase under {activeScenario.scenarioName}</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] font-mono ${
+                                activeScenario.locationShifted
+                                  ? 'bg-amber-950/60 text-amber-300 border-amber-500/40'
+                                  : 'bg-slate-900 text-slate-400 border-slate-700'
+                              }`}
+                            >
+                              Location: {activeScenario.locationShifted ? 'Shifted' : 'Same'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] font-mono ${
+                                activeScenario.windowShifted
+                                  ? 'bg-amber-950/60 text-amber-300 border-amber-500/40'
+                                  : 'bg-slate-900 text-slate-400 border-slate-700'
+                              }`}
+                            >
+                              Window: {activeScenario.windowShifted ? 'Shifted' : 'Same'}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] font-mono ${
+                                activeScenario.durationChanged
+                                  ? 'bg-amber-950/60 text-amber-300 border-amber-500/40'
+                                  : 'bg-slate-900 text-slate-400 border-slate-700'
+                              }`}
+                            >
+                              Duration: {activeScenario.durationChanged ? 'Expanded' : 'Same'}
+                            </Badge>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-red-950/40 border border-red-500/40 p-3 rounded-lg text-xs text-red-200">
+                          ⚠️ Infeasible Scenario: {activeScenario.infeasibleReason}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          )}
+
         </div>
       </div>
     </main>

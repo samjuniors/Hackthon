@@ -12,9 +12,12 @@ import type {
   LocationPoint,
   NormalizedThermalObservation,
   RankedLocationResult,
+  ScenarioAnalysisResult,
   SpatialDecisionResult,
+  WhatIfScenarioResult,
 } from '@/types/domain';
 import type { DataSourceMode } from '@/types/provenance';
+
 import {
   IncompleteTemporalCoverageError,
   InfeasibleConstraintsError,
@@ -557,6 +560,140 @@ export function evaluateJointDecision(
     },
   };
 }
+
+/**
+ * Execute What-If constraint sensitivity analysis comparing the unconstrained baseline optimum (P0)
+ * against single-constraint operational scenarios (P') to compute exact Cost of the Constraint:
+ * C = E(P') - E(P0).
+ */
+export function evaluateWhatIfScenarios(
+  candidates: CandidateLocation[],
+  observationsByLocation: Map<string, NormalizedThermalObservation[]>,
+  baselineConstraints: DecisionConstraints,
+  options?: {
+    dataSource?: DataSourceMode;
+    baseTimestamp?: string;
+  }
+): ScenarioAnalysisResult {
+  // 1. Evaluate baseline joint decision -> P0
+  const baselineResult = evaluateJointDecision(
+    candidates,
+    observationsByLocation,
+    baselineConstraints,
+    options
+  );
+  const baselinePlan = baselineResult.recommendedPlan;
+
+  const scenarios: WhatIfScenarioResult[] = [];
+
+  // Helper to build scenario result
+  const evaluateSingleScenario = (
+    scenarioId: string,
+    scenarioName: string,
+    constraintType: 'TEMPORAL_SHIFT' | 'LOCATION_LOCK' | 'DURATION_EXPANSION',
+    constraintDescription: string,
+    scenarioCandidates: CandidateLocation[],
+    scenarioConstraints: DecisionConstraints
+  ): WhatIfScenarioResult => {
+    try {
+      const constrainedResult = evaluateJointDecision(
+        scenarioCandidates,
+        observationsByLocation,
+        scenarioConstraints,
+        options
+      );
+      const constrainedPlan = constrainedResult.recommendedPlan;
+      const costOfConstraintCelsius = Number(
+        (constrainedPlan.exposureScore - baselinePlan.exposureScore).toFixed(2)
+      );
+
+      return {
+        scenarioId,
+        scenarioName,
+        constraintType,
+        constraintDescription,
+        baselinePlan,
+        constrainedPlan,
+        costOfConstraintCelsius,
+        locationShifted: constrainedPlan.location.locationId !== baselinePlan.location.locationId,
+        windowShifted: constrainedPlan.window.startTime !== baselinePlan.window.startTime,
+        durationChanged: constrainedPlan.window.durationHours !== baselinePlan.window.durationHours,
+        status: 'FEASIBLE',
+      };
+    } catch (error) {
+      return {
+        scenarioId,
+        scenarioName,
+        constraintType,
+        constraintDescription,
+        baselinePlan,
+        constrainedPlan: null,
+        costOfConstraintCelsius: null,
+        locationShifted: false,
+        windowShifted: false,
+        durationChanged: false,
+        status: 'INFEASIBLE',
+        infeasibleReason: error instanceof Error ? error.message : 'Constrained search space produced no feasible plan',
+      };
+    }
+  };
+
+  // Scenario 1: TEMPORAL_SHIFT — Shift earliest start from 08:00 to 10:00 UTC
+  const baseStartMs = new Date(baselineConstraints.allowedStart).getTime();
+  const shiftedStartIso = new Date(baseStartMs + 2 * 3600 * 1000).toISOString();
+  const temporalShiftConstraints: DecisionConstraints = {
+    ...baselineConstraints,
+    allowedStart: shiftedStartIso,
+  };
+  scenarios.push(
+    evaluateSingleScenario(
+      'scenario-temporal-shift',
+      'Noise Curfew / Late Start (10:00 UTC)',
+      'TEMPORAL_SHIFT',
+      'Earliest allowable start restricted from 08:00 UTC to 10:00 UTC',
+      candidates,
+      temporalShiftConstraints
+    )
+  );
+
+  // Scenario 2: LOCATION_LOCK — Lock operation strictly to Chinatown (LOC-C)
+  const locCCandidates = candidates.filter((c) => c.locationId === 'LOC-C');
+  const locationLockCandidates = locCCandidates.length > 0 ? locCCandidates : [candidates[candidates.length - 1]];
+  scenarios.push(
+    evaluateSingleScenario(
+      'scenario-location-lock',
+      'Site Lock (Chinatown Asphalt Canyon)',
+      'LOCATION_LOCK',
+      `Operational deployment locked strictly to ${locationLockCandidates[0].name} (${locationLockCandidates[0].locationId})`,
+      locationLockCandidates,
+      baselineConstraints
+    )
+  );
+
+  // Scenario 3: DURATION_EXPANSION — Expand duration from 2h to 4h
+  const durationExpansionConstraints: DecisionConstraints = {
+    ...baselineConstraints,
+    durationHours: 4,
+  };
+  scenarios.push(
+    evaluateSingleScenario(
+      'scenario-duration-expansion',
+      'Shift Extension (4-Hour Duration)',
+      'DURATION_EXPANSION',
+      `Operation duration expanded from ${baselineConstraints.durationHours} Hours to 4 Hours`,
+      candidates,
+      durationExpansionConstraints
+    )
+  );
+
+  return {
+    baselinePlan,
+    scenarios,
+    dataSource: baselineResult.dataSource,
+    modelVersion: BASELINE_MODEL_VERSION,
+  };
+}
+
 
 
 

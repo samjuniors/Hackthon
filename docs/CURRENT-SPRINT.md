@@ -1,14 +1,14 @@
-# Current Sprint — Milestone 6: Joint Spatial-Temporal Decision Model (WHERE + WHEN)
+# Current Sprint — Milestone 7: What-If Scenario Analysis & Constraint Sensitivity
 
 **Status:** COMPLETED & VERIFIED  
-**Current Milestone:** M6 — Joint Decision Model (WHERE + WHEN)  
+**Current Milestone:** M7 — What-If Constraint Sensitivity  
 **Submission Deadline:** 2026-08-30  
 **Last Updated:** 2026-08-21  
 
 ---
 
 ## 🎯 Sprint Goal
-Combine proven location selection (WHERE) and sliding window optimization (WHEN) into a unified joint decision engine evaluating the Cartesian space $\mathcal{L} \times \mathcal{W}$ to recommend the single global optimal operational deployment plan.
+Provide deterministic What-If operational constraint sensitivity analysis that directly answers "What does this operational constraint cost me?" by comparing the unconstrained baseline optimum ($P_0$) against single-constraint scenarios ($P'$) and computing the exact Cost of the Constraint ($C = E(P') - E(P_0)$).
 
 ---
 
@@ -35,5 +35,15 @@ Combine proven location selection (WHERE) and sliding window optimization (WHEN)
 - [x] **Route Integration:** Extended `/api/decision` returning `jointDecision` with complete search-space metrics (`locationCount`, `windowCount`, `totalEvaluatedPlans`).
 - [x] **Joint Decision Workspace UI:** Prominently highlights `Recommended Operational Plan` (WHERE + WHEN), WHY THIS PLAN search-space metrics, FortyGuard Joint Advantage banner (+8.40°C delta vs worst feasible plan), and full 15-plan ranking matrix.
 - [x] **Verification & Parity Testing:** 46 Vitest tests passing across 8 test suites (100% pass rate). Playwright smoke test verified with updated screenshot.
+### Milestone 7 — What-If Constraint Sensitivity (`COMPLETED & VERIFIED`)
+- [x] **Semantic Remediation:** Completely excised marketing terms like "Savings". Quantified delta as exact arithmetic mean temperature differences ("Constraint Cost" / "Modeled Temperature Increase").
+- [x] **Scenario Domain Contract:** Implemented `WhatIfScenarioResult` and `ScenarioAnalysisResult` in `src/types/domain.ts`.
+- [x] **Deterministic Constraint Engine:** Implemented `evaluateWhatIfScenarios()` calculating exact cost $C = E(P') - E(P_0)$ across 3 canonical scenarios:
+  1. `TEMPORAL_SHIFT` (Late start 10:00 UTC) $\to +2.95^\circ\text{C}$, `windowShifted: true`.
+  2. `LOCATION_LOCK` (Chinatown asphalt canyon only) $\to +2.20^\circ\text{C}$, `locationShifted: true`.
+  3. `DURATION_EXPANSION` (2h $\to$ 4h shift) $\to +1.48^\circ\text{C}$, `durationChanged: true`.
+- [x] **Interactive What-If UI:** Created 3-Box visual flow ($P_0 \to \text{Constraint} \to P'$) with clear constraint cost readout and shift status badges.
+- [x] **Verification & Parity:** 52 Vitest tests passing across 9 test suites (100% pass rate). Playwright smoke test verified with screenshot.
+
 
 

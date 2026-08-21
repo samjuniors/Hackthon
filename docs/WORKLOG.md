@@ -209,4 +209,39 @@
 - **Next.js Production Build (`pnpm build`):** Clean (5 static/dynamic pages compiled cleanly).
 - **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (10.6s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
 
+---
+
+# Engineering Worklog — Milestone 7 / What-If Scenario Analysis Report
+
+**Date:** 2026-08-21  
+**Milestone:** Milestone 7 — What-If Operational Constraint Sensitivity  
+**Status:** COMPLETED & VERIFIED  
+
+---
+
+## 1. What Was Implemented
+- **Semantic Remediation:** Completely removed marketing terms like "Savings". Replaced with precise arithmetic differences: `"Delta vs Worst Feasible Plan"`, `"Constraint Cost"`, and `"Modeled Temperature Increase"`.
+- **Scenario Domain Contract (`src/types/domain.ts`):** Implemented `WhatIfScenarioResult` and `ScenarioAnalysisResult` with strongly typed scenario statuses (`FEASIBLE` / `INFEASIBLE`) and shift flags (`locationShifted`, `windowShifted`, `durationChanged`).
+- **Deterministic Constraint Engine (`src/lib/decision-engine/evaluator.ts`):** Implemented `evaluateWhatIfScenarios()` quantifying the exact Cost of the Constraint ($C = E(P') - E(P_0)$) across 3 canonical scenarios:
+  1. `TEMPORAL_SHIFT` (Late start 10:00 UTC): Shifts window to 10:00–12:00 UTC ($32.10^\circ\text{C}$). Constraint cost = **$+2.95^\circ\text{C}$**.
+  2. `LOCATION_LOCK` (Chinatown asphalt canyon only): Shifts location to LOC-C ($31.35^\circ\text{C}$). Constraint cost = **$+2.20^\circ\text{C}$**.
+  3. `DURATION_EXPANSION` (2h to 4h duration): Expands shift to 08:00–12:00 UTC ($30.63^\circ\text{C}$). Constraint cost = **$+1.48^\circ\text{C}$**.
+- **Route Integration (`src/app/api/decision/route.ts`):** Returns `scenarioAnalysis` in the JSON response.
+- **Interactive What-If UI (`src/app/page.tsx`):**
+  - Interactive scenario buttons with 3-Box comparative flow: $\text{BASELINE } (P_0) \longrightarrow \text{IMPOSED CONSTRAINT} \longrightarrow \text{CONSTRAINED OPTIMUM } (P')$.
+  - Prominent Constraint Cost banner with shift status badges.
+- **Automated Verification & E2E Tests (`tests/scenario_analysis.test.ts` & `tests/e2e/smoke.test.ts`):**
+  - Added 6 deterministic tests verifying baseline match, temporal shift, location lock, duration expansion, exact cost arithmetic, infeasibility handling, and LIVE/FIXTURE parity.
+  - Playwright smoke test verifies the full What-If UI workflow and re-captures clean screenshot at `tests/e2e/workspace-smoke.png`.
+
+---
+
+## 2. Test & Verification Results
+- **Vitest Unit & Parity Tests (`pnpm test`):** 9 test suites passed, 52 unit tests passed (100% pass rate).
+- **TypeScript Typecheck (`pnpm typecheck`):** Clean (0 errors).
+- **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
+- **Next.js Production Build (`pnpm build`):** Clean (5 static/dynamic pages compiled cleanly).
+- **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (9.0s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
+
+
 

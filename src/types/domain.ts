@@ -221,5 +221,35 @@ export interface JointDecisionResult {
   };
 }
 
+// ==========================================
+// Milestone 7: What-If Scenario Domain Types
+// ==========================================
+
+export type ScenarioConstraintType = 'TEMPORAL_SHIFT' | 'LOCATION_LOCK' | 'DURATION_EXPANSION';
+export type ScenarioStatus = 'FEASIBLE' | 'INFEASIBLE';
+
+export interface WhatIfScenarioResult {
+  scenarioId: string;
+  scenarioName: string;
+  constraintType: ScenarioConstraintType;
+  constraintDescription: string;
+  baselinePlan: CandidatePlan;
+  constrainedPlan: CandidatePlan | null;
+  costOfConstraintCelsius: number | null; // E(P') - E(P0)
+  locationShifted: boolean;
+  windowShifted: boolean;
+  durationChanged: boolean;
+  status: ScenarioStatus;
+  infeasibleReason?: string;
+}
+
+export interface ScenarioAnalysisResult {
+  baselinePlan: CandidatePlan;
+  scenarios: WhatIfScenarioResult[];
+  dataSource: DataSourceMode;
+  modelVersion: 'v1.0.0-spatial-thermal-baseline';
+}
+
+
 
 

@@ -24,10 +24,17 @@ test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
     await expect(page.getByRole('strong').filter({ hasText: 'Battery Park Greenway' })).toBeVisible();
     await expect(page.getByText('EVALUATED SEARCH')).toBeVisible();
 
-    // 6. Capture screenshot of working vertical slice
+    // 6. Verify What-If Operational Constraint Sensitivity Analysis renders
+    await expect(page.getByText('What-If Operational Constraint Analysis')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Noise Curfew/ })).toBeVisible();
+    await expect(page.getByText('Constraint Cost:')).toBeVisible();
+
+    // 7. Capture screenshot of working vertical slice
     await page.screenshot({ path: 'tests/e2e/workspace-smoke.png', fullPage: true });
+
   });
 });
+
 
 
 

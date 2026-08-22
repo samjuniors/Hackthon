@@ -25,9 +25,7 @@ import type {
 } from '@/types/provider';
 import { METROPOLITAN_LOCATIONS } from '@/lib/location/search';
 import {
-  type TempUnit,
-  loadTempUnit,
-  saveTempUnit,
+  useTempUnit,
   fmtTemp,
   fmtTempDelta,
   tempUnitSuffix,
@@ -113,7 +111,7 @@ export default function WorkspacePage() {
   const [mode, setMode] = useState<DataSourceMode>('FIXTURE');
   const [selectedLocation, setSelectedLocation] = useState<NamedLocation>(METROPOLITAN_LOCATIONS[0]);
   const [duration, setDuration] = useState<number>(3);
-  const [unit, setUnit] = useState<TempUnit>(() => loadTempUnit());
+  const [unit, setUnit] = useTempUnit();
 
   const [fgStatus, setFgStatus] = useState<ProviderStatus>('UNKNOWN');
   const [fgHealth, setFgHealth] = useState<FortyGuardHealthResponse | null>(null);
@@ -376,11 +374,6 @@ export default function WorkspacePage() {
     }
   };
 
-  const handleUnitChange = (newUnit: TempUnit) => {
-    setUnit(newUnit);
-    saveTempUnit(newUnit);
-  };
-
   // Derived state
   const activeScenario =
     scenarioAnalysis?.scenarios?.find((s) => s.scenarioId === selectedScenarioId) ||
@@ -425,7 +418,7 @@ export default function WorkspacePage() {
                 type="button"
                 aria-pressed={unit === 'F'}
                 data-testid="temp-unit-f"
-                onClick={() => handleUnitChange('F')}
+                onClick={() => setUnit('F')}
                 className={`min-h-[44px] min-w-[44px] px-2.5 py-1.5 rounded-md text-xs font-bold font-mono transition-all flex items-center justify-center ${
                   unit === 'F'
                     ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-950/50'
@@ -438,7 +431,7 @@ export default function WorkspacePage() {
                 type="button"
                 aria-pressed={unit === 'C'}
                 data-testid="temp-unit-c"
-                onClick={() => handleUnitChange('C')}
+                onClick={() => setUnit('C')}
                 className={`min-h-[44px] min-w-[44px] px-2.5 py-1.5 rounded-md text-xs font-bold font-mono transition-all flex items-center justify-center ${
                   unit === 'C'
                     ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-950/50'

@@ -1,3 +1,7 @@
+'use client';
+
+import { useSyncExternalStore, useCallback } from 'react';
+
 /**
  * Temperature Unit Utility — Thermal Decision Engine
  *
@@ -132,8 +136,10 @@ export function getThermalLegendTicks(unit: TempUnit): { color: string; label: s
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// localStorage persistence
+// localStorage persistence & React Hook
 // ─────────────────────────────────────────────────────────────────────────────
+
+const listeners = new Set<() => void>();
 
 /** Load the persisted unit preference. Falls back to DEFAULT_TEMP_UNIT. */
 export function loadTempUnit(): TempUnit {
@@ -157,4 +163,42 @@ export function saveTempUnit(unit: TempUnit): void {
   } catch {
     // Ignore write errors
   }
+}
+
+function subscribe(callback: () => void) {
+  listeners.add(callback);
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', callback);
+  }
+  return () => {
+    listeners.delete(callback);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', callback);
+    }
+  };
+}
+
+function getSnapshot(): TempUnit {
+  return loadTempUnit();
+}
+
+function getServerSnapshot(): TempUnit {
+  return DEFAULT_TEMP_UNIT;
+}
+
+/**
+ * React hook to synchronize temperature unit preference across components,
+ * page reloads, and browser storage without hydration mismatches.
+ */
+export function useTempUnit(): [TempUnit, (unit: TempUnit) => void] {
+  const unit = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  const setUnit = useCallback((newUnit: TempUnit) => {
+    saveTempUnit(newUnit);
+    for (const listener of listeners) {
+      listener();
+    }
+  }, []);
+
+  return [unit, setUnit];
 }

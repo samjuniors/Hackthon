@@ -303,7 +303,34 @@ export default function WorkspacePage() {
   useEffect(() => {
     let isMounted = true;
 
-    safeJsonFetch<{
+    // Auto-check provider connectivity on initial load
+    void safeJsonFetch<{ success?: boolean; health?: FortyGuardHealthResponse }>(
+      '/api/health/fortyguard',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      }
+    ).then(({ ok, data }) => {
+      if (!isMounted) return;
+      if (ok && data?.success && data.health) {
+        setFgHealth(data.health);
+        setFgStatus(data.health.connected ? 'CONNECTED' : 'ERROR');
+      }
+    }).catch(() => {});
+
+    void safeJsonFetch<{ success?: boolean; health?: AIHealthResponse }>(
+      '/api/health/ai',
+      { method: 'POST' }
+    ).then(({ ok, data }) => {
+      if (!isMounted) return;
+      if (ok && data?.success && data.health) {
+        setAiHealth(data.health);
+        setAiStatus(data.health.connected ? 'CONNECTED' : data.health.configured ? 'ERROR' : 'UNKNOWN');
+      }
+    }).catch(() => {});
+
+    void safeJsonFetch<{
       success?: boolean;
       decision?: DecisionResult;
       spatialDecision?: SpatialDecisionResult;
@@ -348,35 +375,15 @@ export default function WorkspacePage() {
         if (isMounted) setLoading(false);
       });
 
-    safeJsonFetch<{ success?: boolean; health?: AIHealthResponse }>(
-      '/api/health/ai',
-      { method: 'POST' }
-    )
-      .then(({ ok, data }) => {
-        if (!isMounted) return;
-        if (ok && data?.success && data.health) {
-          setAiHealth(data.health);
-          setAiStatus(data.health.connected ? 'CONNECTED' : data.health.configured ? 'ERROR' : 'UNKNOWN');
-        }
-      })
-      .catch(() => {});
-
     return () => {
       isMounted = false;
     };
-  }, [fetchExplanation]);
+  }, [mode, fetchExplanation]);
 
   const handleModeChange = (newMode: DataSourceMode) => {
     setMode(newMode);
-    if (newMode === 'FIXTURE') {
-      const fixtureLoc = METROPOLITAN_LOCATIONS[0];
-      setSelectedLocation(fixtureLoc);
-      checkFortyGuardHealth('FIXTURE');
-      runDecisionPipeline(fixtureLoc, duration, 'FIXTURE');
-    } else {
-      checkFortyGuardHealth('LIVE');
-      runDecisionPipeline(selectedLocation, duration, 'LIVE');
-    }
+    checkFortyGuardHealth(newMode);
+    runDecisionPipeline(selectedLocation, duration, newMode);
   };
 
   // Derived state
@@ -412,11 +419,11 @@ export default function WorkspacePage() {
 
           {/* Controls & Status indicators */}
           <div className="flex items-center gap-3 shrink-0">
-            {/* Global Temperature Unit Toggle (°C / °F) */}
+            {/* Global Temperature Unit Pill-Shaped Toggle (°C / °F) */}
             <div
               role="group"
               aria-label="Temperature unit selection"
-              className="flex items-center bg-[#141f33] p-0.5 rounded-lg border border-[#1e2d45]"
+              className="flex items-center bg-[#0d1422] p-1 rounded-full border border-[#1e2d45] shadow-inner shadow-black/40"
               data-testid="temp-unit-toggle"
             >
               <button
@@ -424,9 +431,9 @@ export default function WorkspacePage() {
                 aria-pressed={unit === 'F'}
                 data-testid="temp-unit-f"
                 onClick={() => setUnit('F')}
-                className={`min-h-[44px] min-w-[44px] px-2.5 py-1.5 rounded-md text-xs font-bold font-mono transition-all flex items-center justify-center ${
+                className={`min-h-[44px] min-w-[44px] px-3.5 py-1.5 rounded-full text-xs font-bold font-mono transition-all flex items-center justify-center gap-1 ${
                   unit === 'F'
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-950/50'
+                    ? 'bg-gradient-to-r from-cyan-500 to-cyan-400 text-slate-950 shadow-md shadow-cyan-500/25 font-black'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -437,9 +444,9 @@ export default function WorkspacePage() {
                 aria-pressed={unit === 'C'}
                 data-testid="temp-unit-c"
                 onClick={() => setUnit('C')}
-                className={`min-h-[44px] min-w-[44px] px-2.5 py-1.5 rounded-md text-xs font-bold font-mono transition-all flex items-center justify-center ${
+                className={`min-h-[44px] min-w-[44px] px-3.5 py-1.5 rounded-full text-xs font-bold font-mono transition-all flex items-center justify-center gap-1 ${
                   unit === 'C'
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-950/50'
+                    ? 'bg-gradient-to-r from-cyan-500 to-cyan-400 text-slate-950 shadow-md shadow-cyan-500/25 font-black'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >

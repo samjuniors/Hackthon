@@ -1,3 +1,4 @@
+import { GoogleGenAI, Type } from '@google/genai';
 import type {
   ExplainableDecisionInput,
   DecisionExplanation,
@@ -24,7 +25,7 @@ CRITICAL NON-NEGOTIABLE RULES:
 }`;
 
 /**
- * Generates an operational explanation for a decision result.
+ * Generates an operational explanation for a decision result using Google Gemini (@google/genai).
  * Seamlessly falls back to deterministic rule-based generation if LLM is unavailable or fails validation.
  */
 export async function explainDecision(
@@ -45,7 +46,9 @@ export async function explainDecision(
     return generateDeterministicExplanation(input, validation.reason || 'MOCK_VALIDATION_FAILED');
   }
 
-  const apiKey = options?.apiKey || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.AI_API_KEY;
+  const apiKey = (options && 'apiKey' in options)
+    ? options.apiKey
+    : process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return generateDeterministicExplanation(
       input,
@@ -53,44 +56,64 @@ export async function explainDecision(
     );
   }
 
-  const timeoutMs = options?.timeoutMs || 5000;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutMs = options?.timeoutMs || 3000;
 
   try {
-    const endpoint = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1/chat/completions';
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${apiKey}`,
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
       },
-      body: JSON.stringify({
-        model: options?.model || process.env.EXPLAINER_MODEL || 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: EXPLAINER_SYSTEM_PROMPT },
-          {
-            role: 'user',
-            content: `Explain this deterministic decision evidence bundle:\n${JSON.stringify(input, null, 2)}`,
-          },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-      }),
-      signal: controller.signal,
     });
 
-    clearTimeout(timeoutId);
+    const generatePromise = ai.models.generateContent({
+      model: options?.model || process.env.EXPLAINER_MODEL || 'gemini-3.7-flash',
+      contents: `Explain this deterministic decision evidence bundle:\n${JSON.stringify(input, null, 2)}`,
+      config: {
+        systemInstruction: EXPLAINER_SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: {
+              type: Type.STRING,
+              description: 'Concise summary of recommended location, window, and mean modeled temperature.',
+            },
+            whyThisPlan: {
+              type: Type.STRING,
+              description: 'Why this plan is optimal among evaluated candidate plans and the delta avoided vs worst feasible plan.',
+            },
+            constraintImpact: {
+              type: Type.STRING,
+              description: 'Impact of the active operational constraint, including the constrained plan and exact Constraint Cost (mean modeled temperature increase). Omit if no scenario.',
+            },
+            epistemicNotice: {
+              type: Type.STRING,
+              description: 'Explicit notice that this represents a deterministic modeled thermal baseline from FortyGuard heatmap data (v1.0.0-spatial-thermal-baseline) and is not a medical or physiological assessment.',
+            },
+          },
+          required: ['summary', 'whyThisPlan', 'epistemicNotice'],
+        },
+        temperature: 0.1,
+      },
+    });
 
-    if (!res.ok) {
-      return generateDeterministicExplanation(
-        input,
-        `LLM_HTTP_ERROR_${res.status}: Failed to obtain LLM explanation.`
-      );
-    }
+    let timeoutHandle: NodeJS.Timeout;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        const error = new Error('Request exceeded time limit.');
+        error.name = 'AbortError';
+        reject(error);
+      }, timeoutMs);
+    });
 
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
+    const response = await Promise.race([generatePromise, timeoutPromise]).finally(() => {
+      clearTimeout(timeoutHandle);
+    });
+
+    const content = response.text;
     if (!content) {
       return generateDeterministicExplanation(
         input,
@@ -110,8 +133,8 @@ export async function explainDecision(
 
     return validation.explanation;
   } catch (error) {
-    clearTimeout(timeoutId);
-    const reason = error instanceof Error && error.name === 'AbortError'
+    const isTimeout = (error instanceof Error && (error.name === 'AbortError' || error.message.includes('time limit')));
+    const reason = isTimeout
       ? 'LLM_TIMEOUT: Request exceeded time limit.'
       : `LLM_INVOCATION_ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`;
 

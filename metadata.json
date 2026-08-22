@@ -1,0 +1,6 @@
+{
+  "name": "Thermal Decision Engine",
+  "description": "Production-grade hyperlocal thermal decision engine powered by FortyGuard microclimate intelligence for optimal spatial-temporal operations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -78,7 +78,7 @@ export function LocationSearch({
   const isSelectedNonDemoInFixture = isFixture && !selectedLocation.isDemoOnly;
 
   return (
-    <div className="space-y-3" ref={wrapperRef}>
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <label htmlFor="location-search-input" className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
           <span>📍 Operating Location</span>
@@ -140,9 +140,9 @@ export function LocationSearch({
         )}
       </div>
 
-      {/* Search Input Box */}
-      <div className="relative">
-        <div className="flex gap-1.5">
+      {/* Search Input Box with Relative Dropdown Wrapper */}
+      <div className="relative" ref={wrapperRef}>
+        <div className="flex items-center gap-1.5">
           <div className="relative flex-1">
             <input
               id="location-search-input"
@@ -153,6 +153,11 @@ export function LocationSearch({
                 setIsOpen(true);
               }}
               onFocus={() => setIsOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setIsOpen(false);
+                }
+              }}
               placeholder={isFixture ? 'Search Manhattan demo sites...' : 'Search metro area or use GPS...'}
               className="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500 font-sans"
               data-testid="location-search-input"
@@ -162,6 +167,7 @@ export function LocationSearch({
                 type="button"
                 onClick={() => {
                   setQuery('');
+                  setIsOpen(false);
                 }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs"
               >
@@ -261,11 +267,11 @@ export function LocationSearch({
         )}
       </div>
 
-      {/* Quick Preset Location Chips */}
-      <div className="space-y-1.5 pt-1">
-        <span className="text-[10px] font-mono text-slate-400 block">
-          {isFixture ? 'Demo Captured Sites:' : 'Quick Metropolitan Hubs:'}
-        </span>
+      {/* Preset Location Chips */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-mono text-slate-400">
+          {isFixture ? 'Demo Sites' : 'Popular Metros'}
+        </label>
         <div className="flex flex-wrap gap-1.5">
           {(isFixture
             ? METROPOLITAN_LOCATIONS.filter((l) => l.isDemoOnly)
@@ -276,7 +282,10 @@ export function LocationSearch({
               <button
                 key={loc.id}
                 type="button"
-                onClick={() => onSelectLocation(loc)}
+                onClick={() => {
+                  setIsOpen(false);
+                  onSelectLocation(loc);
+                }}
                 className={`px-2 py-1 rounded text-[10px] font-mono transition-colors ${
                   isSelected
                     ? 'bg-cyan-600 text-white font-bold'

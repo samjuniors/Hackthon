@@ -21,8 +21,8 @@ export default function RootLayout({
   return (
     // `dark` is applied unconditionally: the Decision Workspace is a dark-canvas
     // operational surface. Colours resolve from the `.dark` token block in globals.css.
-    <html lang="en" className={`dark ${inter.variable}`}>
-      <body className="antialiased">{children}</body>
+    <html lang="en" className={`dark ${inter.variable}`} suppressHydrationWarning>
+      <body className="antialiased" suppressHydrationWarning>{children}</body>
     </html>
   );
 }

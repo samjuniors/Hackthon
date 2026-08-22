@@ -34,6 +34,11 @@ import {
 // Dynamically import MapLibre map component to bypass SSR canvas requirement
 const ThermalMap = dynamic(() => import('@/components/ThermalMap'), {
   ssr: false,
+  loading: () => (
+    <div className="w-full h-[420px] rounded-xl bg-[#0d1422] flex items-center justify-center border border-[#1e2d45]">
+      <span className="text-slate-500 text-xs font-mono animate-pulse">Initializing Hyperlocal Thermal Canvas…</span>
+    </div>
+  ),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

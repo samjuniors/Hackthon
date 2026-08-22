@@ -28,14 +28,52 @@ export function LocationSearch({
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [remoteResults, setRemoteResults] = useState<NamedLocation[]>([]);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [showCoords, setShowCoords] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // Derive search results directly during render
-  const results = query.trim()
+  // Derive instant local results
+  const localResults = query.trim()
     ? searchLocations(query)
     : getPresetLocations(mode === 'FIXTURE');
+
+  // Debounced remote geocoding fetch for arbitrary global addresses and landmarks
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || q.length < 2) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await fetch(`/api/location/search?q=${encodeURIComponent(q)}`, {
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.success && Array.isArray(data.results)) {
+            setRemoteResults(data.results);
+          }
+        }
+      } catch {
+        // Ignore aborts
+      } finally {
+        setIsSearching(false);
+      }
+    }, 250);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [query]);
+
+  // Merge results: use remote if available and query is active, otherwise local catalog
+  const results = query.trim().length >= 2 && remoteResults.length > 0 ? remoteResults : localResults;
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -162,18 +200,21 @@ export function LocationSearch({
               className="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500 font-sans"
               data-testid="location-search-input"
             />
-            {query && (
+            {isSearching ? (
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 border border-slate-600 border-t-cyan-400 rounded-full animate-spin" />
+            ) : query ? (
               <button
                 type="button"
                 onClick={() => {
                   setQuery('');
+                  setRemoteResults([]);
                   setIsOpen(false);
                 }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs"
               >
                 ✕
               </button>
-            )}
+            ) : null}
           </div>
 
           <Button

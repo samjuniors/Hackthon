@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Recommended Operational Plan')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('★ Recommended Operational Plan')).toBeVisible({ timeout: 20000 });
   });
 
   test('loads workspace UI, recalculates decision, and displays evidence recommendation', async ({ page }) => {
@@ -30,12 +30,12 @@ test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
     // 6. Verify What-If Constraint Sensitivity Analysis renders
     await expect(page.getByText('What-If Constraint Sensitivity')).toBeVisible();
     await expect(page.getByRole('button', { name: /Noise Curfew/ })).toBeVisible();
-    await expect(page.getByText('Constraint Cost')).toBeVisible();
 
     // Click through canonical What-If preset scenarios
     const siteLockBtn = page.getByRole('button', { name: /Site Lock/ });
     await siteLockBtn.click();
-    await expect(page.getByText(/\+(2\.37|2\.20)°C/).first()).toBeVisible();
+    await expect(page.getByText('Constraint Cost').first()).toBeVisible();
+    await expect(page.getByText(/\+(4\.27|2\.37|3\.96|2\.20)°[FC]/).first()).toBeVisible();
 
     // 7. Verify Grounded Decision Explanation & Evidence Synthesis renders
     await expect(page.getByText('Decision Explanation')).toBeVisible();

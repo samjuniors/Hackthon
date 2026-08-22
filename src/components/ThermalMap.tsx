@@ -3,6 +3,12 @@
 import { useEffect, useRef } from 'react';
 import { Map, Marker, Popup, type GeoJSONSource, type GeoJSONSourceSpecification } from 'maplibre-gl';
 import type { LocationPoint, PolygonAOI, CandidateLocation } from '@/types/domain';
+import {
+  type TempUnit,
+  DEFAULT_TEMP_UNIT,
+  getThermalLegendTicks,
+  tempUnitSuffix,
+} from '@/lib/temperature';
 
 interface ThermalMapProps {
   location: LocationPoint;
@@ -10,6 +16,7 @@ interface ThermalMapProps {
   selectedTileId?: string | number;
   candidates?: CandidateLocation[];
   recommendedLocationId?: string;
+  unit?: TempUnit;
 }
 
 export function ThermalMap({
@@ -18,6 +25,7 @@ export function ThermalMap({
   selectedTileId,
   candidates,
   recommendedLocationId,
+  unit = DEFAULT_TEMP_UNIT,
 }: ThermalMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<Map | null>(null);
@@ -94,6 +102,7 @@ export function ThermalMap({
         });
 
         // Filled thermal polygons — use expanded scale to cover fixture temps (28–34°C)
+        // Internal shader interpolates in verified Celsius data from FortyGuard
         map.addLayer({
           id: 'thermal-tiles-fill',
           type: 'fill',
@@ -187,20 +196,19 @@ export function ThermalMap({
     }
   }, [spatialField]);
 
+  const legendTicks = getThermalLegendTicks(unit);
+
   return (
     <div className="relative w-full h-[420px] rounded-xl overflow-hidden shadow-2xl shadow-black/60" style={{ border: '1px solid rgba(30,45,69,0.8)' }}>
       <div ref={mapContainer} className="w-full h-full" />
 
       {/* Thermal Legend — bottom left */}
       <div className="absolute bottom-3 left-3 bg-[#0d1422]/95 backdrop-blur-md px-3 py-2.5 rounded-xl shadow-xl" style={{ border: '1px solid rgba(30,45,69,0.9)' }}>
-        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Thermal Scale (°C)</div>
-        <div className="flex items-center gap-1.5">
-          {[
-            { color: '#10b981', label: '≤28' },
-            { color: '#eab308', label: '29-30' },
-            { color: '#f97316', label: '31-32' },
-            { color: '#ef4444', label: '>32' },
-          ].map(({ color, label }) => (
+        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5" data-testid="map-legend-header">
+          Thermal Scale ({tempUnitSuffix(unit)})
+        </div>
+        <div className="flex items-center gap-1.5" data-testid="map-legend-ticks">
+          {legendTicks.map(({ color, label }) => (
             <div key={label} className="flex items-center gap-1">
               <span className="w-3 h-3 rounded-sm inline-block flex-shrink-0" style={{ background: color }} />
               <span className="text-slate-300" style={{ fontSize: '10px' }}>{label}</span>

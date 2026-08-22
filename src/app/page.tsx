@@ -24,6 +24,14 @@ import type {
   ProductionErrorDetails,
 } from '@/types/provider';
 import { METROPOLITAN_LOCATIONS } from '@/lib/location/search';
+import {
+  type TempUnit,
+  loadTempUnit,
+  saveTempUnit,
+  fmtTemp,
+  fmtTempDelta,
+  tempUnitSuffix,
+} from '@/lib/temperature';
 
 // Dynamically import MapLibre map component to bypass SSR canvas requirement
 const ThermalMap = dynamic(() => import('@/components/ThermalMap'), {
@@ -105,6 +113,7 @@ export default function WorkspacePage() {
   const [mode, setMode] = useState<DataSourceMode>('FIXTURE');
   const [selectedLocation, setSelectedLocation] = useState<NamedLocation>(METROPOLITAN_LOCATIONS[0]);
   const [duration, setDuration] = useState<number>(3);
+  const [unit, setUnit] = useState<TempUnit>(() => loadTempUnit());
 
   const [fgStatus, setFgStatus] = useState<ProviderStatus>('UNKNOWN');
   const [fgHealth, setFgHealth] = useState<FortyGuardHealthResponse | null>(null);
@@ -367,6 +376,11 @@ export default function WorkspacePage() {
     }
   };
 
+  const handleUnitChange = (newUnit: TempUnit) => {
+    setUnit(newUnit);
+    saveTempUnit(newUnit);
+  };
+
   // Derived state
   const activeScenario =
     scenarioAnalysis?.scenarios?.find((s) => s.scenarioId === selectedScenarioId) ||
@@ -398,8 +412,43 @@ export default function WorkspacePage() {
             </p>
           </div>
 
-          {/* Status indicators */}
+          {/* Controls & Status indicators */}
           <div className="flex items-center gap-3 shrink-0">
+            {/* Global Temperature Unit Toggle (°C / °F) */}
+            <div
+              role="group"
+              aria-label="Temperature unit selection"
+              className="flex items-center bg-[#141f33] p-0.5 rounded-lg border border-[#1e2d45]"
+              data-testid="temp-unit-toggle"
+            >
+              <button
+                type="button"
+                aria-pressed={unit === 'F'}
+                data-testid="temp-unit-f"
+                onClick={() => handleUnitChange('F')}
+                className={`min-h-[44px] min-w-[44px] px-2.5 py-1.5 rounded-md text-xs font-bold font-mono transition-all flex items-center justify-center ${
+                  unit === 'F'
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-950/50'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                °F
+              </button>
+              <button
+                type="button"
+                aria-pressed={unit === 'C'}
+                data-testid="temp-unit-c"
+                onClick={() => handleUnitChange('C')}
+                className={`min-h-[44px] min-w-[44px] px-2.5 py-1.5 rounded-md text-xs font-bold font-mono transition-all flex items-center justify-center ${
+                  unit === 'C'
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-950/50'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                °C
+              </button>
+            </div>
+
             {/* FortyGuard status */}
             <div className="hidden sm:flex flex-col items-end gap-0.5">
               <span className="text-[9px] text-slate-600 uppercase tracking-wider font-medium">FortyGuard</span>
@@ -645,6 +694,7 @@ export default function WorkspacePage() {
                   location: r.location,
                 }))}
                 recommendedLocationId={spatialDecision?.recommendedLocation.locationId}
+                unit={unit}
               />
             </div>
 
@@ -690,9 +740,14 @@ export default function WorkspacePage() {
 
                     {/* Temperature */}
                     <div className="space-y-1">
-                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">🌡 Modeled Temp</div>
-                      <div className="text-3xl font-black text-emerald-400 font-mono leading-tight thermal-glow-emerald">
-                        {jointDecision.recommendedPlan.exposureScore.toFixed(2)}°C
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
+                        🌡 Modeled Temp ({tempUnitSuffix(unit)})
+                      </div>
+                      <div
+                        className="text-3xl font-black text-emerald-400 font-mono leading-tight thermal-glow-emerald"
+                        data-testid="recommended-temp-display"
+                      >
+                        {fmtTemp(jointDecision.recommendedPlan.exposureScore, unit)}
                       </div>
                       <div className="text-[11px] text-slate-500">Mean across window</div>
                     </div>
@@ -705,8 +760,8 @@ export default function WorkspacePage() {
                       <strong className="text-white">{jointDecision.searchSpace.locationCount} locations × {jointDecision.searchSpace.windowCount} windows</strong>{' '}
                       ({jointDecision.searchSpace.totalEvaluatedPlans} evaluated).
                       Saves{' '}
-                      <span className="text-amber-300 font-bold font-mono">
-                        +{jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].deltaVsBest.toFixed(2)}°C
+                      <span className="text-amber-300 font-bold font-mono" data-testid="advantage-delta-display">
+                        {fmtTempDelta(jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].deltaVsBest, unit)}
                       </span>{' '}
                       vs worst plan.
                     </div>
@@ -718,7 +773,7 @@ export default function WorkspacePage() {
                   <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">
                     Top 3 Plans
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2" data-testid="top-3-plans">
                     {top3Plans.map((plan) => (
                       <div
                         key={plan.planId}
@@ -743,10 +798,12 @@ export default function WorkspacePage() {
                         </div>
                         <div className="text-right shrink-0 ml-3">
                           <div className={`text-base font-black font-mono ${plan.rank === 1 ? 'text-emerald-400' : 'text-slate-300'}`}>
-                            {plan.exposureScore.toFixed(2)}°C
+                            {fmtTemp(plan.exposureScore, unit)}
                           </div>
                           {plan.deltaVsBest > 0 && (
-                            <div className="text-[11px] font-mono text-amber-400">+{plan.deltaVsBest.toFixed(2)}</div>
+                            <div className="text-[11px] font-mono text-amber-400">
+                              {fmtTempDelta(plan.deltaVsBest, unit)}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -765,14 +822,14 @@ export default function WorkspacePage() {
 
                       {showAllPlans && (
                         <div className="mt-2 overflow-x-auto rounded-lg border border-[#1e2d45]">
-                          <table className="w-full text-xs font-mono text-left">
+                          <table className="w-full text-xs font-mono text-left" data-testid="candidate-plans-table">
                             <thead className="bg-[#0a1220] text-slate-500 border-b border-[#1e2d45]">
                               <tr>
                                 <th className="py-2 px-3">Rank</th>
                                 <th className="py-2 px-3">Location</th>
                                 <th className="py-2 px-3">Window (UTC)</th>
                                 <th className="py-2 px-3">Tile</th>
-                                <th className="py-2 px-3">Exposure</th>
+                                <th className="py-2 px-3">Exposure ({tempUnitSuffix(unit)})</th>
                                 <th className="py-2 px-3">Δ Best</th>
                               </tr>
                             </thead>
@@ -793,12 +850,12 @@ export default function WorkspacePage() {
                                     {fmtTime(plan.window.startTime)}–{fmtTime(plan.window.endTime)}
                                   </td>
                                   <td className="py-2 px-3 text-slate-500">{plan.tileId}</td>
-                                  <td className="py-2 px-3 font-bold">{plan.exposureScore.toFixed(2)}°C</td>
+                                  <td className="py-2 px-3 font-bold">{fmtTemp(plan.exposureScore, unit)}</td>
                                   <td className="py-2 px-3">
                                     {plan.deltaVsBest === 0 ? (
                                       <span className="text-emerald-400">0.00 (Best)</span>
                                     ) : (
-                                      <span className="text-amber-400">+{plan.deltaVsBest.toFixed(2)}</span>
+                                      <span className="text-amber-400">{fmtTempDelta(plan.deltaVsBest, unit)}</span>
                                     )}
                                   </td>
                                 </tr>
@@ -857,7 +914,7 @@ export default function WorkspacePage() {
 
             {/* ── What-If Constraint Sensitivity ── */}
             {scenarioAnalysis && scenarioAnalysis.scenarios.length > 0 && (
-              <div className="rounded-xl border border-[#1e2d45] bg-[#0d1422] overflow-hidden">
+              <div className="rounded-xl border border-[#1e2d45] bg-[#0d1422] overflow-hidden" data-testid="what-if-card">
                 <div className="px-5 pt-5 pb-4 border-b border-[#1e2d45]">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">
@@ -901,8 +958,11 @@ export default function WorkspacePage() {
                           <div className="text-[9px] font-bold uppercase tracking-widest text-cyan-500 mb-2">
                             Baseline P₀
                           </div>
-                          <div className="text-2xl font-black text-cyan-400 font-mono mb-1">
-                            {activeScenario.baselinePlan.exposureScore.toFixed(2)}°C
+                          <div
+                            className="text-2xl font-black text-cyan-400 font-mono mb-1"
+                            data-testid="whatif-baseline-temp"
+                          >
+                            {fmtTemp(activeScenario.baselinePlan.exposureScore, unit)}
                           </div>
                           <div className="text-sm font-semibold text-white leading-tight">
                             {activeScenario.baselinePlan.location.name.split(' (')[0]}
@@ -930,9 +990,12 @@ export default function WorkspacePage() {
                           <div className="text-[9px] font-bold uppercase tracking-widest text-amber-500 mb-2">
                             Constrained P&apos;
                           </div>
-                          <div className="text-2xl font-black text-amber-400 font-mono mb-1">
+                          <div
+                            className="text-2xl font-black text-amber-400 font-mono mb-1"
+                            data-testid="whatif-constrained-temp"
+                          >
                             {activeScenario.constrainedPlan
-                              ? `${activeScenario.constrainedPlan.exposureScore.toFixed(2)}°C`
+                              ? fmtTemp(activeScenario.constrainedPlan.exposureScore, unit)
                               : 'Infeasible'}
                           </div>
                           <div className="text-sm font-semibold text-white leading-tight">
@@ -950,8 +1013,11 @@ export default function WorkspacePage() {
                       {activeScenario.status === 'FEASIBLE' && activeScenario.costOfConstraintCelsius !== null ? (
                         <div className="constraint-cost rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div className="flex items-baseline gap-3">
-                            <span className="text-3xl font-black font-mono text-amber-400 thermal-glow-amber">
-                              +{activeScenario.costOfConstraintCelsius.toFixed(2)}°C
+                            <span
+                              className="text-3xl font-black font-mono text-amber-400 thermal-glow-amber"
+                              data-testid="whatif-cost-display"
+                            >
+                              {fmtTempDelta(activeScenario.costOfConstraintCelsius, unit)}
                             </span>
                             <div>
                               <div className="text-sm font-bold text-white">Constraint Cost</div>

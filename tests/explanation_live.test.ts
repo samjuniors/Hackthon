@@ -103,7 +103,7 @@ const sampleJointDecision: JointDecisionResult = {
 
 const input: ExplainableDecisionInput = { jointDecision: sampleJointDecision };
 
-const hasLlmKey = !!(process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.AI_API_KEY);
+const hasLlmKey = !!process.env.GEMINI_API_KEY;
 
 describe('§5 — AI Explanation Verification', () => {
 
@@ -120,15 +120,13 @@ describe('§5 — AI Explanation Verification', () => {
 
   it('§5.2 — LLM invocation attempted when a key is configured', async () => {
     if (!hasLlmKey) {
-      console.warn('[§5.2] SKIP: No LLM key configured. Result will be DETERMINISTIC_FALLBACK.');
+      console.warn('[§5.2] SKIP: No Gemini API key configured. Result will be DETERMINISTIC_FALLBACK.');
       return;
     }
     const explanation = await explainDecision(input);
     expect(explanation.summary).toBeTruthy();
     console.warn('[§5.2] generatedBy:', explanation.generatedBy);
     console.warn('[§5.2] fallbackReason:', explanation.fallbackReason ?? '(none — LLM succeeded)');
-    // NOTE: if AI_API_KEY is not OpenAI-compatible, fallbackReason will contain LLM_HTTP_ERROR_4xx
-    // This is the correct graceful degradation behavior.
   });
 
   it('§5.3 — LLM timeout (timeoutMs: 1) forces deterministic fallback', async () => {

@@ -25,7 +25,7 @@ CRITICAL NON-NEGOTIABLE RULES:
 }`;
 
 /**
- * Generates an operational explanation for a decision result.
+ * Generates an operational explanation for a decision result using configured AI Provider (Gemini / OpenAI).
  * Seamlessly falls back to deterministic rule-based generation if LLM is unavailable or fails validation.
  */
 export async function explainDecision(

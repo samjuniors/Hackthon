@@ -586,12 +586,12 @@ export default function WorkspacePage() {
                 }`}
               >
                 {loading ? (
-                  <>
+                  <span className="flex items-center justify-center gap-2">
                     <span className="w-4 h-4 border-2 border-slate-600 border-t-cyan-400 rounded-full animate-spin" />
-                    Evaluating thermal field…
-                  </>
+                    <span>Evaluating thermal field…</span>
+                  </span>
                 ) : (
-                  <>⚡ Calculate Decision</>
+                  <span>⚡ Calculate Decision</span>
                 )}
               </button>
             </div>
@@ -664,11 +664,12 @@ export default function WorkspacePage() {
                 <div>
                   <h2 className="text-sm font-bold text-white">Hyperlocal Thermal Field</h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    FortyGuard spatial tile temperatures at t₀ across candidate sites
+                    <span>FortyGuard spatial tile temperatures at t₀ across candidate sites</span>
                     {spatialFieldMeta?.baseTimestamp && (
-                      <> · <span className="font-mono text-cyan-500/80">
+                      <span className="font-mono text-cyan-500/80">
+                        {' · '}
                         {new Date(spatialFieldMeta.baseTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC
-                      </span></>
+                      </span>
                     )}
                   </p>
                 </div>

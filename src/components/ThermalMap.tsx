@@ -29,9 +29,20 @@ export function ThermalMap({
 }: ThermalMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<Map | null>(null);
+  const markersRef = useRef<Marker[]>([]);
 
   useEffect(() => {
     if (!mapContainer.current) return;
+
+    // Clean up existing markers before re-initializing
+    for (const m of markersRef.current) {
+      try {
+        m.remove();
+      } catch {
+        // Safe marker removal
+      }
+    }
+    markersRef.current = [];
 
     const isValidLat =
       Number.isFinite(location.latitude) &&
@@ -163,7 +174,7 @@ export function ThermalMap({
           ? `width:28px;height:28px;background:#10b981;border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px rgba(16,185,129,0.9),0 0 24px rgba(16,185,129,0.4);cursor:pointer;`
           : `width:18px;height:18px;background:#38bdf8;border:2px solid rgba(255,255,255,0.7);border-radius:50%;box-shadow:0 0 8px rgba(56,189,248,0.6);cursor:pointer;`;
 
-        new Marker({ element: el })
+        const marker = new Marker({ element: el })
           .setLngLat([locItem.loc.longitude, locItem.loc.latitude])
           .setPopup(
             new Popup({ offset: 18, closeButton: false }).setHTML(
@@ -177,11 +188,26 @@ export function ThermalMap({
             )
           )
           .addTo(map);
+
+        markersRef.current.push(marker);
       }
     });
 
     return () => {
-      map.remove();
+      for (const m of markersRef.current) {
+        try {
+          m.remove();
+        } catch {
+          // ignore
+        }
+      }
+      markersRef.current = [];
+      try {
+        map.remove();
+      } catch {
+        // ignore
+      }
+      mapInstance.current = null;
     };
   }, [location, spatialField, candidates, recommendedLocationId]);
 

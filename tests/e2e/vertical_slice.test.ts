@@ -82,14 +82,16 @@ test.describe('Vertical Slice: Location Search + Real Health + Failure UX + Prov
 
   // 6. Security Check: API endpoints never return secrets
   test('6. Security: API health endpoints never leak keys or headers', async ({ request }) => {
-    const fgRes = await request.get(`${BASE}/api/health/fortyguard`);
+    const fgRes = await request.post(`${BASE}/api/health/fortyguard`, {
+      data: { mode: 'FIXTURE' },
+    });
     const fgBody = await fgRes.json();
     const fgText = JSON.stringify(fgBody);
     expect(fgText).not.toContain('FORTYGUARD_API_KEY');
     expect(fgText).not.toContain('Bearer');
     expect(fgText).not.toContain('api-key');
 
-    const aiRes = await request.get(`${BASE}/api/health/ai`);
+    const aiRes = await request.post(`${BASE}/api/health/ai`);
     const aiBody = await aiRes.json();
     const aiText = JSON.stringify(aiBody);
     expect(aiText).not.toContain('GEMINI_API_KEY');

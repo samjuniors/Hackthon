@@ -68,7 +68,7 @@ export function ThermalMap({
     mapInstance.current = map;
 
     map.on('load', () => {
-      // Add candidate locations or single target location marker
+      // Build candidate marker list
       const locsToRender: Array<{ id: string; name: string; loc: LocationPoint; isWinner: boolean }> =
         candidates && candidates.length > 0
           ? candidates.map((c) => ({
@@ -86,6 +86,56 @@ export function ThermalMap({
               },
             ];
 
+      if (spatialField && spatialField.features?.length > 0) {
+        // Add thermal polygon layer BEFORE markers so markers appear on top
+        map.addSource('thermal-tiles', {
+          type: 'geojson',
+          data: spatialField as GeoJSONSourceSpecification['data'],
+        });
+
+        // Filled thermal polygons — use expanded scale to cover fixture temps (28–34°C)
+        map.addLayer({
+          id: 'thermal-tiles-fill',
+          type: 'fill',
+          source: 'thermal-tiles',
+          paint: {
+            'fill-color': [
+              'interpolate',
+              ['linear'],
+              ['get', 'average_temperature'],
+              26, '#06b6d4',   // cyan — very cool
+              28, '#10b981',   // emerald — cool
+              29, '#65a30d',   // lime-green — warm-ish
+              30, '#eab308',   // yellow — warm
+              31, '#f97316',   // orange — hot
+              32, '#ef4444',   // red — very hot
+              34, '#7f1d1d',   // dark red — extreme
+            ],
+            'fill-opacity': 0.72,
+          },
+        });
+
+        // Outline for spatial differentiation
+        map.addLayer({
+          id: 'thermal-tiles-outline',
+          type: 'line',
+          source: 'thermal-tiles',
+          paint: {
+            'line-color': [
+              'interpolate',
+              ['linear'],
+              ['get', 'average_temperature'],
+              26, '#67e8f9',
+              30, '#fde047',
+              34, '#fca5a5',
+            ],
+            'line-width': 1.5,
+            'line-opacity': 0.9,
+          },
+        });
+      }
+
+      // Add markers on top of thermal field
       for (const locItem of locsToRender) {
         if (
           !Number.isFinite(locItem.loc.latitude) ||
@@ -98,57 +148,26 @@ export function ThermalMap({
           continue;
         }
 
-        const markerColor = locItem.isWinner ? '#10b981' : '#38bdf8';
-        new Marker({ color: markerColor })
+        // Winner gets a large emerald pin; others get a smaller cyan pin
+        const el = document.createElement('div');
+        el.style.cssText = locItem.isWinner
+          ? `width:28px;height:28px;background:#10b981;border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px rgba(16,185,129,0.9),0 0 24px rgba(16,185,129,0.4);cursor:pointer;`
+          : `width:18px;height:18px;background:#38bdf8;border:2px solid rgba(255,255,255,0.7);border-radius:50%;box-shadow:0 0 8px rgba(56,189,248,0.6);cursor:pointer;`;
+
+        new Marker({ element: el })
           .setLngLat([locItem.loc.longitude, locItem.loc.latitude])
           .setPopup(
-            new Popup({ offset: 25 }).setHTML(
-              `<div style="color: #0f172a; font-weight: bold; font-size: 13px;">
-                ${locItem.isWinner ? '★ ' : ''}${locItem.name}
-              </div>
-              <div style="color: #475569; font-size: 11px; margin-top: 2px;">
-                ${locItem.id} | Lat: ${locItem.loc.latitude.toFixed(4)}, Lon: ${locItem.loc.longitude.toFixed(4)}
+            new Popup({ offset: 18, closeButton: false }).setHTML(
+              `<div style="background:#0d1422;border:1px solid rgba(30,45,69,0.9);border-radius:8px;padding:8px 10px;min-width:160px;">
+                <div style="color:${locItem.isWinner ? '#10b981' : '#38bdf8'};font-weight:700;font-size:13px;margin-bottom:2px;">
+                  ${locItem.isWinner ? '★ RECOMMENDED' : '◎ Candidate'}
+                </div>
+                <div style="color:#e2e8f0;font-size:12px;font-weight:600;">${locItem.name}</div>
+                <div style="color:#7c8fa8;font-size:10px;margin-top:3px;font-family:monospace;">${locItem.id}</div>
               </div>`
             )
           )
           .addTo(map);
-      }
-
-
-      if (spatialField && spatialField.features?.length > 0) {
-        map.addSource('thermal-tiles', {
-          type: 'geojson',
-          data: spatialField as GeoJSONSourceSpecification['data'],
-        });
-
-        map.addLayer({
-          id: 'thermal-tiles-fill',
-          type: 'fill',
-          source: 'thermal-tiles',
-          paint: {
-            'fill-color': [
-              'interpolate',
-              ['linear'],
-              ['get', 'average_temperature'],
-              30, '#10b981',
-              32.5, '#f59e0b',
-              34.5, '#f97316',
-              36.5, '#ef4444',
-            ],
-            'fill-opacity': 0.65,
-          },
-        });
-
-        map.addLayer({
-          id: 'thermal-tiles-outline',
-          type: 'line',
-          source: 'thermal-tiles',
-          paint: {
-            'line-color': '#ffffff',
-            'line-width': 1.5,
-            'line-opacity': 0.8,
-          },
-        });
       }
     });
 
@@ -157,7 +176,7 @@ export function ThermalMap({
     };
   }, [location, spatialField, candidates, recommendedLocationId]);
 
-  // Update GeoJSON source data when spatialField changes
+  // Update GeoJSON source data when spatialField changes without remounting
   useEffect(() => {
     const map = mapInstance.current;
     if (!map || !map.isStyleLoaded()) return;
@@ -169,30 +188,41 @@ export function ThermalMap({
   }, [spatialField]);
 
   return (
-    <div className="relative w-full h-[450px] rounded-xl overflow-hidden border border-white/10 shadow-2xl">
+    <div className="relative w-full h-[420px] rounded-xl overflow-hidden shadow-2xl shadow-black/60" style={{ border: '1px solid rgba(30,45,69,0.8)' }}>
       <div ref={mapContainer} className="w-full h-full" />
-      <div className="absolute top-3 left-3 bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-lg border border-white/10 text-xs flex items-center gap-3 shadow-lg">
-        <span className="font-semibold text-slate-200">Thermal Scale (°C):</span>
+
+      {/* Thermal Legend — bottom left */}
+      <div className="absolute bottom-3 left-3 bg-[#0d1422]/95 backdrop-blur-md px-3 py-2.5 rounded-xl shadow-xl" style={{ border: '1px solid rgba(30,45,69,0.9)' }}>
+        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Thermal Scale (°C)</div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
-          <span className="text-slate-400">&lt;32</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>
-          <span className="text-slate-400">32-34</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-orange-500 inline-block"></span>
-          <span className="text-slate-400">34-36</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-red-500 inline-block"></span>
-          <span className="text-slate-400">&gt;36</span>
+          {[
+            { color: '#10b981', label: '≤28' },
+            { color: '#eab308', label: '29-30' },
+            { color: '#f97316', label: '31-32' },
+            { color: '#ef4444', label: '>32' },
+          ].map(({ color, label }) => (
+            <div key={label} className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-sm inline-block flex-shrink-0" style={{ background: color }} />
+              <span className="text-slate-300" style={{ fontSize: '10px' }}>{label}</span>
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* Selected tile badge — top right */}
       {selectedTileId && (
-        <div className="absolute bottom-3 right-3 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-cyan-500/30 text-xs text-cyan-300 shadow-lg">
-          Selected Tile: <span className="font-mono font-bold text-white">{selectedTileId}</span>
+        <div className="absolute top-3 right-3 bg-[#0d1422]/95 backdrop-blur-md px-2.5 py-1.5 rounded-lg shadow-lg" style={{ border: '1px solid rgba(34,211,238,0.3)' }}>
+          <span className="text-[10px] text-slate-400">Selected: </span>
+          <span className="text-xs font-mono font-bold text-cyan-300">{selectedTileId}</span>
+        </div>
+      )}
+
+      {/* No data state */}
+      {!spatialField && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="bg-[#0d1422]/90 backdrop-blur-md px-4 py-3 rounded-xl text-center" style={{ border: '1px solid rgba(30,45,69,0.8)' }}>
+            <p className="text-slate-400 text-sm">Run decision to render thermal field</p>
+          </div>
         </div>
       )}
     </div>
@@ -200,4 +230,3 @@ export function ThermalMap({
 }
 
 export default ThermalMap;
-

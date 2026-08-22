@@ -40,8 +40,11 @@ const FORBIDDEN_PHYSICAL_SEMANTICS = [
  * Extracts floating point and integer numbers from text.
  */
 export function extractNumbersFromText(text: string): number[] {
-  // Normalize date separators (e.g. 2026-08-21 -> 2026 08 21) so hyphens are not parsed as negative signs
-  const sanitized = text.replace(/(\d{4})-(\d{1,2})-(\d{1,2})/g, '$1 $2 $3');
+  // Normalize date separators (e.g. 2026-08-21 -> 2026 08 21), version tags (e.g. v1.0.0-spatial-thermal-baseline), and slug hyphens (e.g. SITE-1, win-1, tile-11 -> SITE 1)
+  const sanitized = text
+    .replace(/v\d+(\.\d+)*[-\w]*/gi, ' ')
+    .replace(/(\d{4})-(\d{1,2})-(\d{1,2})/g, '$1 $2 $3')
+    .replace(/([a-zA-Z_])[-](\d)/g, '$1 $2');
   // Match standard numbers, floats, percentages, etc.
   const regex = /[-+]?\d*\.?\d+/g;
   const matches = sanitized.match(regex);

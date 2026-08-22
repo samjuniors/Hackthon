@@ -132,4 +132,28 @@ describe('Decision Engine Evaluator & Pipeline', () => {
       )
     ).toThrow(InfeasibleConstraintsError);
   });
+
+  it('evaluates 3-hour operation windows and selects lowest mean exposure (PRD §3)', () => {
+    // 4 hourly observations: 34.0, 36.0, 30.0, 28.0
+    // Window 1 (12:00-15:00): (34 + 36 + 30) / 3 = 33.333°C
+    // Window 2 (13:00-16:00): (36 + 30 + 28) / 3 = 31.333°C
+    const constraints: DecisionConstraints = {
+      allowedStart: '2026-08-20T12:00:00.000Z',
+      allowedEnd: '2026-08-20T16:00:00.000Z',
+      durationHours: 3,
+      dataResolutionHours: 1,
+    };
+
+    const decision = evaluateCandidateWindows(
+      { latitude: 40.7128, longitude: -74.006 },
+      sampleObs,
+      constraints,
+      baseTime
+    );
+
+    expect(decision.recommendedWindow.durationHours).toBe(3);
+    expect(decision.recommendedWindow.startTime).toBe('2026-08-20T13:00:00.000Z');
+    expect(decision.recommendedWindow.exposureScore).toBeCloseTo(31.333, 2);
+    expect(decision.rankedWindows.length).toBe(2);
+  });
 });

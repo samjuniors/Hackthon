@@ -53,10 +53,10 @@ Interactive Decision Workspace UI (MapLibre GL, 3-Box Flow, Real-Time Scenario C
 1. **[00:00–00:15] Spatial Variance:** Observe the **Spatial Thermal Surface** map showing Manhattan microclimates varying from $28.50^\circ\text{C}$ to $37.55^\circ\text{C}$ across adjacent candidate operational sites.
 2. **[00:15–00:30] Joint WHERE + WHEN Decision:** Click **Recalculate Decision**. The **Recommended Operational Plan** card identifies the global optimum:
    - **Recommended Site:** `Battery Park Greenway (Waterfront) (LOC-A)`
-   - **Operating Window:** `08:00 AM – 10:00 AM UTC (2h Duration)`
-   - **Mean Modeled Temperature:** `29.15°C`
-   - **Joint Advantage:** Avoids an `+8.40°C` higher mean modeled temperature across the window vs deploying to Chinatown at noon.
-3. **[00:30–00:45] What-If Constraint Cost:** Single-click the **Site Lock (Chinatown Asphalt Canyon)** preset chip. The 3-Box comparison visually shifts to show **`Constraint Cost: +2.20°C Mean Modeled Temperature Increase`**.
+   - **Operating Window:** `08:00 AM – 11:00 AM UTC (3h Duration)`
+   - **Mean Modeled Temperature:** `29.83°C` (or `29.15°C` for 2h operations)
+   - **Joint Advantage:** Avoids an `+8.40°C` higher mean modeled temperature across the window vs deploying to Chinatown at peak heat.
+3. **[00:30–00:45] What-If Constraint Cost:** Single-click the **Site Lock (Chinatown Asphalt Canyon)** preset chip. The 3-Box comparison visually shifts to show **`Constraint Cost: +2.37°C Mean Modeled Temperature Increase`** (`+2.20°C` under 2h).
 4. **[00:45–01:00] Grounded AI Synthesis:** Scroll to **Decision Explanation & Evidence Synthesis** to inspect the grounded narrative verified against strict evidence allow-lists ($\le 0.01^\circ\text{C}$ precision) with zero hallucination.
 
 ---
@@ -97,7 +97,7 @@ All system architecture, product requirements, decision models, and API integrat
 - **Mapping & Spatial:** MapLibre GL + Zero-Dependency Ray Casting
 - **Styling:** Tailwind CSS + Radix UI / shadcn primitives
 - **Validation:** Zod
-- **Testing:** Vitest (84 tests, 100% pass rate) + Playwright (E2E smoke test)
+- **Testing:** Vitest (134 tests, 100% pass rate) + Playwright (60 browser E2E tests across Desktop & Mobile)
 - **Package Manager:** pnpm
 
 ---
@@ -112,11 +112,11 @@ pnpm install
 pnpm dev
 
 # 3. Run automated verification suite
-pnpm test          # 84 Vitest unit, failure, and grounding tests
+pnpm test          # 134 Vitest unit, failure, grounding, and provider tests
 pnpm typecheck     # TypeScript strict validation
 pnpm lint          # ESLint rules
 pnpm build         # Production Next.js build
-pnpm test:e2e      # Playwright E2E browser smoke test
+pnpm test:e2e      # 60 Playwright Desktop & Mobile browser E2E tests
 ```
 
 ---

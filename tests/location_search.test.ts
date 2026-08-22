@@ -71,4 +71,23 @@ describe('Location Search & Coordinate Resolution', () => {
       expect(loc.longitude).toBeLessThanOrEqual(180);
     }
   });
+
+  it('8. Searching an unlisted/unsupported town returns empty array (triggers empty-state UX)', () => {
+    const unknownCity = searchLocations('SmallTown Nowhere USA');
+    expect(unknownCity).toEqual([]);
+
+    const gibberish = searchLocations('xyz123abc999');
+    expect(gibberish).toEqual([]);
+  });
+
+  it('9. GPS coordinate fallback resolves arbitrary coordinates into a valid NamedLocation', () => {
+    const gpsResolved = resolveLocationPoint(34.0522, -118.2437, 'My Current GPS Location');
+    expect(gpsResolved.id).toBe('US-LAX'); // matches existing metro
+    expect(gpsResolved.city).toBe('Los Angeles');
+
+    const arbitraryPoint = resolveLocationPoint(38.5816, -121.4944, 'Sacramento Custom Point');
+    expect(arbitraryPoint.id).toBe('CUSTOM-38.5816--121.4944');
+    expect(arbitraryPoint.name).toBe('Sacramento Custom Point');
+    expect(arbitraryPoint.category).toBe('Custom Location');
+  });
 });

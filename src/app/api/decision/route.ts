@@ -35,7 +35,7 @@ const DecisionRequestSchema = z.object({
   latitude: z.number().min(-90).max(90).default(40.7128),
   longitude: z.number().min(-180).max(180).default(-74.006),
   candidates: z.array(CandidateSchema).optional(),
-  durationHours: z.number().int().min(1).max(12).default(2),
+  durationHours: z.number().int().min(1).max(12).default(3),
   allowedStart: z.string().optional(),
   allowedEnd: z.string().optional(),
   mode: z.enum(['LIVE', 'FIXTURE']).optional(),

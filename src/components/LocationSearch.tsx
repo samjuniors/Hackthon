@@ -153,7 +153,7 @@ export function LocationSearch({
                 setIsOpen(true);
               }}
               onFocus={() => setIsOpen(true)}
-              placeholder={isFixture ? 'Search Manhattan demo sites...' : 'Search city, address, or ZIP code...'}
+              placeholder={isFixture ? 'Search Manhattan demo sites...' : 'Search metro area or use GPS...'}
               className="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500 font-sans"
               data-testid="location-search-input"
             />
@@ -190,7 +190,7 @@ export function LocationSearch({
 
         {/* Search Results Dropdown */}
         {isOpen && (
-          <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-slate-900 border border-slate-700 rounded-md shadow-2xl shadow-black/80 py-1 divide-y divide-slate-800">
+          <div className="absolute z-50 left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-slate-900 border border-slate-700 rounded-md shadow-2xl shadow-black/80 py-1 divide-y divide-slate-800">
             {results.length > 0 ? (
               results.map((loc) => {
                 const isSelected = selectedLocation.id === loc.id;
@@ -228,8 +228,33 @@ export function LocationSearch({
                 );
               })
             ) : (
-              <div className="px-3 py-2 text-xs text-slate-400 italic">
-                No matching locations found. You can enter coordinates below.
+              <div className="p-3 text-xs space-y-2 bg-slate-950" data-testid="location-search-empty-state">
+                <p className="text-slate-300 font-semibold">No matching supported metro area found.</p>
+                <p className="text-[11px] text-slate-400 leading-tight">
+                  Search supports curated US metropolitan operational hubs (NYC, LA, SF, San Diego, Chicago, Phoenix, Austin, Miami, etc.).
+                </p>
+                <div className="pt-1 flex items-center gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleUseCurrentLocation}
+                    disabled={isLocating}
+                    className="h-7 text-xs bg-slate-900 border-cyan-500/40 text-cyan-300 hover:bg-cyan-950"
+                  >
+                    {isLocating ? '📡 Locating...' : '📍 Use My GPS Location'}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCoords(true);
+                      setIsOpen(false);
+                    }}
+                    className="text-[11px] text-slate-400 hover:text-white underline font-mono"
+                  >
+                    Enter Coordinates
+                  </button>
+                </div>
               </div>
             )}
           </div>

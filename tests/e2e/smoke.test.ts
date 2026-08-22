@@ -15,10 +15,12 @@ test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
     // 3. Click recalculate decision button to trigger decision pipeline
     const recalculateBtn = page.getByRole('button', { name: 'Recalculate Decision' });
     await expect(recalculateBtn).toBeVisible();
+    const decisionResponsePromise = page.waitForResponse(
+      (resp) => resp.url().includes('/api/decision') && resp.status() === 200,
+      { timeout: 15000 }
+    );
     await recalculateBtn.click();
-
-    // 4. Wait for decision calculation to settle
-    await page.waitForTimeout(2000);
+    await decisionResponsePromise;
 
     // 5. Verify joint spatial-temporal decision outcome card and advantage banner render
     await expect(page.getByText('Recommended Operational Plan')).toBeVisible({ timeout: 15000 });

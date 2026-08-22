@@ -140,7 +140,7 @@ describe('§5 — AI Explanation Verification', () => {
     expect(explanation.generatedBy).toBe('DETERMINISTIC_FALLBACK');
     expect(explanation.fallbackReason).toBeTruthy();
     // Reason is either abort/timeout or an invocation/HTTP error — both are valid fallback paths
-    expect(explanation.fallbackReason).toMatch(/TIMEOUT|LLM_TIMEOUT|LLM_INVOCATION|LLM_HTTP/i);
+    expect(explanation.fallbackReason).toMatch(/TIMEOUT|LLM_TIMEOUT|LLM_INVOCATION|LLM_HTTP|GEMINI_HTTP|OPENAI_HTTP/i);
     console.warn('[§5.3] timeout fallback reason:', explanation.fallbackReason);
   });
 

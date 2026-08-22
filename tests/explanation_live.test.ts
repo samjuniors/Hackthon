@@ -116,7 +116,7 @@ describe('§5 — AI Explanation Verification', () => {
     expect(explanation.generatedBy).toMatch(/AI_GROUNDED_EXPLAINER|DETERMINISTIC_FALLBACK/);
     console.warn('[§5.1] generatedBy:', explanation.generatedBy);
     console.warn('[§5.1] fallbackReason:', explanation.fallbackReason ?? '(none)');
-  });
+  }, 20000);
 
   it('§5.2 — LLM invocation attempted when a key is configured', async () => {
     if (!hasLlmKey) {
@@ -127,7 +127,7 @@ describe('§5 — AI Explanation Verification', () => {
     expect(explanation.summary).toBeTruthy();
     console.warn('[§5.2] generatedBy:', explanation.generatedBy);
     console.warn('[§5.2] fallbackReason:', explanation.fallbackReason ?? '(none — LLM succeeded)');
-  });
+  }, 20000);
 
   it('§5.3 — LLM timeout (timeoutMs: 1) forces deterministic fallback', async () => {
     // Must supply a key (even a fake one) so the code reaches the AbortController path.

@@ -24,7 +24,7 @@ export function detectAIProvider(override?: AIProviderConfig): {
       provider: 'gemini',
       providerName: 'GEMINI',
       apiKey: override.apiKey,
-      model: override.model || process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+      model: override.model || process.env.GEMINI_MODEL || 'gemini-flash-latest',
     };
   }
 
@@ -48,7 +48,7 @@ export function detectAIProvider(override?: AIProviderConfig): {
       provider: 'gemini',
       providerName: 'GEMINI',
       apiKey,
-      model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
     };
   }
 
@@ -72,7 +72,7 @@ export function detectAIProvider(override?: AIProviderConfig): {
         provider: 'gemini',
         providerName: 'GEMINI',
         apiKey: key,
-        model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+        model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
       };
     }
     return {
@@ -109,7 +109,7 @@ export async function invokeAIProvider(
     throw new Error('NO_AI_KEY_CONFIGURED');
   }
 
-  const timeoutMs = options?.timeoutMs ?? 5000;
+  const timeoutMs = options?.timeoutMs ?? 10000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 

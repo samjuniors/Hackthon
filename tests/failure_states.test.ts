@@ -259,7 +259,7 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
     const initialPlanScore = sampleJointDecision.recommendedPlan.exposureScore;
     const initialPlanLoc = sampleJointDecision.recommendedPlan.location.name;
 
-    await explainDecision(sampleInput, { apiKey: undefined });
+    await explainDecision(sampleInput, { apiKey: '' });
 
     expect(sampleJointDecision.recommendedPlan.exposureScore).toBe(initialPlanScore);
     expect(sampleJointDecision.recommendedPlan.location.name).toBe(initialPlanLoc);

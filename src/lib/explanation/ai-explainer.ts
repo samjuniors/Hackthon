@@ -77,7 +77,7 @@ export async function explainDecision(
       EXPLAINER_SYSTEM_PROMPT,
       userPrompt,
       {
-        timeoutMs: options?.timeoutMs ?? 5000,
+        timeoutMs: options?.timeoutMs ?? 10000,
         providerConfig,
       }
     );

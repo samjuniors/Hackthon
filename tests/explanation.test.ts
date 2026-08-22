@@ -231,7 +231,7 @@ describe('Milestone 8 — AI Explanation Layer & Grounding Guardrails Suite', ()
     const originalScore = sampleJointDecision.recommendedPlan.exposureScore;
     const originalLocation = sampleJointDecision.recommendedPlan.location.name;
 
-    await explainDecision(sampleInput);
+    await explainDecision(sampleInput, { timeoutMs: 1 });
 
     // Verify input remains unaltered
     expect(sampleJointDecision.recommendedPlan.exposureScore).toBe(originalScore);

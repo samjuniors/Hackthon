@@ -22,9 +22,9 @@ test.describe('§2 — DEMO / FIXTURE Verification', () => {
   test('§2.2 — Manhattan fixture workspace renders (map + 3 candidates)', async ({ page }) => {
     const mapCanvas = page.locator('canvas').first();
     await expect(mapCanvas).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: /LOC-A.*Battery Park/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /LOC-B.*City Hall/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /LOC-C.*Chinatown/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Battery Park Greenway' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'City Hall Civic Center' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Chinatown / Bowery Staging' })).toBeVisible();
   });
 
   test('§2.3 — Recommended Operational Plan shows correct fixture values', async ({ page }) => {
@@ -110,9 +110,9 @@ test.describe('§7 — Mobile Viewport (390x844)', () => {
   });
 
   test('§7.3 — Location buttons accessible', async ({ page }) => {
-    await expect(page.getByRole('button', { name: /LOC-A.*Battery Park/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /LOC-B.*City Hall/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /LOC-C.*Chinatown/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Battery Park Greenway' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'City Hall Civic Center' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Chinatown / Bowery Staging' })).toBeVisible();
   });
 
   test('§7.4 — Decision card and submit visible on mobile', async ({ page }) => {

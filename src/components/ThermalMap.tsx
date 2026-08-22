@@ -25,6 +25,17 @@ export function ThermalMap({
   useEffect(() => {
     if (!mapContainer.current) return;
 
+    const isValidLat =
+      Number.isFinite(location.latitude) &&
+      location.latitude >= -90 &&
+      location.latitude <= 90;
+    const isValidLon =
+      Number.isFinite(location.longitude) &&
+      location.longitude >= -180 &&
+      location.longitude <= 180;
+    const centerLng = isValidLon ? location.longitude : -74.008;
+    const centerLat = isValidLat ? location.latitude : 40.712;
+
     const map = new Map({
       container: mapContainer.current,
       style: {
@@ -50,7 +61,7 @@ export function ThermalMap({
           },
         ],
       },
-      center: [location.longitude, location.latitude],
+      center: [centerLng, centerLat],
       zoom: 14,
     });
 
@@ -76,6 +87,17 @@ export function ThermalMap({
             ];
 
       for (const locItem of locsToRender) {
+        if (
+          !Number.isFinite(locItem.loc.latitude) ||
+          locItem.loc.latitude < -90 ||
+          locItem.loc.latitude > 90 ||
+          !Number.isFinite(locItem.loc.longitude) ||
+          locItem.loc.longitude < -180 ||
+          locItem.loc.longitude > 180
+        ) {
+          continue;
+        }
+
         const markerColor = locItem.isWinner ? '#10b981' : '#38bdf8';
         new Marker({ color: markerColor })
           .setLngLat([locItem.loc.longitude, locItem.loc.latitude])

@@ -4,6 +4,7 @@ import type {
 } from '@/types/explanation';
 import { generateDeterministicExplanation } from './deterministic-explainer';
 import { validateGroundedExplanation } from './grounding-validator';
+import { invokeAIProvider, detectAIProvider, type AIProviderConfig } from './ai-provider';
 
 /**
  * System prompt strictly grounding the LLM to verified EvidenceBundle inputs only.
@@ -30,6 +31,7 @@ CRITICAL NON-NEGOTIABLE RULES:
 export async function explainDecision(
   input: ExplainableDecisionInput,
   options?: {
+    provider?: 'gemini' | 'openai' | 'deterministic';
     apiKey?: string;
     model?: string;
     timeoutMs?: number;
@@ -45,62 +47,62 @@ export async function explainDecision(
     return generateDeterministicExplanation(input, validation.reason || 'MOCK_VALIDATION_FAILED');
   }
 
-  const apiKey = options?.apiKey || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || process.env.AI_API_KEY;
-  if (!apiKey) {
+  const providerConfig: AIProviderConfig | undefined = options?.apiKey || options?.provider
+    ? {
+        provider: options.provider || (options.apiKey?.startsWith('AIzaSy') ? 'gemini' : 'openai'),
+        apiKey: options.apiKey,
+        model: options.model,
+      }
+    : undefined;
+
+  const detected = detectAIProvider(providerConfig);
+  if (detected.provider === 'deterministic' || !detected.apiKey) {
     return generateDeterministicExplanation(
       input,
       'LLM_API_KEY_NOT_CONFIGURED: Defaulting to deterministic rule-based explanation.'
     );
   }
 
-  const timeoutMs = options?.timeoutMs || 5000;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const userPrompt = `Explain this deterministic decision evidence bundle:\n${JSON.stringify(input, null, 2)}`;
 
   try {
-    const endpoint = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1/chat/completions';
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: options?.model || process.env.EXPLAINER_MODEL || 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: EXPLAINER_SYSTEM_PROMPT },
-          {
-            role: 'user',
-            content: `Explain this deterministic decision evidence bundle:\n${JSON.stringify(input, null, 2)}`,
-          },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-      }),
-      signal: controller.signal,
-    });
+    const { text } = await invokeAIProvider(
+      EXPLAINER_SYSTEM_PROMPT,
+      userPrompt,
+      {
+        timeoutMs: options?.timeoutMs ?? 5000,
+        providerConfig,
+      }
+    );
 
-    clearTimeout(timeoutId);
+    let rawJson: unknown;
+    try {
+      let cleaned = text.trim();
+      if (cleaned.startsWith('```json')) {
+        cleaned = cleaned.slice(7);
+      } else if (cleaned.startsWith('```')) {
+        cleaned = cleaned.slice(3);
+      }
+      if (cleaned.endsWith('```')) {
+        cleaned = cleaned.slice(0, -3);
+      }
+      cleaned = cleaned.trim();
 
-    if (!res.ok) {
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+      }
+
+      rawJson = JSON.parse(cleaned);
+    } catch {
       return generateDeterministicExplanation(
         input,
-        `LLM_HTTP_ERROR_${res.status}: Failed to obtain LLM explanation.`
+        'MALFORMED_LLM_JSON: LLM output was not valid JSON.'
       );
     }
 
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) {
-      return generateDeterministicExplanation(
-        input,
-        'EMPTY_LLM_RESPONSE: Received empty content from LLM.'
-      );
-    }
-
-    const rawJson = JSON.parse(content);
     const validation = validateGroundedExplanation(rawJson, input);
-
     if (!validation.valid || !validation.explanation) {
       return generateDeterministicExplanation(
         input,
@@ -110,10 +112,14 @@ export async function explainDecision(
 
     return validation.explanation;
   } catch (error) {
-    clearTimeout(timeoutId);
-    const reason = error instanceof Error && error.name === 'AbortError'
+    const msg = error instanceof Error ? error.message : String(error);
+    const isTimeout = error instanceof Error && (error.name === 'AbortError' || msg.includes('abort') || msg.includes('timeout'));
+
+    const reason = isTimeout
       ? 'LLM_TIMEOUT: Request exceeded time limit.'
-      : `LLM_INVOCATION_ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      : msg.startsWith('GEMINI_HTTP_ERROR') || msg.startsWith('OPENAI_HTTP_ERROR')
+      ? msg
+      : `LLM_INVOCATION_ERROR: ${msg}`;
 
     return generateDeterministicExplanation(input, reason);
   }

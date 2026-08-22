@@ -194,7 +194,7 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
     });
 
     const assertion = expect(heatmapPromise).rejects.toThrow(FortyGuardProcessingError);
-    await vi.advanceTimersByTimeAsync(35000);
+    await vi.advanceTimersByTimeAsync(65000);
     await assertion;
 
     fetchSpy.mockRestore();

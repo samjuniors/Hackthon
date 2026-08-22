@@ -1,9 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
-  test('loads workspace UI, recalculates decision, and displays evidence recommendation', async ({ page }) => {
-    // 1. Load primary workspace
+  test.beforeEach(async ({ page }) => {
     await page.goto('/');
+    await expect(page.getByText('Recommended Operational Plan')).toBeVisible({ timeout: 20000 });
+  });
+
+  test('loads workspace UI, recalculates decision, and displays evidence recommendation', async ({ page }) => {
 
     // 2. Verify workspace header title and prominent Data Source indicator are present
     await expect(page.locator('h1')).toContainText('Thermal Decision Engine');

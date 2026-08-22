@@ -20,6 +20,7 @@ import {
   AppError,
   IncompleteTemporalCoverageError,
   ValidationError,
+  mapErrorToProductionDetails,
 } from '@/types/errors';
 import { z } from 'zod';
 
@@ -290,6 +291,8 @@ export async function POST(request: Request) {
 
 
   } catch (error) {
+    const errorDetails = mapErrorToProductionDetails(error);
+
     if (error instanceof AppError) {
       return NextResponse.json(
         {
@@ -297,6 +300,7 @@ export async function POST(request: Request) {
           error: {
             code: error.code,
             message: error.message,
+            details: errorDetails,
           },
         },
         { status: error.statusCode }
@@ -309,6 +313,7 @@ export async function POST(request: Request) {
         error: {
           code: 'INTERNAL_ERROR',
           message: error instanceof Error ? error.message : 'An unknown error occurred',
+          details: errorDetails,
         },
       },
       { status: 500 }

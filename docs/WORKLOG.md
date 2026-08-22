@@ -361,6 +361,45 @@
 - **Next.js Production Build (`pnpm build`):** Clean (6 static/dynamic pages compiled cleanly).
 - **Playwright E2E Smoke Test (`pnpm test:e2e`):** Clean (8.6s pass, screenshot updated at `tests/e2e/workspace-smoke.png`).
 
+---
+
+# Engineering Worklog — Production Vertical Slice: Location Search + Provider Health + Gemini Integration + Failure UX
+
+**Date:** 2026-08-22  
+**Milestone:** Production Vertical Slice  
+**Status:** COMPLETED, TESTED & VERIFIED  
+
+---
+
+## 1. What Was Implemented
+- **Deterministic Location Search & Spatial Resolution (`src/lib/location/search.ts`, `src/app/api/location/search/route.ts`):**
+  - Instant autocomplete and fuzzy matching across metropolitan presets and Manhattan demo regions.
+  - Coordinate resolution with GPS button and custom latitude/longitude inputs.
+- **Real Provider Health Check Architecture (`src/lib/fortyguard/health.ts`, `src/app/api/health/fortyguard/route.ts`):**
+  - Server-side live connectivity test using `/v1/system/fetch-api-key-usage` (synchronous, 0 credits, safe).
+  - Exact latency measurement and status reporting (`CONNECTED`, `CHECKING`, `ERROR`, `UNKNOWN`).
+- **Google Gemini & OpenAI Provider Abstraction (`src/lib/explanation/ai-provider.ts`, `src/lib/explanation/ai-explainer.ts`, `src/app/api/health/ai/route.ts`):**
+  - Native Google Gemini REST API support with strict grounding validation and deterministic fallback.
+  - Zero server secrets leaked in API payloads or client error states.
+- **Production Failure UX & Error State Clearance (`src/types/errors.ts`, `src/types/provider.ts`, `src/app/page.tsx`):**
+  - Structured production error messages with actionable recovery suggestions.
+  - Full clearance of stale decision cards on API failure to prevent misleading data.
+  - MapLibre GL center coordinates bounds guarding.
+- **Provider Health Card UI (`src/components/ProviderHealthCard.tsx`):**
+  - Status badges, latency counters, provider metadata, and `[ Test Connection ]` triggers.
+- **Location Search UI (`src/components/LocationSearch.tsx`):**
+  - Search input with auto-suggestions, preset chips, and manual coordinate controls.
+
+---
+
+## 2. Test & Verification Results
+- **Vitest Unit & Grounding Tests (`pnpm test`):** 17 test suites passed, 131 tests passed (100% pass rate).
+- **TypeScript Typecheck (`pnpm typecheck`):** Clean (0 errors).
+- **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
+- **Next.js Production Build (`pnpm build`):** Clean (9 routes compiled successfully in 2.1s).
+- **Playwright E2E Test Suite (`pnpm test:e2e`):** 56 tests passed across Desktop Chromium and Mobile Chrome (Pixel 7).
+
+
 
 
 

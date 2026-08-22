@@ -24,7 +24,7 @@ export function detectAIProvider(override?: AIProviderConfig): {
       provider: 'gemini',
       providerName: 'GEMINI',
       apiKey: override.apiKey,
-      model: override.model || process.env.GEMINI_MODEL || 'gemini-flash-latest',
+      model: override.model || process.env.GEMINI_MODEL || 'gemini-flash-lite-latest',
     };
   }
 
@@ -48,7 +48,7 @@ export function detectAIProvider(override?: AIProviderConfig): {
       provider: 'gemini',
       providerName: 'GEMINI',
       apiKey,
-      model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
+      model: process.env.GEMINI_MODEL || 'gemini-flash-lite-latest',
     };
   }
 
@@ -72,7 +72,7 @@ export function detectAIProvider(override?: AIProviderConfig): {
         provider: 'gemini',
         providerName: 'GEMINI',
         apiKey: key,
-        model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
+        model: process.env.GEMINI_MODEL || 'gemini-flash-lite-latest',
       };
     }
     return {

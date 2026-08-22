@@ -24,7 +24,7 @@ export function detectAIProvider(override?: AIProviderConfig): {
       provider: 'gemini',
       providerName: 'GEMINI',
       apiKey: override.apiKey,
-      model: override.model || process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+      model: override.model || process.env.GEMINI_MODEL || 'gemini-3.5-flash',
     };
   }
 
@@ -48,7 +48,7 @@ export function detectAIProvider(override?: AIProviderConfig): {
       provider: 'gemini',
       providerName: 'GEMINI',
       apiKey,
-      model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
     };
   }
 
@@ -72,7 +72,7 @@ export function detectAIProvider(override?: AIProviderConfig): {
         provider: 'gemini',
         providerName: 'GEMINI',
         apiKey: key,
-        model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+        model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
       };
     }
     return {
@@ -224,7 +224,7 @@ export async function testAIConnection(
     const testSystem = 'Return a JSON object with a single property "status" with value "ok".';
     const testUser = 'Respond with {"status": "ok"}';
     const result = await invokeAIProvider(testSystem, testUser, {
-      timeoutMs: options?.timeoutMs ?? 4000,
+      timeoutMs: options?.timeoutMs ?? 8000,
       providerConfig: options?.providerConfig,
     });
 

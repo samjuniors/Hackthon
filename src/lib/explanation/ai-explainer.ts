@@ -49,7 +49,7 @@ export async function explainDecision(
 
   const providerConfig: AIProviderConfig | undefined = options?.apiKey || options?.provider
     ? {
-        provider: options.provider || (options.apiKey?.startsWith('AIzaSy') ? 'gemini' : 'openai'),
+        provider: options.provider || (options.apiKey?.startsWith('AIzaSy') || options.apiKey?.startsWith('AQ.') ? 'gemini' : 'openai'),
         apiKey: options.apiKey,
         model: options.model,
       }

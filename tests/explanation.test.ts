@@ -204,7 +204,7 @@ describe('Milestone 8 — AI Explanation Layer & Grounding Guardrails Suite', ()
 
   it('7. LLM timeout or network failure triggers deterministic fallback', async () => {
     // Calling explainDecision with no API key or unreachable endpoint
-    const explanation = await explainDecision(sampleInput, { apiKey: undefined });
+    const explanation = await explainDecision(sampleInput, { apiKey: '' });
     expect(explanation.generatedBy).toBe('DETERMINISTIC_FALLBACK');
     expect(explanation.fallbackReason).toContain('LLM_API_KEY_NOT_CONFIGURED');
   });

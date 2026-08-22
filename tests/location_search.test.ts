@@ -90,4 +90,16 @@ describe('Location Search & Coordinate Resolution', () => {
     expect(arbitraryPoint.name).toBe('Sacramento Custom Point');
     expect(arbitraryPoint.category).toBe('Custom Location');
   });
+
+  it('10. Searches locations by full state name (e.g. "California", "Texas")', () => {
+    const californiaResults = searchLocations('California');
+    expect(californiaResults.length).toBeGreaterThanOrEqual(3);
+    const names = californiaResults.map((r) => r.name);
+    expect(names.some((n) => n.includes('Los Angeles'))).toBe(true);
+    expect(names.some((n) => n.includes('San Francisco'))).toBe(true);
+    expect(names.some((n) => n.includes('San Diego'))).toBe(true);
+
+    const texasResults = searchLocations('Texas');
+    expect(texasResults.length).toBeGreaterThanOrEqual(2);
+  });
 });

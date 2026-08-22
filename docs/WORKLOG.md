@@ -399,6 +399,38 @@
 - **Next.js Production Build (`pnpm build`):** Clean (9 routes compiled successfully in 2.1s).
 - **Playwright E2E Test Suite (`pnpm test:e2e`):** 56 tests passed across Desktop Chromium and Mobile Chrome (Pixel 7).
 
+---
+
+# Engineering Worklog — Final Production Verification & Acceptance Report
+
+**Date:** 2026-08-22  
+**Milestone:** Final Production Verification & Acceptance  
+**Status:** COMPLETED, TESTED & VERIFIED  
+
+---
+
+## 1. What Was Implemented & Verified
+- **Global Temperature Display Preference (`src/lib/temperature.ts`, `src/app/page.tsx`):**
+  - Implemented centralized temperature conversion, delta math ($\Delta F = \Delta C \times 9/5$), legend dynamic ticks, and reactive `useTempUnit` hook.
+  - Header toggle (°F/°C) with persistent localStorage synchronization and accessible touch targets.
+- **State Name Search Expansion (`src/lib/location/search.ts`):**
+  - Added full US state name dictionary (`US_STATE_NAMES`) so search queries like "California" or "Texas" match relevant metropolitan hubs.
+- **AI Provider Model Alignment (`src/lib/explanation/ai-provider.ts`):**
+  - Updated default Gemini model to `gemini-3.6-flash` (empirically verified returning HTTP 200).
+  - Explicit empty `apiKey` override handling for test suites.
+- **Documentation Alignment (`README.md`, `docs/CURRENT-SPRINT.md`):**
+  - Reconciled documentation with current codebase metrics (158 unit tests, 68 E2E tests, °F/°C preferences).
+
+---
+
+## 2. Test & Verification Results
+- **Vitest Unit Tests (`pnpm test`):** 18 test suites passed, 158 tests passed (100% pass rate).
+- **TypeScript Typecheck (`pnpm typecheck`):** Clean (0 errors).
+- **ESLint (`pnpm lint`):** Clean (0 errors, 0 warnings).
+- **Next.js Production Build (`pnpm build`):** Clean (9 routes compiled successfully).
+- **Playwright E2E Test Suite (`pnpm test:e2e`):** 68 tests passed across Desktop Chromium and Mobile Chrome (Pixel 7).
+
+
 
 
 

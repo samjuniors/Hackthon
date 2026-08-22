@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+function loadEnvFile(filePath: string) {
+  const fullPath = path.resolve(process.cwd(), filePath);
+  if (fs.existsSync(fullPath)) {
+    const lines = fs.readFileSync(fullPath, 'utf8').split('\n');
+    for (const line of lines) {
+      const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+      if (match && !process.env[match[1]]) {
+        process.env[match[1]] = match[2].trim().replace(/^["']|["']$/g, '');
+      }
+    }
+  }
+}
+
+loadEnvFile('.env.local');
+loadEnvFile('.env');

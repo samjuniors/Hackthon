@@ -3,7 +3,7 @@
 > **FortyGuard Hackathon'26 Project Submission**  
 > **Submission Deadline:** 2026-08-30  
 > **Status:** Production Hackathon Submission (`VERIFIED & LOCKED`)  
-> **Commit Target:** Milestone 11 Final Packaging  
+> **Commit Target:** Final Production Release  
 
 ---
 
@@ -12,7 +12,7 @@
 The **Thermal Decision Engine** solves joint spatial-temporal operational dispatch ($\arg\min_{(L, W)} E(L, W)$) using FortyGuard's hyperlocal microclimate temperature intelligence, deterministically quantifying the exact thermal penalty of operational constraints ($C = E(P') - E(P_0)$) and synthesizing the decision through a strictly grounded, read-only AI explanation layer.
 
 ### Core User Question
-> *"I need to run a heat-exposed operation in Manhattan tomorrow. WHERE and WHEN should I operate to minimize modeled thermal exposure, and what does each operational constraint cost me?"*
+> *"I need to run a heat-exposed operation in a metropolitan area. WHERE and WHEN should I operate to minimize modeled thermal exposure, and what does each operational constraint cost me?"*
 
 ---
 
@@ -29,35 +29,36 @@ Deterministic Joint Spatial-Temporal Optimizer (Exhaustive Cartesian Search: L �
   ↓
 What-If Constraint Sensitivity Engine (Exact Arithmetic Penalty: C = E(P') - E(P₀))
   ↓
-Structured Evidence Bundle (Numeric Allow-Lists, Immutable Domain Facts)
+Structured Evidence Bundle (Numeric Allow-Lists, Immutable Domain Facts in Celsius)
   ↓
 Grounded Read-Only AI Explanation Layer (Strict Grounding Validator, ±0.01°C Tolerance)
   ↓
-Interactive Decision Workspace UI (MapLibre GL, 3-Box Flow, Real-Time Scenario Chips)
+Interactive Decision Workspace UI (MapLibre GL, °F/°C Toggle, 3-Box Flow, Real-Time Scenario Chips)
 ```
 
 ---
 
 ## ⚡ Core Capabilities
 
-1. **Hyperlocal Microclimate Intelligence:** Ingests discrete FortyGuard polygon tiles revealing $>8.40^\circ\text{C}$ temperature variations between urban waterfronts and asphalt street canyons within a 1 km radius.
+1. **Hyperlocal Microclimate Intelligence:** Ingests discrete FortyGuard polygon tiles revealing significant temperature variations between urban waterfronts and asphalt street canyons within a 1 km radius.
 2. **Joint WHERE + WHEN Optimization:** Evaluates all candidate locations and sliding time windows simultaneously ($\mathcal{L} \times \mathcal{W} = 15\text{ candidate plans}$), recommending the globally optimal operational plan.
 3. **What-If Constraint Sensitivity:** Deterministically calculates the exact modeled temperature increase ($C = E(P') - E(P_0)$) when operational constraints (e.g., site locks, curfew shifts, extended durations) restrict the unconstrained optimum.
-4. **Grounded Read-Only AI Synthesis:** Translates verified mathematical outputs into structured narratives protected by multi-layered validation (numeric allow-lists, forbidden medical/safety claim rejection, zero-credential deterministic fallback).
-5. **Zero-Dependency Demo Reliability:** Default DEMO mode runs 100% offline from captured FortyGuard API fixture data with zero external network dependencies.
+4. **Grounded Read-Only AI Synthesis:** Translates verified mathematical outputs into structured narratives powered by Google Gemini with multi-layered validation (numeric allow-lists, forbidden medical/safety claim rejection, zero-credential deterministic fallback).
+5. **Global Temperature Display Preference (°F / °C):** Seamless UI unit conversion defaulting to °F for US context while preserving strict Celsius internal evaluation and grounding invariants.
+6. **Zero-Dependency Demo Reliability:** Default DEMO mode runs 100% offline from captured FortyGuard API fixture data with zero external network dependencies.
 
 ---
 
 ## ⏱️ 60-Second Demo Walkthrough
 
-1. **[00:00–00:15] Spatial Variance:** Observe the **Spatial Thermal Surface** map showing Manhattan microclimates varying from $28.50^\circ\text{C}$ to $37.55^\circ\text{C}$ across adjacent candidate operational sites.
-2. **[00:15–00:30] Joint WHERE + WHEN Decision:** Click **Recalculate Decision**. The **Recommended Operational Plan** card identifies the global optimum:
+1. **[00:00–00:15] Spatial Variance:** Observe the **Hyperlocal Thermal Field** map showing Manhattan microclimates varying across adjacent candidate operational sites.
+2. **[00:15–00:30] Joint WHERE + WHEN Decision:** Click **⚡ Calculate Decision**. The **Recommended Operational Plan** card identifies the global optimum:
    - **Recommended Site:** `Battery Park Greenway (Waterfront) (LOC-A)`
    - **Operating Window:** `08:00 AM – 11:00 AM UTC (3h Duration)`
-   - **Mean Modeled Temperature:** `29.83°C` (or `29.15°C` for 2h operations)
-   - **Joint Advantage:** Avoids an `+8.40°C` higher mean modeled temperature across the window vs deploying to Chinatown at peak heat.
-3. **[00:30–00:45] What-If Constraint Cost:** Single-click the **Site Lock (Chinatown Asphalt Canyon)** preset chip. The 3-Box comparison visually shifts to show **`Constraint Cost: +2.37°C Mean Modeled Temperature Increase`** (`+2.20°C` under 2h).
-4. **[00:45–01:00] Grounded AI Synthesis:** Scroll to **Decision Explanation & Evidence Synthesis** to inspect the grounded narrative verified against strict evidence allow-lists ($\le 0.01^\circ\text{C}$ precision) with zero hallucination.
+   - **Mean Modeled Temperature:** `85.69°F` (`29.83°C` in Celsius mode)
+   - **Advantage Summary:** Best feasible plan evaluated across 3 sites × 5 windows.
+3. **[00:30–00:45] What-If Constraint Cost:** Single-click the **Site Lock (Chinatown Asphalt Canyon)** preset chip. The 3-Box comparison visually shifts to show **`Constraint Cost: +4.27°F`** (`+2.37°C` in Celsius mode).
+4. **[00:45–01:00] Grounded AI Synthesis:** Scroll to **Decision Explanation** to inspect the grounded narrative verified against strict evidence allow-lists ($\le 0.01^\circ\text{C}$ precision) with zero hallucination.
 
 ---
 
@@ -81,11 +82,11 @@ All system architecture, product requirements, decision models, and API integrat
 | [docs/VISION.md](docs/VISION.md) | Long-term vision for heat-exposed operations decision intelligence | `LOCKED` |
 | [docs/PRD.md](docs/PRD.md) | Product requirements, 6 MVP capabilities, acceptance criteria | `LOCKED` |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System boundaries, execution phases, credit safety caching | `LOCKED` |
-| [docs/DESIGN.md](docs/DESIGN.md) | Decision Workspace 8-section layout & provenance badges | `LOCKED` |
+| [docs/DESIGN.md](docs/DESIGN.md) | Decision Workspace layout & provenance badges | `LOCKED` |
 | [docs/DECISION-ENGINE.md](docs/DECISION-ENGINE.md) | Mathematical formulation of joint optimizer, What-If engine, and grounding validator | `LOCKED` |
 | [docs/FORTYGUARD.md](docs/FORTYGUARD.md) | Verified FortyGuard API intelligence & live schemas | `LOCKED` |
-| [docs/CURRENT-SPRINT.md](docs/CURRENT-SPRINT.md) | Milestone 10/11 operational sprint tracking | `LOCKED` |
-| [docs/WORKLOG.md](docs/WORKLOG.md) | Chronological record of engineering actions & decisions | `LOCKED` |
+| [docs/CURRENT-SPRINT.md](docs/CURRENT-SPRINT.md) | Milestone tracking and operational sprint records | `VERIFIED` |
+| [docs/WORKLOG.md](docs/WORKLOG.md) | Chronological record of engineering actions & decisions | `VERIFIED` |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | Hardened test matrix & evidence verification strategy | `LOCKED` |
 
 ---
@@ -97,7 +98,7 @@ All system architecture, product requirements, decision models, and API integrat
 - **Mapping & Spatial:** MapLibre GL + Zero-Dependency Ray Casting
 - **Styling:** Tailwind CSS + Radix UI / shadcn primitives
 - **Validation:** Zod
-- **Testing:** Vitest (134 tests, 100% pass rate) + Playwright (60 browser E2E tests across Desktop & Mobile)
+- **Testing:** Vitest (158 tests across 18 suites, 100% pass rate) + Playwright (68 browser E2E tests across Desktop & Mobile)
 - **Package Manager:** pnpm
 
 ---
@@ -112,11 +113,11 @@ pnpm install
 pnpm dev
 
 # 3. Run automated verification suite
-pnpm test          # 134 Vitest unit, failure, grounding, and provider tests
+pnpm test          # 158 Vitest unit, failure, grounding, and provider tests
 pnpm typecheck     # TypeScript strict validation
 pnpm lint          # ESLint rules
 pnpm build         # Production Next.js build
-pnpm test:e2e      # 60 Playwright Desktop & Mobile browser E2E tests
+pnpm test:e2e      # 68 Playwright Desktop & Mobile browser E2E tests
 ```
 
 ---

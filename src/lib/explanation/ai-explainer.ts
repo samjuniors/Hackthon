@@ -47,13 +47,20 @@ export async function explainDecision(
     return generateDeterministicExplanation(input, validation.reason || 'MOCK_VALIDATION_FAILED');
   }
 
-  const providerConfig: AIProviderConfig | undefined = options?.apiKey || options?.provider
-    ? {
-        provider: options.provider || (options.apiKey?.startsWith('AIzaSy') || options.apiKey?.startsWith('AQ.') ? 'gemini' : 'openai'),
-        apiKey: options.apiKey,
-        model: options.model,
-      }
-    : undefined;
+  const providerConfig: AIProviderConfig | undefined =
+    options?.apiKey !== undefined || options?.provider !== undefined
+      ? {
+          provider:
+            options?.provider ||
+            (options?.apiKey === ''
+              ? 'deterministic'
+              : options?.apiKey?.startsWith('AIzaSy') || options?.apiKey?.startsWith('AQ.')
+              ? 'gemini'
+              : 'openai'),
+          apiKey: options?.apiKey,
+          model: options?.model,
+        }
+      : undefined;
 
   const detected = detectAIProvider(providerConfig);
   if (detected.provider === 'deterministic' || !detected.apiKey) {

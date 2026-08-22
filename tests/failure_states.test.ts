@@ -238,7 +238,7 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
   });
 
   it('9. Explanation timeout triggers deterministic fallback', async () => {
-    const exp = await explainDecision(sampleInput, { apiKey: undefined });
+    const exp = await explainDecision(sampleInput, { apiKey: '' });
     expect(exp.generatedBy).toBe('DETERMINISTIC_FALLBACK');
     expect(exp.fallbackReason).toBe('LLM_API_KEY_NOT_CONFIGURED: Defaulting to deterministic rule-based explanation.');
   });

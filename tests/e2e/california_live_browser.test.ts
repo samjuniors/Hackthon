@@ -28,8 +28,7 @@ test.describe('California LIVE Browser Verification', () => {
     await option.click();
     const response = await decisionResponsePromise;
     const responseData = await response.json();
-    console.log('  [Los Angeles] Decision API Response dataSource:', responseData?.jointDecision?.dataSource);
-    console.log('  [Los Angeles] Decision API Response Recommended Location:', responseData?.jointDecision?.recommendedPlan?.location?.name);
+    expect(responseData?.jointDecision?.dataSource).toBe('LIVE');
 
     // Verify Active Indicator
     await expect(page.getByTestId('active-analysis-location-indicator')).toContainText('Los Angeles, CA');
@@ -39,8 +38,6 @@ test.describe('California LIVE Browser Verification', () => {
     await expect(decisionCard).toBeVisible({ timeout: 15000 });
 
     const cardContent = await decisionCard.textContent();
-    console.log('  [Los Angeles] Decision Card Content preview:', cardContent?.slice(0, 150));
-
     expect(cardContent).not.toContain('Battery Park');
     expect(cardContent).not.toContain('Manhattan');
     expect(cardContent).toContain('LIVE');
@@ -72,8 +69,7 @@ test.describe('California LIVE Browser Verification', () => {
     await option.click();
     const response = await decisionResponsePromise;
     const responseData = await response.json();
-    console.log('  [San Francisco] Decision API Response dataSource:', responseData?.jointDecision?.dataSource);
-    console.log('  [San Francisco] Decision API Response Recommended Location:', responseData?.jointDecision?.recommendedPlan?.location?.name);
+    expect(responseData?.jointDecision?.dataSource).toBe('LIVE');
 
     // Verify Active Indicator
     await expect(page.getByTestId('active-analysis-location-indicator')).toContainText('San Francisco, CA');
@@ -83,8 +79,6 @@ test.describe('California LIVE Browser Verification', () => {
     await expect(decisionCard).toBeVisible({ timeout: 15000 });
 
     const cardContent = await decisionCard.textContent();
-    console.log('  [San Francisco] Decision Card Content preview:', cardContent?.slice(0, 150));
-
     expect(cardContent).not.toContain('Battery Park');
     expect(cardContent).not.toContain('Manhattan');
     expect(cardContent).toContain('LIVE');
@@ -116,8 +110,7 @@ test.describe('California LIVE Browser Verification', () => {
     await option.click();
     const response = await decisionResponsePromise;
     const responseData = await response.json();
-    console.log('  [San Diego] Decision API Response dataSource:', responseData?.jointDecision?.dataSource);
-    console.log('  [San Diego] Decision API Response Recommended Location:', responseData?.jointDecision?.recommendedPlan?.location?.name);
+    expect(responseData?.jointDecision?.dataSource).toBe('LIVE');
 
     // Verify Active Indicator
     await expect(page.getByTestId('active-analysis-location-indicator')).toContainText('San Diego, CA');
@@ -127,8 +120,6 @@ test.describe('California LIVE Browser Verification', () => {
     await expect(decisionCard).toBeVisible({ timeout: 15000 });
 
     const cardContent = await decisionCard.textContent();
-    console.log('  [San Diego] Decision Card Content preview:', cardContent?.slice(0, 150));
-
     expect(cardContent).not.toContain('Battery Park');
     expect(cardContent).not.toContain('Manhattan');
     expect(cardContent).toContain('LIVE');

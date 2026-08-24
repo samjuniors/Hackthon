@@ -9,11 +9,15 @@
 /test-results/
 /playwright-report/
 /blob-report/
+tests/e2e/evidence/
+tests/e2e/*.png
+*.png
 
 # next.js & build output
 /.next/
 /out/
 /build
+.vercel/
 
 # environment & secrets (NEVER commit local credentials)
 .env
@@ -39,10 +43,19 @@ next-env.d.ts
 Thumbs.db
 *.pem
 
-# Editor & IDE local caches
+# Editor & IDE local caches & AI agent folders
 .idea/
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+.cursor/
+.agents/
+.qodo/
+.gemini/
+
+# package manager locks (using pnpm-lock.yaml only)
+bun.lock
+yarn.lock
+package-lock.json

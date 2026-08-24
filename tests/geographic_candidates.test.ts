@@ -15,10 +15,11 @@ const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
 
 function generateLiveCandidates(center: LocationPoint): CandidateLocation[] {
   const dLat = 400 / 111320;
+  const candidateOffset = dLat * 0.25;
   return [
-    { locationId: 'SITE-N',      name: 'Site North',    location: { latitude: center.latitude + dLat * 0.6, longitude: center.longitude } },
-    { locationId: 'SITE-CENTER', name: 'Site Center',   location: { latitude: center.latitude,              longitude: center.longitude } },
-    { locationId: 'SITE-S',      name: 'Site South',    location: { latitude: center.latitude - dLat * 0.6, longitude: center.longitude } },
+    { locationId: 'SITE-N',      name: 'Site North',    location: { latitude: center.latitude + candidateOffset, longitude: center.longitude } },
+    { locationId: 'SITE-CENTER', name: 'Site Center',   location: { latitude: center.latitude,                    longitude: center.longitude } },
+    { locationId: 'SITE-S',      name: 'Site South',    location: { latitude: center.latitude - candidateOffset, longitude: center.longitude } },
   ];
 }
 
@@ -110,10 +111,10 @@ describe('Geographic Candidate Resolution', () => {
   });
 
   describe('Offset math', () => {
-    it('north offset is ~240m (0.6 x 400m, inside AOI half-side)', () => {
+    it('north offset is ~100m (0.25 x 400m, kept away from AOI edge)', () => {
       const [n, ctr] = resolveCandidates('LIVE', LA);
       const m = Math.abs(n.location.latitude - ctr.location.latitude) * 111320;
-      expect(m).toBeCloseTo(240, 0);
+      expect(m).toBeCloseTo(100, 0);
     });
     it('all 3 candidates have distinct coordinates', () => {
       const coords = new Set(resolveCandidates('LIVE', LA).map(x => `${x.location.latitude},${x.location.longitude}`));

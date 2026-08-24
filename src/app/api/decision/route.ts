@@ -7,7 +7,6 @@ import {
   evaluateWhatIfScenarios,
 } from '@/lib/decision-engine/evaluator';
 
-
 import type {
   LocationPoint,
   DecisionConstraints,
@@ -62,21 +61,18 @@ const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
 ];
 
 /**
- * Generate 3 geo-adjacent candidates around a user-selected location for LIVE analysis.
- *
- * Candidates are spaced 400m apart on the north/south axis so all 3 fall inside the
- * createBoundingAOI() polygon (halfSideMetres=400) already submitted to FortyGuard.
- * This ensures the decision engine evaluates real FortyGuard tiles at the user's location.
- *
- * Naming convention: SITE-N (north offset), SITE-CENTER (exact point), SITE-S (south offset).
+ * Generate geo-adjacent candidates around a user-selected location for LIVE analysis.
+ * Candidates stay well inside the requested 400m AOI; returned FortyGuard polygons remain
+ * authoritative and normalizePointObservation() still rejects any point outside coverage.
  */
 function generateLiveCandidates(center: LocationPoint): CandidateLocation[] {
   const dLat = 400 / 111320; // ~0.0036° per 400m
+  const candidateOffset = dLat * 0.25; // ~100m from center; avoids AOI-edge clipping
   return [
     {
       locationId: 'SITE-N',
       name: 'Site North (Upper Zone)',
-      location: { latitude: center.latitude + dLat * 0.6, longitude: center.longitude },
+      location: { latitude: center.latitude + candidateOffset, longitude: center.longitude },
     },
     {
       locationId: 'SITE-CENTER',
@@ -86,11 +82,10 @@ function generateLiveCandidates(center: LocationPoint): CandidateLocation[] {
     {
       locationId: 'SITE-S',
       name: 'Site South (Lower Zone)',
-      location: { latitude: center.latitude - dLat * 0.6, longitude: center.longitude },
+      location: { latitude: center.latitude - candidateOffset, longitude: center.longitude },
     },
   ];
 }
-
 
 export async function POST(request: Request) {
   try {
@@ -125,7 +120,6 @@ export async function POST(request: Request) {
       mode: reqMode,
     } = parseResult.data;
 
-    // Explicit DataSourceMode: request override or server default
     const mode: DataSourceMode = reqMode ?? (process.env.FORTYGUARD_DATA_SOURCE === 'LIVE' ? 'LIVE' : 'FIXTURE');
 
     const adapter = new FortyGuardAdapter({ mode });
@@ -152,7 +146,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Build discrete hourly timestamps for the candidate span
     const hourlyTimestamps: string[] = [];
     for (let tMs = startMs; tMs < endMs; tMs += 3600 * 1000) {
       hourlyTimestamps.push(new Date(tMs).toISOString());
@@ -162,18 +155,12 @@ export async function POST(request: Request) {
       throw new IncompleteTemporalCoverageError('Empty hourly sequence for requested time span');
     }
 
-    // Verify fixture coverage boundary: fixture dataset ONLY covers Manhattan
     if (mode === 'FIXTURE' && !isLocationCoveredByFixture(location)) {
       throw new OutsideCoverageError(
         'The DEMO fixture dataset is captured exclusively for Manhattan (lat ~40.712, lon ~-74.008). Switch to LIVE mode to analyze this location.'
       );
     }
 
-    // Build candidates to evaluate.
-    // - Explicit caller-provided candidates always take precedence.
-    // - LIVE mode: derive geo-adjacent candidates from user's actual location so the
-    //   decision engine evaluates real FortyGuard tiles at the requested geographic area.
-    // - FIXTURE mode: use Manhattan default capture locations.
     const candidatesToEvaluate: CandidateLocation[] = reqCandidates && reqCandidates.length > 0
       ? reqCandidates.map((c) => ({
           locationId: c.locationId,
@@ -184,8 +171,6 @@ export async function POST(request: Request) {
         ? generateLiveCandidates({ latitude, longitude })
         : DEFAULT_CANDIDATE_LOCATIONS;
 
-
-    // Reject duplicate candidate IDs or duplicate coordinates
     const seenLocIds = new Set<string>();
     const seenCoords = new Set<string>();
     for (const cand of candidatesToEvaluate) {
@@ -201,10 +186,7 @@ export async function POST(request: Request) {
       seenCoords.add(coordKey);
     }
 
-    // Fetch discrete hourly snapshots from selected source (LIVE API or FIXTURE)
     const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps);
-
-    // Normalize observations per candidate location across all timestamps (zero cross-location leakage)
     const observationsByCandidate = new Map<string, NormalizedThermalObservation[]>();
 
     for (const cand of candidatesToEvaluate) {
@@ -215,7 +197,6 @@ export async function POST(request: Request) {
           throw new IncompleteTemporalCoverageError(`Missing thermal observation at timestamp ${timestamp}`);
         }
 
-        // Heatmap tile values represent spatial polygon model aggregations (provenance: DERIVED)
         const obs = adapter.normalizePointObservation(
           snapshotAoi,
           cand.location,
@@ -228,7 +209,6 @@ export async function POST(request: Request) {
       observationsByCandidate.set(cand.locationId, obsList);
     }
 
-    // Evaluate temporal candidate windows for the primary candidate (WHEN decision)
     const primaryCandidateObs = observationsByCandidate.get(candidatesToEvaluate[0].locationId) || [];
     const decision = evaluateCandidateWindows(
       location,
@@ -237,7 +217,6 @@ export async function POST(request: Request) {
       allowedStart
     );
 
-    // Evaluate spatial multi-location ranking for the recommended operating window (WHERE decision)
     const activeWindow: CandidateWindow = {
       windowId: decision.recommendedWindow.windowId,
       startTime: decision.recommendedWindow.startTime,
@@ -256,7 +235,6 @@ export async function POST(request: Request) {
       }
     );
 
-    // Evaluate joint discrete spatial-temporal optimization over CandidateLocation × CandidateWindow (WHERE + WHEN)
     const jointDecision = evaluateJointDecision(
       candidatesToEvaluate,
       observationsByCandidate,
@@ -267,7 +245,6 @@ export async function POST(request: Request) {
       }
     );
 
-    // Evaluate Milestone 7 What-If constraint sensitivity analysis
     const scenarioAnalysis = evaluateWhatIfScenarios(
       candidatesToEvaluate,
       observationsByCandidate,
@@ -295,10 +272,6 @@ export async function POST(request: Request) {
         totalEvaluatedHours: hourlyTimestamps.length,
       },
     });
-
-
-
-
   } catch (error) {
     const errorDetails = mapErrorToProductionDetails(error);
 
@@ -329,4 +302,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

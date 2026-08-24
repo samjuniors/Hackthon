@@ -19,9 +19,11 @@ import type { DataSourceMode } from '@/types/provenance';
 import {
   AppError,
   IncompleteTemporalCoverageError,
+  OutsideCoverageError,
   ValidationError,
   mapErrorToProductionDetails,
 } from '@/types/errors';
+import { isLocationCoveredByFixture } from '@/lib/location/search';
 import { z } from 'zod';
 
 const CandidateSchema = z.object({
@@ -160,11 +162,18 @@ export async function POST(request: Request) {
       throw new IncompleteTemporalCoverageError('Empty hourly sequence for requested time span');
     }
 
+    // Verify fixture coverage boundary: fixture dataset ONLY covers Manhattan
+    if (mode === 'FIXTURE' && !isLocationCoveredByFixture(location)) {
+      throw new OutsideCoverageError(
+        'The DEMO fixture dataset is captured exclusively for Manhattan (lat ~40.712, lon ~-74.008). Switch to LIVE mode to analyze this location.'
+      );
+    }
+
     // Build candidates to evaluate.
     // - Explicit caller-provided candidates always take precedence.
     // - LIVE mode: derive geo-adjacent candidates from user's actual location so the
     //   decision engine evaluates real FortyGuard tiles at the requested geographic area.
-    // - FIXTURE mode: always use Manhattan defaults — the fixture only covers Manhattan tiles.
+    // - FIXTURE mode: use Manhattan default capture locations.
     const candidatesToEvaluate: CandidateLocation[] = reqCandidates && reqCandidates.length > 0
       ? reqCandidates.map((c) => ({
           locationId: c.locationId,

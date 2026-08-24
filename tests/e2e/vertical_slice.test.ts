@@ -21,7 +21,7 @@ test.describe('Vertical Slice: Location Search + Real Health + Failure UX + Prov
 
     // Verify Selected Location Card updates
     await expect(page.getByTestId('selected-location-name')).toContainText('Los Angeles, CA');
-    await expect(page.getByText('34.0522°')).toBeVisible();
+    await expect(page.getByTestId('active-analysis-location-coords')).toContainText('34.0522°');
   });
 
   // 2. Preset Location Chips

@@ -23,7 +23,7 @@ import type {
   NamedLocation,
   ProductionErrorDetails,
 } from '@/types/provider';
-import { METROPOLITAN_LOCATIONS } from '@/lib/location/search';
+import { METROPOLITAN_LOCATIONS, isLocationCoveredByFixture } from '@/lib/location/search';
 import {
   useTempUnit,
   fmtTemp,
@@ -298,6 +298,53 @@ export default function WorkspacePage() {
     [selectedLocation, duration, mode, selectedScenarioId, fetchExplanation]
   );
 
+  const handleSelectLocation = useCallback((loc: NamedLocation) => {
+    setSelectedLocation(loc);
+    // Invalidate previous decision state immediately to prevent stale recommendations
+    setDecision(null);
+    setSpatialDecision(null);
+    setJointDecision(null);
+    setScenarioAnalysis(null);
+    setSpatialField(null);
+    setSpatialFieldMeta(null);
+    setExplanation(null);
+    setErrorDetails(null);
+
+    // If in LIVE mode or compatible fixture location, calculate for the new location
+    if (mode === 'LIVE' || isLocationCoveredByFixture(loc)) {
+      runDecisionPipeline(loc, duration, mode);
+    }
+  }, [mode, duration, runDecisionPipeline]);
+
+  const handleModeChange = useCallback((newMode: DataSourceMode) => {
+    setMode(newMode);
+    // Invalidate previous decision state immediately
+    setDecision(null);
+    setSpatialDecision(null);
+    setJointDecision(null);
+    setScenarioAnalysis(null);
+    setSpatialField(null);
+    setSpatialFieldMeta(null);
+    setExplanation(null);
+    setErrorDetails(null);
+
+    void checkFortyGuardHealth(newMode);
+
+    if (newMode === 'FIXTURE') {
+      if (!isLocationCoveredByFixture(selectedLocation)) {
+        // Reset to default fixture location if current selection is outside Manhattan
+        const defaultFixtureLoc = METROPOLITAN_LOCATIONS[0];
+        setSelectedLocation(defaultFixtureLoc);
+        runDecisionPipeline(defaultFixtureLoc, duration, 'FIXTURE');
+      } else {
+        runDecisionPipeline(selectedLocation, duration, 'FIXTURE');
+      }
+    } else {
+      // LIVE mode: run decision pipeline with real API for currently selected location
+      runDecisionPipeline(selectedLocation, duration, 'LIVE');
+    }
+  }, [selectedLocation, duration, checkFortyGuardHealth, runDecisionPipeline]);
+
   // ──────────────────────────── Initial Mount ─────────────────────────────────
 
   useEffect(() => {
@@ -309,7 +356,7 @@ export default function WorkspacePage() {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode: 'FIXTURE' }),
       }
     ).then(({ ok, data }) => {
       if (!isMounted) return;
@@ -330,61 +377,20 @@ export default function WorkspacePage() {
       }
     }).catch(() => {});
 
-    void safeJsonFetch<{
-      success?: boolean;
-      decision?: DecisionResult;
-      spatialDecision?: SpatialDecisionResult;
-      jointDecision?: JointDecisionResult;
-      scenarioAnalysis?: ScenarioAnalysisResult;
-      spatialField?: PolygonAOI;
-      spatialFieldMetadata?: {
-        baseTimestamp: string;
-        coverageType: string;
-        description: string;
-        totalEvaluatedHours: number;
-      };
-    }>('/api/decision', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        latitude: 40.7120,
-        longitude: -74.0080,
-        durationHours: 3,
-        mode: 'FIXTURE',
-      }),
-    })
-      .then(({ ok, data }) => {
-        if (!isMounted) return;
-        if (ok && data?.success) {
-          setDecision(data.decision || null);
-          setSpatialDecision(data.spatialDecision || null);
-          setJointDecision(data.jointDecision || null);
-          setScenarioAnalysis(data.scenarioAnalysis || null);
-          setSpatialField(data.spatialField || null);
-          setSpatialFieldMeta(data.spatialFieldMetadata || null);
-          setFgStatus('CONNECTED');
-
-          if (data.jointDecision) {
-            const activeScen = data.scenarioAnalysis?.scenarios?.[0];
-            fetchExplanation(data.jointDecision, activeScen);
-          }
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
+    // Initialize with default demo location
+    const initPipeline = async () => {
+      if (isMounted) {
+        await runDecisionPipeline(METROPOLITAN_LOCATIONS[0], 3, 'FIXTURE');
+      }
+    };
+    void initPipeline();
 
     return () => {
       isMounted = false;
     };
-  }, [mode, fetchExplanation]);
+  }, [runDecisionPipeline]); // Run on mount
 
-  const handleModeChange = (newMode: DataSourceMode) => {
-    setMode(newMode);
-    checkFortyGuardHealth(newMode);
-    runDecisionPipeline(selectedLocation, duration, newMode);
-  };
+  const isFixtureMismatch = mode === 'FIXTURE' && !isLocationCoveredByFixture(selectedLocation);
 
   // Derived state
   const activeScenario =
@@ -540,10 +546,7 @@ export default function WorkspacePage() {
               <LocationSearch
                 selectedLocation={selectedLocation}
                 mode={mode}
-                onSelectLocation={(loc) => {
-                  setSelectedLocation(loc);
-                  runDecisionPipeline(loc, duration, mode);
-                }}
+                onSelectLocation={handleSelectLocation}
                 onSwitchToLive={() => handleModeChange('LIVE')}
               />
 
@@ -572,7 +575,9 @@ export default function WorkspacePage() {
                     onChange={(e) => {
                       const dur = parseInt(e.target.value);
                       setDuration(dur);
-                      runDecisionPipeline(selectedLocation, dur, mode);
+                      if (mode === 'LIVE' || isLocationCoveredByFixture(selectedLocation)) {
+                        runDecisionPipeline(selectedLocation, dur, mode);
+                      }
                     }}
                     className="absolute inset-0 w-full opacity-0 cursor-pointer h-full"
                   />
@@ -586,26 +591,64 @@ export default function WorkspacePage() {
 
               <Divider />
 
-              {/* Run button */}
-              <button
-                disabled={loading}
-                onClick={() => runDecisionPipeline(selectedLocation, duration, mode)}
-                data-testid="recalculate-decision-btn"
-                className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-                  loading
-                    ? 'bg-[#141f33] text-slate-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-cyan-600 to-cyan-500 text-white hover:from-cyan-500 hover:to-cyan-400 shadow-lg shadow-cyan-950/60'
-                }`}
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="w-4 h-4 border-2 border-slate-600 border-t-cyan-400 rounded-full animate-spin" />
-                    <span>Evaluating thermal field…</span>
+              {/* ── Active Analysis Location Indicator ── */}
+              <div className="rounded-xl p-3 bg-[#0a1220] border border-[#1e2d45] space-y-1.5" data-testid="active-analysis-location-indicator">
+                <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                  <span>ANALYSIS LOCATION</span>
+                  <span
+                    className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
+                      mode === 'LIVE'
+                        ? 'bg-cyan-950/60 text-cyan-300 border-cyan-600/40'
+                        : 'bg-amber-950/60 text-amber-300 border-amber-600/40'
+                    }`}
+                    data-testid="analysis-mode-badge"
+                  >
+                    {mode === 'LIVE' ? 'LIVE — FortyGuard' : 'DEMO — Manhattan Fixture'}
                   </span>
-                ) : (
-                  <span>⚡ Calculate Decision</span>
-                )}
-              </button>
+                </div>
+                <div className="text-sm font-bold text-white leading-tight" data-testid="active-analysis-location-name">
+                  {selectedLocation.name}
+                </div>
+                <div className="text-[11px] font-mono text-cyan-400 flex items-center justify-between" data-testid="active-analysis-location-coords">
+                  <span>{selectedLocation.latitude.toFixed(4)}°, {selectedLocation.longitude.toFixed(4)}°</span>
+                  {selectedLocation.city && (
+                    <span className="text-slate-400 font-sans text-[10px]">
+                      {selectedLocation.city}, {selectedLocation.state || selectedLocation.country}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Run button / Mode mismatch switch CTA */}
+              {isFixtureMismatch ? (
+                <button
+                  onClick={() => handleModeChange('LIVE')}
+                  data-testid="recalculate-decision-btn"
+                  className="w-full h-12 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-500 text-white hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-950/60"
+                >
+                  <span>⚡ Switch to LIVE to Calculate</span>
+                </button>
+              ) : (
+                <button
+                  disabled={loading}
+                  onClick={() => runDecisionPipeline(selectedLocation, duration, mode)}
+                  data-testid="recalculate-decision-btn"
+                  className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                    loading
+                      ? 'bg-[#141f33] text-slate-500 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-cyan-600 to-cyan-500 text-white hover:from-cyan-500 hover:to-cyan-400 shadow-lg shadow-cyan-950/60'
+                  }`}
+                >
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-slate-600 border-t-cyan-400 rounded-full animate-spin" />
+                      <span>Evaluating thermal field…</span>
+                    </span>
+                  ) : (
+                    <span>⚡ Calculate Decision</span>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* ── Provider Health ── */}
@@ -633,14 +676,18 @@ export default function WorkspacePage() {
             {/* ── Error Banner ── */}
             {errorDetails && (
               <div
-                className="rounded-xl p-4 border-2 border-red-500/50 bg-red-950/30"
+                className="rounded-xl p-4 border-2 border-red-500/50 bg-red-950/30 space-y-3"
                 data-testid="production-error-banner"
               >
-                <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-red-400 text-base">🔴</span>
-                      <span className="font-bold text-red-200 text-sm">Analysis Halted</span>
+                      <span className="font-bold text-red-200 text-sm">
+                        {errorDetails.code === 'OUTSIDE_COVERAGE'
+                          ? 'FortyGuard Coverage Unavailable for this Location'
+                          : 'Analysis Halted'}
+                      </span>
                       <code className="text-[10px] bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded font-mono">
                         {errorDetails.code}
                       </code>
@@ -662,9 +709,28 @@ export default function WorkspacePage() {
                         onClick={() => handleModeChange('FIXTURE')}
                         className="px-3 py-1.5 text-xs rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-300 hover:bg-amber-900/60 transition-colors"
                       >
-                        Use DEMO
+                        Use Demo
                       </button>
                     )}
+                  </div>
+                </div>
+
+                {/* Alternative locations */}
+                <div className="pt-2 border-t border-red-900/40 text-xs">
+                  <span className="text-slate-400">Supported Metro Alternatives: </span>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly).slice(0, 4).map((altLoc) => (
+                      <button
+                        key={altLoc.id}
+                        onClick={() => {
+                          handleSelectLocation(altLoc);
+                          runDecisionPipeline(altLoc, duration, 'LIVE');
+                        }}
+                        className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-cyan-300 hover:border-cyan-500 text-[10px] font-mono"
+                      >
+                        {altLoc.name}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -705,7 +771,7 @@ export default function WorkspacePage() {
             </div>
 
             {/* ── Recommended Operational Plan ── */}
-            {jointDecision ? (
+            {jointDecision && !errorDetails ? (
               <div
                 className="rounded-xl border border-emerald-700/30 bg-[#0d1422] overflow-hidden"
                 data-testid="decision-card"
@@ -923,7 +989,7 @@ export default function WorkspacePage() {
             ) : null}
 
             {/* ── What-If Constraint Sensitivity ── */}
-            {scenarioAnalysis && scenarioAnalysis.scenarios.length > 0 && (
+            {scenarioAnalysis && scenarioAnalysis.scenarios.length > 0 && !errorDetails && (
               <div className="rounded-xl border border-[#1e2d45] bg-[#0d1422] overflow-hidden" data-testid="what-if-card">
                 <div className="px-5 pt-5 pb-4 border-b border-[#1e2d45]">
                   <div className="flex items-center gap-2 mb-1">
@@ -1069,7 +1135,7 @@ export default function WorkspacePage() {
             )}
 
             {/* ── Grounded AI Explanation ── */}
-            {explanation && (
+            {explanation && !errorDetails && (
               <div className="rounded-xl border border-[#1e2d45] bg-[#0d1422] overflow-hidden">
                 <div className="px-5 pt-5 pb-4 border-b border-[#1e2d45]">
                   <div className="flex items-center justify-between gap-3">

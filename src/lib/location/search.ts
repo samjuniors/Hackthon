@@ -429,6 +429,20 @@ export function getPresetLocations(isFixtureMode: boolean): NamedLocation[] {
 }
 
 /**
+ * Verifies whether a given coordinate point is covered by the captured Manhattan fixture dataset.
+ */
+export function isLocationCoveredByFixture(loc: { latitude: number; longitude: number }): boolean {
+  return (
+    Number.isFinite(loc.latitude) &&
+    Number.isFinite(loc.longitude) &&
+    loc.latitude >= 40.68 &&
+    loc.latitude <= 40.75 &&
+    loc.longitude >= -74.03 &&
+    loc.longitude <= -73.96
+  );
+}
+
+/**
  * Resolves a point into the closest named location or formats a custom location.
  */
 export function resolveLocationPoint(
@@ -456,3 +470,4 @@ export function resolveLocationPoint(
     isDemoOnly: false,
   };
 }
+

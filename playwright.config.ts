@@ -34,7 +34,7 @@ export default defineConfig({
   webServer: {
     command: 'pnpm.cmd run start --port 3050',
     url: 'http://localhost:3050',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 30000,
   },
 });

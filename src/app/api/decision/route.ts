@@ -71,12 +71,12 @@ const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
  * Naming convention: SITE-N (north offset), SITE-CENTER (exact point), SITE-S (south offset).
  */
 function generateLiveCandidates(center: LocationPoint): CandidateLocation[] {
-  const dLat = 400 / 111320; // ~0.0036° per 400m
+  const dLat = 400 / 111320; // ~0.0036° per 400m (0.25 multiplier = ~100m adjacent tile offset)
   return [
     {
       locationId: 'SITE-N',
       name: 'Site North (Upper Zone)',
-      location: { latitude: center.latitude + dLat * 0.6, longitude: center.longitude },
+      location: { latitude: center.latitude + dLat * 0.25, longitude: center.longitude },
     },
     {
       locationId: 'SITE-CENTER',
@@ -86,7 +86,7 @@ function generateLiveCandidates(center: LocationPoint): CandidateLocation[] {
     {
       locationId: 'SITE-S',
       name: 'Site South (Lower Zone)',
-      location: { latitude: center.latitude - dLat * 0.6, longitude: center.longitude },
+      location: { latitude: center.latitude - dLat * 0.25, longitude: center.longitude },
     },
   ];
 }

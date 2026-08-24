@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { LocationSearch } from '@/components/LocationSearch';
 import { ProviderHealthCard } from '@/components/ProviderHealthCard';
@@ -213,14 +213,26 @@ export default function WorkspacePage() {
     []
   );
 
+  const activeRequestIdRef = useRef<number>(0);
+  const modeRef = useRef<DataSourceMode>(mode);
+  const selectedLocationRef = useRef<NamedLocation>(selectedLocation);
+  const durationRef = useRef<number>(duration);
+
+  useEffect(() => {
+    modeRef.current = mode;
+    selectedLocationRef.current = selectedLocation;
+    durationRef.current = duration;
+  }, [mode, selectedLocation, duration]);
+
   // ──────────────────────────── Decision Pipeline ─────────────────────────────
 
   const runDecisionPipeline = useCallback(
     async (
-      loc = selectedLocation,
-      durationHours = duration,
-      dataSourceMode = mode
+      loc = selectedLocationRef.current,
+      durationHours = durationRef.current,
+      dataSourceMode = modeRef.current
     ) => {
+      const requestId = ++activeRequestIdRef.current;
       setLoading(true);
       setErrorDetails(null);
 
@@ -254,6 +266,11 @@ export default function WorkspacePage() {
           }),
         });
 
+        // Guard against stale response
+        if (requestId !== activeRequestIdRef.current) {
+          return;
+        }
+
         if (!ok || !data?.success) {
           if (data?.error?.details) {
             setErrorDetails(data.error.details);
@@ -285,21 +302,27 @@ export default function WorkspacePage() {
           fetchExplanation(data.jointDecision, activeScen);
         }
       } catch {
-        setDecision(null);
-        setSpatialDecision(null);
-        setJointDecision(null);
-        setScenarioAnalysis(null);
-        setExplanation(null);
-        if (dataSourceMode === 'LIVE') setFgStatus('ERROR');
+        if (requestId === activeRequestIdRef.current) {
+          setDecision(null);
+          setSpatialDecision(null);
+          setJointDecision(null);
+          setScenarioAnalysis(null);
+          setExplanation(null);
+          if (dataSourceMode === 'LIVE') setFgStatus('ERROR');
+        }
       } finally {
-        setLoading(false);
+        if (requestId === activeRequestIdRef.current) {
+          setLoading(false);
+        }
       }
     },
-    [selectedLocation, duration, mode, selectedScenarioId, fetchExplanation]
+    [selectedScenarioId, fetchExplanation]
   );
 
   const handleSelectLocation = useCallback((loc: NamedLocation) => {
     setSelectedLocation(loc);
+    selectedLocationRef.current = loc;
+
     // Invalidate previous decision state immediately to prevent stale recommendations
     setDecision(null);
     setSpatialDecision(null);
@@ -311,13 +334,16 @@ export default function WorkspacePage() {
     setErrorDetails(null);
 
     // If in LIVE mode or compatible fixture location, calculate for the new location
-    if (mode === 'LIVE' || isLocationCoveredByFixture(loc)) {
-      runDecisionPipeline(loc, duration, mode);
+    const currentMode = modeRef.current;
+    if (currentMode === 'LIVE' || isLocationCoveredByFixture(loc)) {
+      runDecisionPipeline(loc, durationRef.current, currentMode);
     }
-  }, [mode, duration, runDecisionPipeline]);
+  }, [runDecisionPipeline]);
 
   const handleModeChange = useCallback((newMode: DataSourceMode) => {
+    modeRef.current = newMode;
     setMode(newMode);
+
     // Invalidate previous decision state immediately
     setDecision(null);
     setSpatialDecision(null);
@@ -330,20 +356,22 @@ export default function WorkspacePage() {
 
     void checkFortyGuardHealth(newMode);
 
+    const currentLoc = selectedLocationRef.current;
     if (newMode === 'FIXTURE') {
-      if (!isLocationCoveredByFixture(selectedLocation)) {
+      if (!isLocationCoveredByFixture(currentLoc)) {
         // Reset to default fixture location if current selection is outside Manhattan
         const defaultFixtureLoc = METROPOLITAN_LOCATIONS[0];
         setSelectedLocation(defaultFixtureLoc);
-        runDecisionPipeline(defaultFixtureLoc, duration, 'FIXTURE');
+        selectedLocationRef.current = defaultFixtureLoc;
+        runDecisionPipeline(defaultFixtureLoc, durationRef.current, 'FIXTURE');
       } else {
-        runDecisionPipeline(selectedLocation, duration, 'FIXTURE');
+        runDecisionPipeline(currentLoc, durationRef.current, 'FIXTURE');
       }
     } else {
       // LIVE mode: run decision pipeline with real API for currently selected location
-      runDecisionPipeline(selectedLocation, duration, 'LIVE');
+      runDecisionPipeline(currentLoc, durationRef.current, 'LIVE');
     }
-  }, [selectedLocation, duration, checkFortyGuardHealth, runDecisionPipeline]);
+  }, [checkFortyGuardHealth, runDecisionPipeline]);
 
   // ──────────────────────────── Initial Mount ─────────────────────────────────
 

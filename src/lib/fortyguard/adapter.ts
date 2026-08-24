@@ -14,6 +14,7 @@ import {
   AuthenticationError,
   FortyGuardApiError,
   FortyGuardProcessingError,
+  FortyGuardTimeoutError,
   IncompleteTemporalCoverageError,
 } from '@/types/errors';
 import { findTileForPoint } from '../spatial/mapper';
@@ -81,6 +82,52 @@ export function createBoundingAOI(center: LocationPoint, halfSideMetres = 400): 
   };
 }
 
+/**
+ * Helper to run async tasks across items with bounded concurrency.
+ * Guarantees that at most `concurrencyLimit` tasks run simultaneously.
+ */
+export async function runWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const effectiveLimit = Math.max(1, Math.min(limit, items.length));
+  const results: R[] = new Array(items.length);
+  let currentIndex = 0;
+
+  const workers = Array.from({ length: effectiveLimit }, async () => {
+    while (currentIndex < items.length) {
+      const index = currentIndex++;
+      results[index] = await fn(items[index]);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Structured logger for FortyGuard provider operations.
+ * CRITICAL: Never logs API keys, tokens, or credentials.
+ */
+function logProviderEvent(
+  level: 'warn' | 'error',
+  event: string,
+  details: Record<string, unknown>
+) {
+  const sanitized = {
+    timestamp: new Date().toISOString(),
+    event,
+    ...details,
+  };
+  if (level === 'error') {
+    console.error(`[FortyGuard] ${event}:`, JSON.stringify(sanitized));
+  } else {
+    console.warn(`[FortyGuard] ${event}:`, JSON.stringify(sanitized));
+  }
+}
+
 /** In-memory cache for FortyGuard requests during the session */
 const sessionCache = new Map<string, unknown>();
 
@@ -88,10 +135,20 @@ export interface FortyGuardAdapterOptions {
   mode?: DataSourceMode;
   baseUrl?: string;
   apiKey?: string;
+  concurrencyLimit?: number;  // Default: 2 (avoids provider burst)
+  maxRetries?: number;        // Default: 1 (for transient network/timeout)
+  retryDelayMs?: number;      // Default: 1000ms
+  pollingMaxAttempts?: number;// Default: 15 (15 × 2s = 30s ceiling)
+  pollingIntervalMs?: number; // Default: 2000ms
 }
 
 export class FortyGuardAdapter {
   readonly mode: DataSourceMode;
+  readonly concurrencyLimit: number;
+  readonly maxRetries: number;
+  readonly retryDelayMs: number;
+  readonly pollingMaxAttempts: number;
+  readonly pollingIntervalMs: number;
   private readonly baseUrl: string;
   private readonly apiKey: string;
 
@@ -99,6 +156,16 @@ export class FortyGuardAdapter {
     this.mode = options?.mode ?? (process.env.FORTYGUARD_DATA_SOURCE === 'LIVE' ? 'LIVE' : 'FIXTURE');
     this.baseUrl = (options?.baseUrl || process.env.FORTYGUARD_API_BASE_URL || 'https://api.fortyguard.com').replace(/\/+$/, '');
     this.apiKey = options?.apiKey ?? process.env.FORTYGUARD_API_KEY ?? '';
+    this.concurrencyLimit = options?.concurrencyLimit ?? 2;
+    this.maxRetries = options?.maxRetries ?? 1;
+    this.retryDelayMs = options?.retryDelayMs ?? 1000;
+    this.pollingMaxAttempts = options?.pollingMaxAttempts ?? 15;
+    this.pollingIntervalMs = options?.pollingIntervalMs ?? 2000;
+  }
+
+  /** Static utility to clear session cache (useful for testing) */
+  static clearCache(): void {
+    sessionCache.clear();
   }
 
   private get headers(): Record<string, string> {
@@ -113,15 +180,36 @@ export class FortyGuardAdapter {
   }
 
   /**
+   * Check if an error is transient and eligible for controlled retry.
+   * Non-retryable: Auth (401/403), Validation (400), Coverage (404/422), Provider 'Failed'
+   */
+  private isTransientError(error: unknown): boolean {
+    if (error instanceof AuthenticationError) return false;
+    if (error instanceof IncompleteTemporalCoverageError) return false;
+    if (error instanceof FortyGuardTimeoutError) return true;
+    if (error instanceof FortyGuardProcessingError) {
+      // Provider explicitly processed and marked status 'Failed' — not retryable
+      return false;
+    }
+    if (error instanceof FortyGuardApiError) {
+      // HTTP 502, 503, 504, or network fetch failure (no status) are transient
+      if (!error.originalStatusCode || error.originalStatusCode >= 500) {
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  /**
    * Submit async request to FortyGuard API and poll /v1/status/{activity_id} until terminal state.
    */
   private async submitAndPoll(
     endpoint: string,
     body: Record<string, unknown>,
-    maxAttempts = 15,   // 15 × 2s = 30s max poll window — FortyGuard processing ceiling
-    intervalMs = 2000
+    maxAttempts = this.pollingMaxAttempts,
+    intervalMs = this.pollingIntervalMs
   ): Promise<FortyGuardStatusResponse> {
-
     const cacheKey = `${endpoint}:${JSON.stringify(body)}`;
     if (sessionCache.has(cacheKey)) {
       return sessionCache.get(cacheKey) as FortyGuardStatusResponse;
@@ -129,7 +217,9 @@ export class FortyGuardAdapter {
 
     const headers = this.headers;
     const submitUrl = `${this.baseUrl}${endpoint}`;
+    const startTimeMs = Date.now();
     let submitRes: Response;
+
     try {
       submitRes = await fetch(submitUrl, {
         method: 'POST',
@@ -140,7 +230,6 @@ export class FortyGuardAdapter {
       if (err instanceof AuthenticationError) throw err;
       throw new FortyGuardApiError(`Failed to reach FortyGuard API at ${endpoint}: ${err instanceof Error ? err.message : String(err)}`);
     }
-
 
     if (submitRes.status === 401 || submitRes.status === 403) {
       throw new AuthenticationError();
@@ -158,8 +247,22 @@ export class FortyGuardAdapter {
       throw new FortyGuardApiError(`FortyGuard endpoint ${endpoint} returned success without activity_id`);
     }
 
-    // Poll status endpoint
+    const reqDateTime = body.date_time as Record<string, unknown> | undefined;
+    logProviderEvent('warn', 'HEATMAP_SUBMITTED', {
+      endpoint,
+      activityId,
+      filterType: reqDateTime?.filter_type,
+      startDate: reqDateTime?.start_date,
+      startTime: reqDateTime?.start_time,
+      granularity: body.granularity,
+    });
+
+    // Poll status endpoint with strict wall-clock polling ceiling
+    const pollingCeilingMs = maxAttempts * intervalMs;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (Date.now() - startTimeMs >= pollingCeilingMs) {
+        break;
+      }
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
 
       let pollRes: Response;
@@ -182,16 +285,36 @@ export class FortyGuardAdapter {
       const status = pollData.data?.status;
 
       if (status === 'Completed') {
+        const totalDurationMs = Date.now() - startTimeMs;
+        logProviderEvent('warn', 'HEATMAP_COMPLETED', {
+          activityId,
+          attempts: attempt,
+          totalDurationMs,
+        });
+        // Cache ONLY successfully completed responses
         sessionCache.set(cacheKey, pollData);
         return pollData;
       }
 
       if (status === 'Failed') {
+        logProviderEvent('error', 'HEATMAP_FAILED', {
+          activityId,
+          attempts: attempt,
+          durationMs: Date.now() - startTimeMs,
+        });
         throw new FortyGuardProcessingError(activityId, `FortyGuard activity ${activityId} failed during asynchronous processing`);
       }
     }
 
-    throw new FortyGuardProcessingError(activityId, `FortyGuard activity ${activityId} timed out after ${maxAttempts} polling attempts`);
+    const totalDurationMs = Date.now() - startTimeMs;
+    logProviderEvent('error', 'HEATMAP_TIMEOUT', {
+      activityId,
+      attempts: maxAttempts,
+      totalDurationMs,
+      pollingCeilingMs: maxAttempts * intervalMs,
+    });
+
+    throw new FortyGuardTimeoutError(activityId, `FortyGuard activity ${activityId} timed out after ${maxAttempts} polling attempts (${Math.round(totalDurationMs / 1000)}s)`);
   }
 
   /**
@@ -217,30 +340,53 @@ export class FortyGuardAdapter {
   }
 
   /**
-   * Fetch spatial thermal heatmap GeoJSON tile field.
+   * Fetch spatial thermal heatmap GeoJSON tile field with controlled transient retry.
    */
   async getHeatmap(request: FortyGuardHeatmapRequest): Promise<{ aoi: PolygonAOI; activityId: string }> {
-
     const validReq = FortyGuardHeatmapRequestSchema.parse(request);
 
     if (this.mode === 'LIVE') {
-      const response = await this.submitAndPoll('/v1/heatmap', validReq as Record<string, unknown>);
+      let lastError: unknown;
+      const totalAttempts = 1 + this.maxRetries;
 
-      const result = response.data?.result as { map_data?: PolygonAOI } | PolygonAOI | undefined;
-      let aoi: PolygonAOI;
+      for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+        try {
+          const response = await this.submitAndPoll('/v1/heatmap', validReq as Record<string, unknown>);
 
-      if (result && typeof result === 'object' && 'map_data' in result && result.map_data?.type === 'FeatureCollection') {
-        aoi = result.map_data;
-      } else if (result && typeof result === 'object' && 'type' in result && result.type === 'FeatureCollection') {
-        aoi = result as PolygonAOI;
-      } else {
-        aoi = request.polygon_aoi as PolygonAOI;
+          const result = response.data?.result as { map_data?: PolygonAOI } | PolygonAOI | undefined;
+          let aoi: PolygonAOI;
+
+          if (result && typeof result === 'object' && 'map_data' in result && result.map_data?.type === 'FeatureCollection') {
+            aoi = result.map_data;
+          } else if (result && typeof result === 'object' && 'type' in result && result.type === 'FeatureCollection') {
+            aoi = result as PolygonAOI;
+          } else {
+            aoi = request.polygon_aoi as PolygonAOI;
+          }
+
+          return {
+            aoi,
+            activityId: response.data?.activity_id || 'live-activity',
+          };
+        } catch (error) {
+          lastError = error;
+          if (attempt < totalAttempts && this.isTransientError(error)) {
+            logProviderEvent('warn', 'HEATMAP_RETRY', {
+              attempt,
+              maxRetries: this.maxRetries,
+              backoffMs: this.retryDelayMs,
+              startDate: validReq.date_time.start_date,
+              startTime: validReq.date_time.start_time,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+            await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
+            continue;
+          }
+          throw error;
+        }
       }
 
-      return {
-        aoi,
-        activityId: response.data?.activity_id || 'live-activity',
-      };
+      throw lastError;
     }
 
     // FIXTURE mode: resolve from captured fixture
@@ -262,6 +408,7 @@ export class FortyGuardAdapter {
 
   /**
    * Fetch discrete hourly snapshots for candidate decision window.
+   * In LIVE mode, bounded concurrency (default = 2) is enforced to avoid provider bursts.
    */
   async getHourlyHeatmapSnapshots(
     location: LocationPoint,
@@ -272,10 +419,11 @@ export class FortyGuardAdapter {
     const aoiToQuery = baseAoi || createBoundingAOI(location);
 
     if (this.mode === 'LIVE') {
-      // Fetch all hourly snapshots concurrently — each timestamp is an independent
-      // FortyGuard request. The session cache deduplicates identical request bodies.
-      const entries = await Promise.all(
-        timestamps.map(async (timestamp) => {
+      // Execute with bounded concurrency (default concurrency = 2)
+      const entries = await runWithConcurrency(
+        timestamps,
+        this.concurrencyLimit,
+        async (timestamp) => {
           const d = new Date(timestamp);
           const dateStr = d.toISOString().slice(0, 10);
           const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
@@ -290,7 +438,7 @@ export class FortyGuardAdapter {
             granularity: 60,
           });
           return [timestamp, heatmapResult.aoi] as [string, PolygonAOI];
-        })
+        }
       );
 
       for (const [ts, aoi] of entries) {
@@ -300,7 +448,7 @@ export class FortyGuardAdapter {
       return results;
     }
 
-    // FIXTURE MODE — sequential is fine (synchronous in-memory lookup)
+    // FIXTURE MODE — sequential lookup from verified in-memory fixture
     for (const timestamp of timestamps) {
       const d = new Date(timestamp);
       const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
@@ -317,7 +465,6 @@ export class FortyGuardAdapter {
 
     return results;
   }
-
 
   /**
    * Normalize heatmap response to point observation via point-in-polygon mapping.
@@ -346,4 +493,3 @@ export class FortyGuardAdapter {
     };
   }
 }
-

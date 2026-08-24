@@ -6,7 +6,7 @@ import { explainDecision } from '@/lib/explanation/ai-explainer';
 import {
   AuthenticationError,
   FortyGuardApiError,
-  FortyGuardProcessingError,
+  FortyGuardTimeoutError,
   IncompleteTemporalCoverageError,
   OutsideCoverageError,
 } from '@/types/errors';
@@ -138,11 +138,11 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
   });
 
   it('3. FortyGuard HTTP 500 failure throws FortyGuardApiError with status code', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('Internal Server Error', { status: 500 })
     );
 
-    const adapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: 'valid-key' });
+    const adapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: 'valid-key', maxRetries: 0 });
     await expect(
       adapter.getHeatmap({
         polygon_aoi: sampleAoi,
@@ -155,11 +155,11 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
   });
 
   it('4. Malformed FortyGuard response missing activity_id throws FortyGuardApiError', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ success: true, data: {} }), { status: 200 })
     );
 
-    const adapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: 'valid-key' });
+    const adapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: 'valid-key', maxRetries: 0 });
     await expect(
       adapter.getHeatmap({
         polygon_aoi: sampleAoi,
@@ -171,7 +171,7 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
     fetchSpy.mockRestore();
   });
 
-  it('5. FortyGuard activity polling timeout throws FortyGuardProcessingError', async () => {
+  it('5. FortyGuard activity polling timeout throws FortyGuardTimeoutError', async () => {
     vi.useFakeTimers();
     let callCount = 0;
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
@@ -186,14 +186,14 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
       );
     });
 
-    const adapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: 'valid-key' });
+    const adapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: 'valid-key', maxRetries: 0 });
     const heatmapPromise = adapter.getHeatmap({
       polygon_aoi: sampleAoi,
       date_time: { start_date: '2026-08-21', filter_type: 1 },
       granularity: 60,
     });
 
-    const assertion = expect(heatmapPromise).rejects.toThrow(FortyGuardProcessingError);
+    const assertion = expect(heatmapPromise).rejects.toThrow(FortyGuardTimeoutError);
     await vi.advanceTimersByTimeAsync(65000);
     await assertion;
 
@@ -266,11 +266,11 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
   });
 
   it('12. LIVE mode failure never silently falls back to FIXTURE mode', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(
       new Error('Network offline')
     );
 
-    const liveAdapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: 'valid-key' });
+    const liveAdapter = new FortyGuardAdapter({ mode: 'LIVE', apiKey: 'valid-key', maxRetries: 0 });
     await expect(
       liveAdapter.getHeatmap({
         polygon_aoi: sampleAoi,

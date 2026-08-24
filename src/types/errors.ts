@@ -32,6 +32,12 @@ export class FortyGuardProcessingError extends AppError {
   }
 }
 
+export class FortyGuardTimeoutError extends AppError {
+  constructor(public readonly activityId: string, message = 'FortyGuard asynchronous thermal tile computation timed out') {
+    super(message, 'FORTYGUARD_TIMEOUT', 504);
+  }
+}
+
 export class ValidationError extends AppError {
   constructor(message: string) {
     super(message, 'VALIDATION_ERROR', 400);
@@ -113,11 +119,20 @@ export function mapErrorToProductionDetails(error: unknown): ProductionErrorDeta
     };
   }
 
-  if (error instanceof FortyGuardProcessingError) {
+  if (error instanceof FortyGuardTimeoutError || (error instanceof FortyGuardProcessingError && error.message.includes('timed out'))) {
     return {
       code: 'FORTYGUARD_TIMEOUT',
       message: 'FortyGuard asynchronous thermal tile computation timed out.',
       recoverySuggestion: 'The provider may be under heavy load. Please retry in a few moments.',
+      category: 'PROVIDER',
+    };
+  }
+
+  if (error instanceof FortyGuardProcessingError) {
+    return {
+      code: 'FORTYGUARD_PROCESSING_FAILED',
+      message: 'FortyGuard thermal computation failed on provider servers.',
+      recoverySuggestion: 'The provider was unable to process thermal tiles for this request. Please retry with a different time window.',
       category: 'PROVIDER',
     };
   }

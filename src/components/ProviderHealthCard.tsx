@@ -87,7 +87,7 @@ export function ProviderHealthCard({
 
   return (
     <div className="rounded-xl border border-[#1e2d45] bg-[#0d1422] p-4 space-y-3">
-      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
         Provider Connectivity
       </div>
 
@@ -98,13 +98,13 @@ export function ProviderHealthCard({
           <StatusPill status={fortyGuardStatus} isDemo={mode === 'FIXTURE'} />
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-slate-500 font-mono">{fgSubtext}</span>
+          <span className="text-[11px] text-slate-400 font-mono">{fgSubtext}</span>
           <button
             type="button"
             disabled={testingFg}
             onClick={handleTestFg}
             data-testid="test-fortyguard-btn"
-            className="px-2.5 py-1 text-[10px] rounded border border-[#1e2d45] bg-[#141f33] text-slate-400 hover:text-white hover:border-slate-600 transition-colors disabled:opacity-50"
+            className="px-3 py-1.5 min-h-[32px] sm:min-h-[28px] text-xs sm:text-[10px] font-medium rounded border border-[#1e2d45] bg-[#141f33] text-slate-300 hover:text-white hover:border-slate-500 transition-colors disabled:opacity-50 touch-manipulation"
           >
             {testingFg ? 'Testing…' : 'Test'}
           </button>
@@ -119,18 +119,18 @@ export function ProviderHealthCard({
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-semibold text-slate-200">
             AI Synthesis
-            <span className="text-slate-500 font-normal text-xs ml-1">({aiLabel})</span>
+            <span className="text-slate-400 font-normal text-xs ml-1">({aiLabel})</span>
           </span>
           <StatusPill status={aiStatus} />
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-slate-500 font-mono">{aiSubtext}</span>
+          <span className="text-[11px] text-slate-400 font-mono">{aiSubtext}</span>
           <button
             type="button"
             disabled={testingAi}
             onClick={handleTestAi}
             data-testid="test-ai-btn"
-            className="px-2.5 py-1 text-[10px] rounded border border-[#1e2d45] bg-[#141f33] text-slate-400 hover:text-white hover:border-slate-600 transition-colors disabled:opacity-50"
+            className="px-3 py-1.5 min-h-[32px] sm:min-h-[28px] text-xs sm:text-[10px] font-medium rounded border border-[#1e2d45] bg-[#141f33] text-slate-300 hover:text-white hover:border-slate-500 transition-colors disabled:opacity-50 touch-manipulation"
           >
             {testingAi ? 'Testing…' : 'Test'}
           </button>

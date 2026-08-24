@@ -4,33 +4,45 @@
 .pnp.js
 .yarn/install-state.gz
 
-# testing
+# testing & coverage
 /coverage
 /test-results/
 /playwright-report/
 /blob-report/
 
-# next.js
+# next.js & build output
 /.next/
 /out/
-
-# production
 /build
 
-# misc
-.DS_Store
-*.pem
+# environment & secrets (NEVER commit local credentials)
+.env
+.env*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# debug logs
+# debug & process logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-
-# local env files
-.env*.local
-.env
+*.log
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# OS & Certificates
+.DS_Store
+Thumbs.db
+*.pem
+
+# Editor & IDE local caches
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json

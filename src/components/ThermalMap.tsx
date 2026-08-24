@@ -225,7 +225,11 @@ export function ThermalMap({
   const legendTicks = getThermalLegendTicks(unit);
 
   return (
-    <div className="relative w-full h-[420px] rounded-xl overflow-hidden shadow-2xl shadow-black/60" style={{ border: '1px solid rgba(30,45,69,0.8)' }}>
+    <div
+      role="region"
+      aria-label="Hyperlocal thermal context map showing surface temperature tiles and candidate locations"
+      className="relative w-full h-[320px] sm:h-[380px] lg:h-[420px] rounded-xl overflow-hidden shadow-2xl shadow-black/60 border border-[#1e2d45]"
+    >
       <div ref={mapContainer} className="w-full h-full" />
 
       {/* Thermal Legend — bottom left */}

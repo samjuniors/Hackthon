@@ -27,6 +27,7 @@ export function LocationSearch({
 }: LocationSearchProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [isLocating, setIsLocating] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [remoteResults, setRemoteResults] = useState<NamedLocation[]>([]);
@@ -185,15 +186,48 @@ export function LocationSearch({
             <input
               id="location-search-input"
               type="text"
+              role="combobox"
+              aria-expanded={isOpen}
+              aria-haspopup="listbox"
+              aria-controls="location-results-list"
+              aria-autocomplete="list"
+              aria-activedescendant={
+                activeIndex >= 0 && results[activeIndex]
+                  ? `location-option-${results[activeIndex].id}`
+                  : undefined
+              }
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
                 setIsOpen(true);
+                setActiveIndex(-1);
               }}
               onFocus={() => setIsOpen(true)}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   setIsOpen(false);
+                  setActiveIndex(-1);
+                } else if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  if (!isOpen) {
+                    setIsOpen(true);
+                  }
+                  if (results.length > 0) {
+                    setActiveIndex((prev) => (prev + 1) % results.length);
+                  }
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  if (results.length > 0) {
+                    setActiveIndex((prev) => (prev - 1 + results.length) % results.length);
+                  }
+                } else if (e.key === 'Enter') {
+                  if (isOpen && activeIndex >= 0 && results[activeIndex]) {
+                    e.preventDefault();
+                    onSelectLocation(results[activeIndex]);
+                    setIsOpen(false);
+                    setQuery('');
+                    setActiveIndex(-1);
+                  }
                 }
               }}
               placeholder={isFixture ? 'Search Manhattan demo sites...' : 'Search metro area or use GPS...'}
@@ -209,6 +243,7 @@ export function LocationSearch({
                   setQuery('');
                   setRemoteResults([]);
                   setIsOpen(false);
+                  setActiveIndex(-1);
                 }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs"
               >
@@ -224,7 +259,7 @@ export function LocationSearch({
             disabled={isLocating}
             onClick={handleUseCurrentLocation}
             title="Use current GPS location"
-            className="px-2.5 text-xs border-slate-800 bg-slate-950 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/50"
+            className="px-2.5 text-xs border-slate-800 bg-slate-950 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/50 min-h-[32px] sm:min-h-[28px]"
             data-testid="gps-location-button"
           >
             {isLocating ? '📡 Locating...' : '📍 GPS'}
@@ -237,21 +272,36 @@ export function LocationSearch({
 
         {/* Search Results Dropdown */}
         {isOpen && (
-          <div className="absolute z-50 left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-slate-900 border border-slate-700 rounded-md shadow-2xl shadow-black/80 py-1 divide-y divide-slate-800">
+          <div
+            id="location-results-list"
+            role="listbox"
+            aria-label="Location suggestions"
+            className="absolute z-50 left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-slate-900 border border-slate-700 rounded-md shadow-2xl shadow-black/80 py-1 divide-y divide-slate-800"
+          >
             {results.length > 0 ? (
-              results.map((loc) => {
+              results.map((loc, idx) => {
                 const isSelected = selectedLocation.id === loc.id;
+                const isFocused = activeIndex === idx;
                 return (
                   <button
                     key={loc.id}
+                    id={`location-option-${loc.id}`}
                     type="button"
+                    role="option"
+                    aria-selected={isSelected}
                     onClick={() => {
                       onSelectLocation(loc);
                       setIsOpen(false);
                       setQuery('');
+                      setActiveIndex(-1);
                     }}
-                    className={`w-full text-left px-3 py-2 hover:bg-slate-800 flex items-start justify-between gap-2 text-xs ${
-                      isSelected ? 'bg-cyan-950/40 text-cyan-200' : 'text-slate-200'
+                    onMouseEnter={() => setActiveIndex(idx)}
+                    className={`w-full text-left px-3 py-2 flex items-start justify-between gap-2 text-xs transition-colors ${
+                      isFocused
+                        ? 'bg-slate-800 text-white'
+                        : isSelected
+                        ? 'bg-cyan-950/40 text-cyan-200'
+                        : 'text-slate-200 hover:bg-slate-800'
                     }`}
                     data-testid={`location-option-${loc.id}`}
                   >

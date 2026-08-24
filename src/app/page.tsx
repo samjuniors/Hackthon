@@ -35,8 +35,8 @@ import {
 const ThermalMap = dynamic(() => import('@/components/ThermalMap'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[420px] rounded-xl bg-[#0d1422] flex items-center justify-center border border-[#1e2d45]">
-      <span className="text-slate-500 text-xs font-mono animate-pulse">Initializing Hyperlocal Thermal Canvas…</span>
+    <div className="w-full h-[320px] sm:h-[380px] lg:h-[420px] rounded-xl bg-[#0d1422] flex items-center justify-center border border-[#1e2d45]">
+      <span className="text-slate-400 text-xs font-mono animate-pulse">Initializing Hyperlocal Thermal Canvas…</span>
     </div>
   ),
 });
@@ -724,29 +724,29 @@ export default function WorkspacePage() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {/* Location */}
                     <div className="space-y-1">
-                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">📍 Location</div>
+                      <div className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">📍 Location</div>
                       <div className="text-lg font-bold text-white leading-tight">
                         {jointDecision.recommendedPlan.location.name.split(' (')[0]}
                       </div>
-                      <div className="text-[11px] font-mono text-slate-500">
+                      <div className="text-[11px] font-mono text-slate-400">
                         {jointDecision.recommendedPlan.location.locationId}
                       </div>
                     </div>
 
                     {/* Window */}
                     <div className="space-y-1">
-                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">⏱ When</div>
+                      <div className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">⏱ When</div>
                       <div className="text-lg font-bold text-white font-mono leading-tight">
                         {fmtTime(jointDecision.recommendedPlan.window.startTime)}–{fmtTime(jointDecision.recommendedPlan.window.endTime)}
                       </div>
-                      <div className="text-[11px] text-slate-500">
+                      <div className="text-[11px] text-slate-400">
                         UTC · <span data-testid="recommended-duration">{jointDecision.recommendedPlan.window.durationHours}h duration</span>
                       </div>
                     </div>
 
                     {/* Temperature */}
                     <div className="space-y-1">
-                      <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
+                      <div className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
                         🌡 Modeled Temp ({tempUnitSuffix(unit)})
                       </div>
                       <div
@@ -755,14 +755,14 @@ export default function WorkspacePage() {
                       >
                         {fmtTemp(jointDecision.recommendedPlan.exposureScore, unit)}
                       </div>
-                      <div className="text-[11px] text-slate-500">Mean across window</div>
+                      <div className="text-[11px] text-slate-400">Mean across window</div>
                     </div>
                   </div>
 
                   {/* Advantage summary */}
                   {jointDecision.rankedPlans.length > 1 && (
-                    <div className="mt-4 rounded-lg px-3.5 py-2.5 bg-emerald-950/25 border border-emerald-700/25 text-sm text-slate-300">
-                      <span className="text-emerald-400 font-medium">Best feasible plan</span> across{' '}
+                    <div className="mt-4 rounded-lg px-3.5 py-2.5 bg-emerald-950/30 border border-emerald-700/30 text-sm text-emerald-100">
+                      <span className="text-emerald-300 font-medium">Best feasible plan</span> across{' '}
                       <strong className="text-white">{jointDecision.searchSpace.locationCount} locations × {jointDecision.searchSpace.windowCount} windows</strong>{' '}
                       ({jointDecision.searchSpace.totalEvaluatedPlans} evaluated).
                       Saves{' '}
@@ -776,7 +776,7 @@ export default function WorkspacePage() {
 
                 {/* Top 3 candidate summary */}
                 <div className="px-5 py-4 border-b border-[#1e2d45]">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">
                     Top 3 Plans
                   </div>
                   <div className="space-y-2" data-testid="top-3-plans">
@@ -790,14 +790,14 @@ export default function WorkspacePage() {
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <span className={`text-sm font-bold font-mono shrink-0 ${plan.rank === 1 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                          <span className={`text-sm font-bold font-mono shrink-0 ${plan.rank === 1 ? 'text-emerald-400' : 'text-slate-400'}`}>
                             #{plan.rank}
                           </span>
                           <div className="min-w-0">
                             <div className={`text-sm font-semibold truncate ${plan.rank === 1 ? 'text-white' : 'text-slate-300'}`}>
                               {plan.location.name.split(' (')[0]}
                             </div>
-                            <div className="text-[11px] font-mono text-slate-500">
+                            <div className="text-[11px] font-mono text-slate-400">
                               {fmtTime(plan.window.startTime)}–{fmtTime(plan.window.endTime)} UTC
                             </div>
                           </div>
@@ -829,7 +829,7 @@ export default function WorkspacePage() {
                       {showAllPlans && (
                         <div className="mt-2 overflow-x-auto rounded-lg border border-[#1e2d45]">
                           <table className="w-full text-xs font-mono text-left" data-testid="candidate-plans-table">
-                            <thead className="bg-[#0a1220] text-slate-500 border-b border-[#1e2d45]">
+                            <thead className="bg-[#0a1220] text-slate-400 border-b border-[#1e2d45]">
                               <tr>
                                 <th className="py-2 px-3">Rank</th>
                                 <th className="py-2 px-3">Location</th>
@@ -843,19 +843,23 @@ export default function WorkspacePage() {
                               {jointDecision.rankedPlans.map((plan) => (
                                 <tr
                                   key={plan.planId}
-                                  className={plan.rank === 1 ? 'bg-emerald-950/20 text-emerald-200' : 'text-slate-400'}
+                                  className={
+                                    plan.rank === 1
+                                      ? 'bg-emerald-950/40 text-emerald-200'
+                                      : 'text-slate-400'
+                                  }
                                 >
                                   <td className="py-2 px-3 font-bold">#{plan.rank}</td>
                                   <td className="py-2 px-3">
                                     <span className="text-cyan-400">{plan.location.locationId}</span>{' '}
-                                    <span className="text-slate-500 text-[10px]">
+                                    <span className="text-slate-400 text-[10px]">
                                       ({plan.location.name.split(' (')[0]})
                                     </span>
                                   </td>
                                   <td className="py-2 px-3">
                                     {fmtTime(plan.window.startTime)}–{fmtTime(plan.window.endTime)}
                                   </td>
-                                  <td className="py-2 px-3 text-slate-500">{plan.tileId}</td>
+                                  <td className="py-2 px-3 text-slate-400">{plan.tileId}</td>
                                   <td className="py-2 px-3 font-bold">{fmtTemp(plan.exposureScore, unit)}</td>
                                   <td className="py-2 px-3">
                                     {plan.deltaVsBest === 0 ? (
@@ -973,7 +977,7 @@ export default function WorkspacePage() {
                           <div className="text-sm font-semibold text-white leading-tight">
                             {activeScenario.baselinePlan.location.name.split(' (')[0]}
                           </div>
-                          <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                          <div className="text-[11px] font-mono text-slate-400 mt-0.5">
                             {fmtTime(activeScenario.baselinePlan.window.startTime)}–{fmtTime(activeScenario.baselinePlan.window.endTime)} UTC
                           </div>
                         </div>
@@ -1007,7 +1011,7 @@ export default function WorkspacePage() {
                           <div className="text-sm font-semibold text-white leading-tight">
                             {activeScenario.constrainedPlan?.location.name.split(' (')[0] || 'No Feasible Plan'}
                           </div>
-                          <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                          <div className="text-[11px] font-mono text-slate-400 mt-0.5">
                             {activeScenario.constrainedPlan
                               ? `${fmtTime(activeScenario.constrainedPlan.window.startTime)}–${fmtTime(activeScenario.constrainedPlan.window.endTime)} UTC`
                               : activeScenario.infeasibleReason || 'Infeasible'}
@@ -1033,10 +1037,22 @@ export default function WorkspacePage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 text-[11px] font-mono">
-                            <span className={`px-2 py-1 rounded ${activeScenario.locationShifted ? 'bg-amber-900/40 text-amber-300 border border-amber-700/40' : 'bg-[#141f33] text-slate-500 border border-[#1e2d45]'}`}>
+                            <span
+                              className={`px-2 py-1 rounded ${
+                                activeScenario.locationShifted
+                                  ? 'bg-amber-900/40 text-amber-300 border border-amber-700/40'
+                                  : 'bg-[#141f33] text-slate-400 border border-[#1e2d45]'
+                              }`}
+                            >
                               Location: {activeScenario.locationShifted ? 'Shifted' : 'Same'}
                             </span>
-                            <span className={`px-2 py-1 rounded ${activeScenario.windowShifted ? 'bg-amber-900/40 text-amber-300 border border-amber-700/40' : 'bg-[#141f33] text-slate-500 border border-[#1e2d45]'}`}>
+                            <span
+                              className={`px-2 py-1 rounded ${
+                                activeScenario.windowShifted
+                                  ? 'bg-amber-900/40 text-amber-300 border border-amber-700/40'
+                                  : 'bg-[#141f33] text-slate-400 border border-[#1e2d45]'
+                              }`}
+                            >
                               Window: {activeScenario.windowShifted ? 'Shifted' : 'Same'}
                             </span>
                           </div>
@@ -1122,7 +1138,7 @@ export default function WorkspacePage() {
                         </code>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">{explanation.epistemicNotice}</p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">{explanation.epistemicNotice}</p>
                   </div>
                 </div>
               </div>

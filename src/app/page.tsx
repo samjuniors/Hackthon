@@ -65,10 +65,6 @@ async function safeJsonFetch<T = Record<string, unknown>>(
   }
 }
 
-function fmtTime(iso: string, tz?: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz || 'UTC', timeZoneName: 'short' });
-}
-
 function fmtTimeWindow(start: string, end: string, tz?: string) {
   const tStart = new Date(start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz || 'UTC' });
   const tEnd = new Date(end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz || 'UTC', timeZoneName: 'short' });

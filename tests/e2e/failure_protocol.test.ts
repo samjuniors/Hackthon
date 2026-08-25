@@ -170,7 +170,7 @@ test.describe('§6 — Failure Attack Protocol', () => {
   // ── §6.6 Stale UI state after error (browser-level) ─────────────────────
   test('§6.6 — UI state is fully cleared after a failed request (browser)', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Recommended Operational Plan')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('Recommended Plan')).toBeVisible({ timeout: 20000 });
 
     // Submit invalid latitude via the API (simulate what the UI would call)
     const res = await page.request.post(`${BASE}/api/decision`, {

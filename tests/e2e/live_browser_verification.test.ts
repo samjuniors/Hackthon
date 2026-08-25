@@ -61,7 +61,7 @@ test.describe('Live Browser Product & UX Verification', () => {
     await expect(calcBtn).toBeVisible();
     await calcBtn.click();
 
-    // Verify Recommended Operational Plan hero card
+    // Verify Recommended Plan hero card
     await expect(page.getByTestId('decision-card')).toBeVisible();
     await expect(page.getByTestId('recommended-temp-display')).toBeVisible();
     await expect(page.getByTestId('recommended-duration')).toContainText('3h');

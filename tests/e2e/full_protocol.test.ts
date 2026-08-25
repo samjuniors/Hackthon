@@ -4,7 +4,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 async function waitForDecision(page: Page, timeout = 30000): Promise<void> {
-  await expect(page.getByText('Recommended Operational Plan')).toBeVisible({ timeout });
+  await expect(page.getByText('Recommended Plan')).toBeVisible({ timeout });
 }
 
 // §2 — DEMO / FIXTURE verification
@@ -28,8 +28,8 @@ test.describe('§2 — DEMO / FIXTURE Verification', () => {
     await expect(page.getByText(/Chinatown/i).first()).toBeVisible();
   });
 
-  test('§2.3 — Recommended Operational Plan shows correct fixture values', async ({ page }) => {
-    await expect(page.getByText('★ Recommended Operational Plan')).toBeVisible();
+  test('§2.3 — Recommended Plan shows correct fixture values', async ({ page }) => {
+    await expect(page.getByText('★ Recommended Plan')).toBeVisible();
     // Recommended location name appears in the plan hero
     await expect(page.getByText(/Battery Park/i).first()).toBeVisible();
     // Temperature score visible in hero (85.69°F / 29.83°C for 3h, or 84.47°F / 29.15°C for 2h)
@@ -115,7 +115,7 @@ test.describe('§7 — Mobile Viewport (390x844)', () => {
   });
 
   test('§7.4 — Decision card and submit visible on mobile', async ({ page }) => {
-    await expect(page.getByText('★ Recommended Operational Plan')).toBeVisible();
+    await expect(page.getByText('★ Recommended Plan')).toBeVisible();
     await expect(page.getByRole('button', { name: /Calculate Decision/ })).toBeVisible();
   });
 

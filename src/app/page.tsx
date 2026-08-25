@@ -71,6 +71,18 @@ function fmtTimeWindow(start: string, end: string, tz?: string) {
   return `${tStart}–${tEnd}`;
 }
 
+function formatIsoTimesInText(text: string, tz?: string) {
+  if (!text) return text;
+  const isoRegex = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g;
+  return text.replace(isoRegex, (match) => {
+    try {
+      return new Date(match).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz || 'UTC', timeZoneName: 'short' });
+    } catch {
+      return match;
+    }
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
@@ -733,14 +745,14 @@ export default function WorkspacePage() {
                       onClick={() => runDecisionPipeline(selectedLocation, duration, mode)}
                       className="px-3 py-1.5 text-xs rounded-lg bg-red-900/50 border border-red-500/40 text-white hover:bg-red-800/50 transition-colors"
                     >
-                      Retry
+                      Retry Live
                     </button>
                     {mode === 'LIVE' && (
                       <button
                         onClick={() => handleModeChange('FIXTURE')}
                         className="px-3 py-1.5 text-xs rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-300 hover:bg-amber-900/60 transition-colors"
                       >
-                        Use Demo
+                        Continue with Verified Demo
                       </button>
                     )}
                   </div>
@@ -1170,6 +1182,9 @@ export default function WorkspacePage() {
             {/* ── Grounded AI Explanation ── */}
             {explanation && !errorDetails && (() => {
               const displayExplanation = translateExplanationToUnit(explanation, unit);
+              const summaryText = formatIsoTimesInText(displayExplanation.summary, selectedLocation.timezone);
+              const whyThisPlanText = formatIsoTimesInText(displayExplanation.whyThisPlan, selectedLocation.timezone);
+              const constraintImpactText = displayExplanation.constraintImpact ? formatIsoTimesInText(displayExplanation.constraintImpact, selectedLocation.timezone) : '';
               return (
               <div className="rounded-xl border border-[#1e2d45] bg-[#0d1422] overflow-hidden">
                 <div className="px-5 pt-5 pb-4 border-b border-[#1e2d45]">
@@ -1209,21 +1224,21 @@ export default function WorkspacePage() {
                   {/* Operational Summary */}
                   <div className="rounded-lg bg-[#0a1220] border border-[#1e2d45] p-3.5">
                     <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-2">Operational Summary</div>
-                    <p className="text-slate-200 leading-relaxed text-sm">{displayExplanation.summary}</p>
+                    <p className="text-slate-200 leading-relaxed text-sm">{summaryText}</p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Why this plan wins */}
                     <div className="rounded-lg bg-[#0a1220] border border-[#1e2d45] p-3.5">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-cyan-500 mb-2">Why This Plan Wins</div>
-                      <p className="text-slate-300 leading-relaxed text-sm">{displayExplanation.whyThisPlan}</p>
+                      <p className="text-slate-300 leading-relaxed text-sm">{whyThisPlanText}</p>
                     </div>
 
                     {/* Constraint impact */}
-                    {displayExplanation.constraintImpact && (
+                    {constraintImpactText && (
                       <div className="rounded-lg bg-[#0a1220] border border-[#1e2d45] p-3.5">
                         <div className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-2">What-If Impact</div>
-                        <p className="text-slate-300 leading-relaxed text-sm">{displayExplanation.constraintImpact}</p>
+                        <p className="text-slate-300 leading-relaxed text-sm">{constraintImpactText}</p>
                       </div>
                     )}
                   </div>

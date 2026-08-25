@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('★ Recommended Operational Plan')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('★ Recommended Plan')).toBeVisible({ timeout: 20000 });
   });
 
   test('loads workspace UI, recalculates decision, and displays evidence recommendation', async ({ page }) => {
@@ -23,7 +23,7 @@ test.describe('Thermal Decision Engine Workspace Smoke Test', () => {
     await decisionResponsePromise;
 
     // 5. Verify joint spatial-temporal decision outcome card and advantage banner render
-    await expect(page.getByText('★ Recommended Operational Plan')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('★ Recommended Plan')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Best feasible plan')).toBeVisible();
     await expect(page.getByText(/Battery Park/i).first()).toBeVisible();
 

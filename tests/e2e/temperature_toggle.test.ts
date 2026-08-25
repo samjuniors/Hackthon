@@ -7,7 +7,7 @@ test.describe('Temperature Unit Preference & Toggle (°C / °F)', () => {
       window.localStorage.clear();
     });
     await page.reload();
-    await expect(page.getByText('★ Recommended Operational Plan')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('★ Recommended Plan')).toBeVisible({ timeout: 20000 });
   });
 
   test('1. Default display is °F across all major UI surfaces', async ({ page }) => {
@@ -80,7 +80,7 @@ test.describe('Temperature Unit Preference & Toggle (°C / °F)', () => {
 
     // Reload page
     await page.reload();
-    await expect(page.getByText('★ Recommended Operational Plan')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('★ Recommended Plan')).toBeVisible({ timeout: 20000 });
 
     // Verify °C is still active
     await expect(page.getByTestId('temp-unit-c')).toHaveAttribute('aria-pressed', 'true');

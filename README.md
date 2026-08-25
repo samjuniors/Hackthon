@@ -16,6 +16,21 @@ The **Thermal Decision Engine** solves joint spatial-temporal operational dispat
 
 ---
 
+## 🚀 Judge Quick Start
+
+1. **Open the production URL:** [https://thermal.samjuniors.com/](https://thermal.samjuniors.com/)
+2. **Select Mode:** Choose **LIVE API** (which queries real FortyGuard data) or **DEMO** (which uses explicitly labelled captured/fixture data). Note: DEMO is an offline verification path, not live data.
+3. **Select Location:** Choose Los Angeles or another supported metro.
+4. **Calculate Decision:** Click the calculate button.
+5. **Inspect the Output:**
+   - Review the **Recommended Operational Plan**.
+   - Check the **Thermal Map** to see the FortyGuard thermal polygons.
+   - Try a **What-If constraint** (e.g., site locks) to see exact cost calculations.
+   - Read the **Decision Explanation** (AI explanation grounded strictly in the math).
+6. **Provider Latency:** If FortyGuard is temporarily unavailable under load, the system will explicitly halt and notify you. In this case, **DEMO mode** is the verified offline path to evaluate the engine.
+
+---
+
 ## 🏗️ System Architecture Pipeline
 
 The system enforces a strict one-way dataflow where deterministic mathematics is the sole source of truth:

@@ -123,7 +123,7 @@ export function mapErrorToProductionDetails(error: unknown): ProductionErrorDeta
     return {
       code: 'FORTYGUARD_TIMEOUT',
       message: 'FortyGuard asynchronous thermal tile computation timed out.',
-      recoverySuggestion: 'The provider may be under heavy load. Please retry in a few moments.',
+      recoverySuggestion: 'The external provider is temporarily unavailable due to heavy load. Retry Live, or continue with Demo mode as an explicitly labelled offline verification path.',
       category: 'PROVIDER',
     };
   }
@@ -132,7 +132,7 @@ export function mapErrorToProductionDetails(error: unknown): ProductionErrorDeta
     return {
       code: 'FORTYGUARD_PROCESSING_FAILED',
       message: 'FortyGuard thermal computation failed on provider servers.',
-      recoverySuggestion: 'The provider was unable to process thermal tiles for this request. Please retry with a different time window.',
+      recoverySuggestion: 'The external provider is temporarily unavailable for this request. Retry Live, or continue with Demo mode as an explicitly labelled offline verification path.',
       category: 'PROVIDER',
     };
   }
@@ -141,7 +141,7 @@ export function mapErrorToProductionDetails(error: unknown): ProductionErrorDeta
     return {
       code: 'FORTYGUARD_PROVIDER_ERROR',
       message: 'FortyGuard API returned an unexpected error or outage.',
-      recoverySuggestion: 'Check provider connection status or retry your calculation.',
+      recoverySuggestion: 'The external provider is temporarily unavailable. Retry Live, or continue with Demo mode as an explicitly labelled offline verification path.',
       category: 'PROVIDER',
     };
   }

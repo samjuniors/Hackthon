@@ -5,7 +5,7 @@ const BASE = 'http://localhost:3050';
 test.describe('Vertical Slice: Location Search + Real Health + Failure UX + Provider Integration', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('★ Recommended Operational Plan')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('★ Recommended Plan')).toBeVisible({ timeout: 20000 });
   });
 
   // 1. Location Search interaction

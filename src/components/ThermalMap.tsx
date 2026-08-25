@@ -135,7 +135,7 @@ export function ThermalMap({
               32, '#ef4444',   // red — very hot
               34, '#7f1d1d',   // dark red — extreme
             ],
-            'fill-opacity': 0.85,
+            'fill-opacity': 0.9,
           },
         });
 
@@ -175,15 +175,15 @@ export function ThermalMap({
         // Winner gets a large emerald pin; others get a smaller cyan pin
         const el = document.createElement('div');
         el.style.cssText = locItem.isWinner
-          ? `width:32px;height:32px;background:#10b981;border:4px solid #fff;border-radius:50%;box-shadow:0 0 16px rgba(16,185,129,1),0 0 32px rgba(16,185,129,0.5);cursor:pointer;z-index:20;`
-          : `width:20px;height:20px;background:#38bdf8;border:2px solid rgba(255,255,255,0.9);border-radius:50%;box-shadow:0 0 10px rgba(56,189,248,0.8);cursor:pointer;z-index:10;`;
+          ? `width:32px;height:32px;background:#ec4899;border:4px solid #fff;border-radius:50%;box-shadow:0 0 16px rgba(236,72,153,1),0 0 32px rgba(236,72,153,0.5);cursor:pointer;z-index:20;`
+          : `width:20px;height:20px;background:#1e293b;border:2px solid rgba(255,255,255,0.9);border-radius:50%;box-shadow:0 0 10px rgba(30,41,59,0.8);cursor:pointer;z-index:10;`;
 
         const marker = new Marker({ element: el })
           .setLngLat([locItem.loc.longitude, locItem.loc.latitude])
           .setPopup(
             new Popup({ offset: 18, closeButton: false }).setHTML(
               `<div style="background:#0d1422;border:1px solid rgba(30,45,69,0.9);border-radius:8px;padding:8px 10px;min-width:160px;">
-                <div style="color:${locItem.isWinner ? '#10b981' : '#38bdf8'};font-weight:700;font-size:13px;margin-bottom:2px;">
+                <div style="color:${locItem.isWinner ? '#ec4899' : '#94a3b8'};font-weight:700;font-size:13px;margin-bottom:2px;">
                   ${locItem.isWinner ? '★ RECOMMENDED' : '◎ Candidate'}
                 </div>
                 <div style="color:#e2e8f0;font-size:12px;font-weight:600;">${locItem.name}</div>

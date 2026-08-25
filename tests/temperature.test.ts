@@ -184,7 +184,7 @@ describe('Temperature Unit Conversion & Formatting Utility', () => {
       epistemicNotice: 'Notice text.',
       generatedBy: 'DETERMINISTIC_FALLBACK' as const,
       dataSource: 'FIXTURE' as const,
-      modelVersion: 'v1.0.0-spatial-thermal-baseline',
+      modelVersion: 'v1.0.0-spatial-thermal-baseline' as const,
       evidenceGrounding: { 
         referencedTemperatures: [30.5],
         referencedLocations: ['LOC_1'],

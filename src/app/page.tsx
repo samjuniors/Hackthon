@@ -29,6 +29,7 @@ import {
   fmtTemp,
   fmtTempDelta,
   tempUnitSuffix,
+  translateExplanationToUnit,
 } from '@/lib/temperature';
 
 // Dynamically import MapLibre map component to bypass SSR canvas requirement
@@ -64,8 +65,14 @@ async function safeJsonFetch<T = Record<string, unknown>>(
   }
 }
 
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+function fmtTime(iso: string, tz?: string) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz || 'UTC', timeZoneName: 'short' });
+}
+
+function fmtTimeWindow(start: string, end: string, tz?: string) {
+  const tStart = new Date(start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz || 'UTC' });
+  const tEnd = new Date(end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: tz || 'UTC', timeZoneName: 'short' });
+  return `${tStart}–${tEnd}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -520,13 +527,13 @@ export default function WorkspacePage() {
       {/* ══════════════════════════════════════════════════════════════════════
           MAIN CONTENT
       ══════════════════════════════════════════════════════════════════════ */}
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4 lg:py-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
 
           {/* ═══════════════════════════════════════════════════════════════
               LEFT PANEL — Controls (4 cols)
           ═══════════════════════════════════════════════════════════════ */}
-          <div className="lg:col-span-4 space-y-4">
+          <div className="lg:col-span-4 space-y-4 lg:space-y-5">
 
             {/* ── DEMO notice ── */}
             {mode === 'FIXTURE' && (
@@ -548,7 +555,7 @@ export default function WorkspacePage() {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => handleModeChange('FIXTURE')}
-                  className={`h-10 rounded-lg text-sm font-semibold transition-all ${
+                  className={`min-h-[44px] rounded-lg text-sm font-semibold transition-all ${
                     mode === 'FIXTURE'
                       ? 'bg-amber-600 text-white shadow-lg shadow-amber-950/50'
                       : 'bg-[#141f33] text-slate-400 hover:text-white border border-[#1e2d45]'
@@ -558,7 +565,7 @@ export default function WorkspacePage() {
                 </button>
                 <button
                   onClick={() => handleModeChange('LIVE')}
-                  className={`h-10 rounded-lg text-sm font-semibold transition-all ${
+                  className={`min-h-[44px] rounded-lg text-sm font-semibold transition-all ${
                     mode === 'LIVE'
                       ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/50'
                       : 'bg-[#141f33] text-slate-400 hover:text-white border border-[#1e2d45]'
@@ -652,7 +659,7 @@ export default function WorkspacePage() {
                 <button
                   onClick={() => handleModeChange('LIVE')}
                   data-testid="recalculate-decision-btn"
-                  className="w-full h-12 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-500 text-white hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-950/60"
+                  className="w-full h-12 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-500 text-white hover:from-emerald-500 hover:to-teal-400 shadow-lg shadow-emerald-950/60"
                 >
                   <span>⚡ Switch to LIVE to Calculate</span>
                 </button>
@@ -661,9 +668,9 @@ export default function WorkspacePage() {
                   disabled={loading}
                   onClick={() => runDecisionPipeline(selectedLocation, duration, mode)}
                   data-testid="recalculate-decision-btn"
-                  className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                  className={`w-full h-12 rounded-xl text-sm font-bold transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2 ${
                     loading
-                      ? 'bg-[#141f33] text-slate-500 cursor-not-allowed'
+                      ? 'bg-[#141f33] text-slate-500 cursor-not-allowed hover:scale-100 active:scale-100'
                       : 'bg-gradient-to-r from-cyan-600 to-cyan-500 text-white hover:from-cyan-500 hover:to-cyan-400 shadow-lg shadow-cyan-950/60'
                   }`}
                 >
@@ -699,7 +706,7 @@ export default function WorkspacePage() {
           {/* ═══════════════════════════════════════════════════════════════
               RIGHT PANEL — Results (8 cols)
           ═══════════════════════════════════════════════════════════════ */}
-          <div className="lg:col-span-8 space-y-5">
+          <div className="lg:col-span-8 space-y-4 lg:space-y-5">
 
             {/* ── Error Banner ── */}
             {errorDetails && (
@@ -768,9 +775,9 @@ export default function WorkspacePage() {
             <div className="rounded-xl border border-[#1e2d45] bg-[#0d1422] p-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h2 className="text-sm font-bold text-white">Hyperlocal Thermal Field</h2>
+                  <h2 className="text-sm font-bold text-white">Thermal Map</h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    <span>FortyGuard spatial tile temperatures at t₀ across candidate sites</span>
+                    <span>Current spatial temperature distribution across sites</span>
                     {spatialFieldMeta?.baseTimestamp && (
                       <span className="font-mono text-cyan-500/80">
                         {' · '}
@@ -808,7 +815,7 @@ export default function WorkspacePage() {
                 <div className="px-5 pt-5 pb-4 border-b border-[#1e2d45]">
                   <div className="flex items-center gap-2 mb-4">
                     <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">
-                      ★ Recommended Operational Plan
+                      ★ Recommended Plan
                     </span>
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-[#141f33] text-slate-400 border border-[#1e2d45]">
                       {jointDecision.dataSource}
@@ -831,10 +838,10 @@ export default function WorkspacePage() {
                     <div className="space-y-1">
                       <div className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">⏱ When</div>
                       <div className="text-lg font-bold text-white font-mono leading-tight">
-                        {fmtTime(jointDecision.recommendedPlan.window.startTime)}–{fmtTime(jointDecision.recommendedPlan.window.endTime)}
+                        {fmtTimeWindow(jointDecision.recommendedPlan.window.startTime, jointDecision.recommendedPlan.window.endTime, selectedLocation.timezone)}
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        UTC · <span data-testid="recommended-duration">{jointDecision.recommendedPlan.window.durationHours}h duration</span>
+                        <span data-testid="recommended-duration">{jointDecision.recommendedPlan.window.durationHours}h duration</span>
                       </div>
                     </div>
 
@@ -892,7 +899,7 @@ export default function WorkspacePage() {
                               {plan.location.name.split(' (')[0]}
                             </div>
                             <div className="text-[11px] font-mono text-slate-400">
-                              {fmtTime(plan.window.startTime)}–{fmtTime(plan.window.endTime)} UTC
+                              {fmtTimeWindow(plan.window.startTime, plan.window.endTime, selectedLocation.timezone)}
                             </div>
                           </div>
                         </div>
@@ -951,7 +958,7 @@ export default function WorkspacePage() {
                                     </span>
                                   </td>
                                   <td className="py-2 px-3">
-                                    {fmtTime(plan.window.startTime)}–{fmtTime(plan.window.endTime)}
+                                    {fmtTimeWindow(plan.window.startTime, plan.window.endTime, selectedLocation.timezone)}
                                   </td>
                                   <td className="py-2 px-3 text-slate-400">{plan.tileId}</td>
                                   <td className="py-2 px-3 font-bold">{fmtTemp(plan.exposureScore, unit)}</td>
@@ -1060,7 +1067,7 @@ export default function WorkspacePage() {
                         {/* Baseline */}
                         <div className="rounded-lg p-3.5 bg-[#0a1220] border border-[#1e2d45]">
                           <div className="text-[9px] font-bold uppercase tracking-widest text-cyan-500 mb-2">
-                            Baseline P₀
+                            BASELINE
                           </div>
                           <div
                             className="text-2xl font-black text-cyan-400 font-mono mb-1"
@@ -1072,14 +1079,15 @@ export default function WorkspacePage() {
                             {activeScenario.baselinePlan.location.name.split(' (')[0]}
                           </div>
                           <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                            {fmtTime(activeScenario.baselinePlan.window.startTime)}–{fmtTime(activeScenario.baselinePlan.window.endTime)} UTC
+                            {fmtTimeWindow(activeScenario.baselinePlan.window.startTime, activeScenario.baselinePlan.window.endTime, selectedLocation.timezone)}
                           </div>
+                          <div className="text-[9px] font-mono text-slate-500 mt-1.5 opacity-60">ID: P₀</div>
                         </div>
 
                         {/* Constraint arrow */}
                         <div className="rounded-lg p-3.5 bg-indigo-950/20 border border-indigo-700/30 flex flex-col justify-center">
                           <div className="text-[9px] font-bold uppercase tracking-widest text-indigo-400 mb-2">
-                            Imposed Constraint
+                            CONSTRAINT
                           </div>
                           <div className="text-sm font-semibold text-white leading-snug">
                             {activeScenario.constraintDescription}
@@ -1092,7 +1100,7 @@ export default function WorkspacePage() {
                         {/* Constrained optimum */}
                         <div className="rounded-lg p-3.5 bg-[#0a1220] border border-amber-700/30">
                           <div className="text-[9px] font-bold uppercase tracking-widest text-amber-500 mb-2">
-                            Constrained P&apos;
+                            CONSTRAINED RESULT
                           </div>
                           <div
                             className="text-2xl font-black text-amber-400 font-mono mb-1"
@@ -1107,9 +1115,10 @@ export default function WorkspacePage() {
                           </div>
                           <div className="text-[11px] font-mono text-slate-400 mt-0.5">
                             {activeScenario.constrainedPlan
-                              ? `${fmtTime(activeScenario.constrainedPlan.window.startTime)}–${fmtTime(activeScenario.constrainedPlan.window.endTime)} UTC`
+                              ? fmtTimeWindow(activeScenario.constrainedPlan.window.startTime, activeScenario.constrainedPlan.window.endTime, selectedLocation.timezone)
                               : activeScenario.infeasibleReason || 'Infeasible'}
                           </div>
+                          <div className="text-[9px] font-mono text-amber-500/60 mt-1.5 opacity-60">ID: P&apos;</div>
                         </div>
                       </div>
 
@@ -1124,7 +1133,7 @@ export default function WorkspacePage() {
                               {fmtTempDelta(activeScenario.costOfConstraintCelsius, unit)}
                             </span>
                             <div>
-                              <div className="text-sm font-bold text-white">Constraint Cost</div>
+                              <div className="text-sm font-bold text-white">THERMAL COST</div>
                               <div className="text-[11px] text-slate-400">
                                 Mean modeled temperature increase under {activeScenario.scenarioName}
                               </div>
@@ -1163,7 +1172,9 @@ export default function WorkspacePage() {
             )}
 
             {/* ── Grounded AI Explanation ── */}
-            {explanation && !errorDetails && (
+            {explanation && !errorDetails && (() => {
+              const displayExplanation = translateExplanationToUnit(explanation, unit);
+              return (
               <div className="rounded-xl border border-[#1e2d45] bg-[#0d1422] overflow-hidden">
                 <div className="px-5 pt-5 pb-4 border-b border-[#1e2d45]">
                   <div className="flex items-center justify-between gap-3">
@@ -1171,7 +1182,7 @@ export default function WorkspacePage() {
                       <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                         Decision Explanation
                       </span>
-                      {explanation.generatedBy === 'AI_GROUNDED_EXPLAINER' ? (
+                      {displayExplanation.generatedBy === 'AI_GROUNDED_EXPLAINER' ? (
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-900/40 text-indigo-300 border border-indigo-700/40">
                           🤖 Gemini Grounded AI
                         </span>
@@ -1202,21 +1213,21 @@ export default function WorkspacePage() {
                   {/* Operational Summary */}
                   <div className="rounded-lg bg-[#0a1220] border border-[#1e2d45] p-3.5">
                     <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-2">Operational Summary</div>
-                    <p className="text-slate-200 leading-relaxed text-sm">{explanation.summary}</p>
+                    <p className="text-slate-200 leading-relaxed text-sm">{displayExplanation.summary}</p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Why this plan wins */}
                     <div className="rounded-lg bg-[#0a1220] border border-[#1e2d45] p-3.5">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-cyan-500 mb-2">Why This Plan Wins</div>
-                      <p className="text-slate-300 leading-relaxed text-sm">{explanation.whyThisPlan}</p>
+                      <p className="text-slate-300 leading-relaxed text-sm">{displayExplanation.whyThisPlan}</p>
                     </div>
 
                     {/* Constraint impact */}
-                    {explanation.constraintImpact && (
+                    {displayExplanation.constraintImpact && (
                       <div className="rounded-lg bg-[#0a1220] border border-[#1e2d45] p-3.5">
                         <div className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-2">What-If Impact</div>
-                        <p className="text-slate-300 leading-relaxed text-sm">{explanation.constraintImpact}</p>
+                        <p className="text-slate-300 leading-relaxed text-sm">{displayExplanation.constraintImpact}</p>
                       </div>
                     )}
                   </div>
@@ -1226,17 +1237,18 @@ export default function WorkspacePage() {
                     <div className="flex items-center gap-1.5 mb-1">
                       <span className="text-slate-500 text-xs">🛡️</span>
                       <span className="text-[10px] font-semibold text-slate-400">Epistemic & Provenance Boundary</span>
-                      {explanation.fallbackReason && (
+                      {displayExplanation.fallbackReason && (
                         <code className="text-[9px] font-mono text-amber-500/80 ml-1">
-                          ({explanation.fallbackReason})
+                          ({displayExplanation.fallbackReason})
                         </code>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">{explanation.epistemicNotice}</p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">{displayExplanation.epistemicNotice}</p>
                   </div>
                 </div>
               </div>
-            )}
+            );
+            })()}
 
           </div>{/* end right panel */}
         </div>

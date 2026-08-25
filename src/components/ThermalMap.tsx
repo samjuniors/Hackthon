@@ -77,6 +77,10 @@ export function ThermalMap({
             source: 'carto-dark',
             minzoom: 0,
             maxzoom: 19,
+            paint: {
+              'raster-opacity': 0.6,
+              'raster-saturation': -0.5
+            }
           },
         ],
       },
@@ -131,7 +135,7 @@ export function ThermalMap({
               32, '#ef4444',   // red — very hot
               34, '#7f1d1d',   // dark red — extreme
             ],
-            'fill-opacity': 0.72,
+            'fill-opacity': 0.85,
           },
         });
 
@@ -171,8 +175,8 @@ export function ThermalMap({
         // Winner gets a large emerald pin; others get a smaller cyan pin
         const el = document.createElement('div');
         el.style.cssText = locItem.isWinner
-          ? `width:28px;height:28px;background:#10b981;border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px rgba(16,185,129,0.9),0 0 24px rgba(16,185,129,0.4);cursor:pointer;`
-          : `width:18px;height:18px;background:#38bdf8;border:2px solid rgba(255,255,255,0.7);border-radius:50%;box-shadow:0 0 8px rgba(56,189,248,0.6);cursor:pointer;`;
+          ? `width:32px;height:32px;background:#10b981;border:4px solid #fff;border-radius:50%;box-shadow:0 0 16px rgba(16,185,129,1),0 0 32px rgba(16,185,129,0.5);cursor:pointer;z-index:20;`
+          : `width:20px;height:20px;background:#38bdf8;border:2px solid rgba(255,255,255,0.9);border-radius:50%;box-shadow:0 0 10px rgba(56,189,248,0.8);cursor:pointer;z-index:10;`;
 
         const marker = new Marker({ element: el })
           .setLngLat([locItem.loc.longitude, locItem.loc.latitude])

@@ -35,6 +35,7 @@ export interface NamedLocation {
   state?: string;
   country?: string;
   zipCode?: string;
+  timezone?: string;
   isDemoOnly?: boolean;
   description?: string;
 }

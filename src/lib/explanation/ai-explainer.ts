@@ -16,7 +16,8 @@ CRITICAL NON-NEGOTIABLE RULES:
 1. Grounding Truth: Use ONLY the numbers, locations, and time windows provided in the input JSON. DO NOT invent or estimate any temperatures, deltas, dates, or counts.
 2. No Medical Claims: DO NOT mention heat stroke, heat stress, worker safety limits, health risks, or physiological comfort. This is a relative thermal baseline only.
 3. No Sensor Inventions: DO NOT claim the data is "2m ambient air" or "land surface skin temperature". Physical measurement level is treated as a relative baseline.
-4. Output Format: Return a strictly valid JSON object with the following schema:
+4. Numeric Formatting: You MUST format absolute temperatures WITHOUT a leading sign (e.g. 21.25°C). You MUST format temperature deltas WITH a leading sign (e.g. +1.20°C or -0.50°C).
+5. Output Format: Return a strictly valid JSON object with the following schema:
 {
   "summary": "Concise summary of recommended location, window, and mean modeled temperature.",
   "whyThisPlan": "Why this plan is optimal among evaluated candidate plans and the delta avoided vs worst feasible plan.",

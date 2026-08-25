@@ -71,17 +71,17 @@ function generateLiveCandidates(center: LocationPoint): CandidateLocation[] {
   return [
     {
       locationId: 'SITE-N',
-      name: 'Site North (Upper Zone)',
+      name: 'Site North (~100m north)',
       location: { latitude: center.latitude + candidateOffset, longitude: center.longitude },
     },
     {
       locationId: 'SITE-CENTER',
-      name: 'Site Center (Selected Location)',
+      name: 'Site Center (Selected location)',
       location: { latitude: center.latitude, longitude: center.longitude },
     },
     {
       locationId: 'SITE-S',
-      name: 'Site South (Lower Zone)',
+      name: 'Site South (~100m south)',
       location: { latitude: center.latitude - candidateOffset, longitude: center.longitude },
     },
   ];

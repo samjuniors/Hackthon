@@ -11,6 +11,7 @@ import {
   saveTempUnit,
   DEFAULT_TEMP_UNIT,
   TEMP_UNIT_KEY,
+  translateExplanationToUnit,
 } from '@/lib/temperature';
 
 describe('Temperature Unit Conversion & Formatting Utility', () => {
@@ -174,4 +175,53 @@ describe('Temperature Unit Conversion & Formatting Utility', () => {
       expect(loadTempUnit()).toBe('F');
     });
   });
+
+  describe('translateExplanationToUnit', () => {
+    const mockExplanation = {
+      summary: 'Recommended Plan: Deploy to LOC-A from 10:00 to 13:00 UTC. The mean modeled temperature is 21.25°C.',
+      whyThisPlan: 'This plan achieved the lowest modeled exposure score (21.25°C). Deploying here avoids a +1.20°C modeled exposure delta compared to the highest-exposure feasible plan.',
+      constraintImpact: 'Constraint Cost of +6.84°C mean modeled temperature increase.',
+      epistemicNotice: 'Notice text.',
+      generatedBy: 'DETERMINISTIC_FALLBACK' as const,
+      dataSource: 'FIXTURE' as const,
+      modelVersion: 'v1.0.0-spatial-thermal-baseline',
+      evidenceGrounding: { 
+        referencedTemperatures: [30.5],
+        referencedLocations: ['LOC_1'],
+        referencedTimes: ['12:00'],
+        allowedNumbers: [30.5]
+      }
+    };
+
+    it('returns the same object if unit is C', () => {
+      const translated = translateExplanationToUnit(mockExplanation, 'C');
+      expect(translated).toEqual(mockExplanation);
+    });
+
+    it('translates absolute temperatures and deltas to F correctly', () => {
+      const translated = translateExplanationToUnit(mockExplanation, 'F');
+      
+      // 21.25°C -> 70.25°F
+      expect(translated.summary).toContain('70.25°F');
+      expect(translated.summary).not.toContain('21.25°C');
+      
+      // +1.20°C (delta) -> +2.16°F
+      expect(translated.whyThisPlan).toContain('70.25°F');
+      expect(translated.whyThisPlan).toContain('+2.16°F');
+      
+      // +6.84°C (delta) -> +12.31°F
+      expect(translated.constraintImpact).toContain('+12.31°F');
+    });
+
+    it('handles negative deltas correctly', () => {
+      const expl = {
+        ...mockExplanation,
+        whyThisPlan: 'Saved -0.50°C overall.'
+      };
+      const translated = translateExplanationToUnit(expl, 'F');
+      // -0.50 * 1.8 = -0.90
+      expect(translated.whyThisPlan).toContain('-0.90°F');
+    });
+  });
 });
+

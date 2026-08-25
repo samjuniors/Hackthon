@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore, useCallback } from 'react';
+import type { DecisionExplanation } from '@/types/explanation';
 
 /**
  * Temperature Unit Utility — Thermal Decision Engine
@@ -201,4 +202,44 @@ export function useTempUnit(): [TempUnit, (unit: TempUnit) => void] {
   }, []);
 
   return [unit, setUnit];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Explanation Translation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Translates a single explanation text string from Celsius to the target unit.
+ */
+function translateTextToUnit(text: string, unit: TempUnit): string {
+  if (unit === 'C') return text;
+  
+  return text.replace(/([-+]?)(\d+(?:\.\d+)?)°C/g, (match, sign, numStr) => {
+    const num = parseFloat(numStr);
+    if (isNaN(num)) return match;
+    
+    const isDelta = sign !== '';
+    if (isDelta) {
+      const converted = celsiusDeltaToFahrenheitDelta(num);
+      return `${sign}${converted.toFixed(2)}°F`;
+    } else {
+      const converted = celsiusToFahrenheit(num);
+      return `${converted.toFixed(2)}°F`;
+    }
+  });
+}
+
+/**
+ * Translates the user-facing text of a DecisionExplanation from Celsius to the target unit.
+ * Used at the presentation layer so grounding validation can remain strictly in Celsius.
+ */
+export function translateExplanationToUnit(explanation: DecisionExplanation, unit: TempUnit): DecisionExplanation {
+  if (unit === 'C') return explanation;
+  
+  return {
+    ...explanation,
+    summary: translateTextToUnit(explanation.summary, unit),
+    whyThisPlan: translateTextToUnit(explanation.whyThisPlan, unit),
+    constraintImpact: explanation.constraintImpact ? translateTextToUnit(explanation.constraintImpact, unit) : undefined,
+  };
 }

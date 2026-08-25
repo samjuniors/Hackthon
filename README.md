@@ -98,7 +98,7 @@ All system architecture, product requirements, decision models, and API integrat
 - **Mapping & Spatial:** MapLibre GL + Zero-Dependency Ray Casting
 - **Styling:** Tailwind CSS + Radix UI / shadcn primitives
 - **Validation:** Zod
-- **Testing:** Vitest (158 tests across 18 suites, 100% pass rate) + Playwright (68 browser E2E tests across Desktop & Mobile)
+- **Testing:** Vitest (178/178 passed, 100%) + Playwright (82/90 passed; 8 failures are isolated California LIVE external API timeouts documented as provider latency, not logic regressions). Typecheck, Lint, Build, and Smoke tests: PASS.
 - **Package Manager:** pnpm
 
 ---

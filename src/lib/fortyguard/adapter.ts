@@ -361,7 +361,15 @@ export class FortyGuardAdapter {
           } else if (result && typeof result === 'object' && 'type' in result && result.type === 'FeatureCollection') {
             aoi = result as PolygonAOI;
           } else {
-            aoi = request.polygon_aoi as PolygonAOI;
+            // FortyGuard returned data in an unexpected format — no valid FeatureCollection.
+            // Return an empty FeatureCollection rather than the query bounding polygon,
+            // which has no 'average_temperature' and would render as invisible fill.
+            logProviderEvent('warn', 'HEATMAP_UNEXPECTED_RESULT_FORMAT', {
+              activityId: response.data?.activity_id,
+              hasResult: result !== undefined,
+              resultKeys: result && typeof result === 'object' ? Object.keys(result as object) : [],
+            });
+            aoi = { type: 'FeatureCollection', features: [] };
           }
 
           return {

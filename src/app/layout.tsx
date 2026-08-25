@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider, THEME_SCRIPT } from "@/components/ThemeProvider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -10,7 +11,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Thermal Decision Engine | FortyGuard Hackathon'26",
-  description: "Hyperlocal temperature intelligence turned into actionable operational decisions.",
+  description:
+    "Hyperlocal FortyGuard temperature intelligence turned into actionable WHERE + WHEN operational decisions.",
 };
 
 export default function RootLayout({
@@ -19,10 +21,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // `dark` is applied unconditionally: the Decision Workspace is a dark-canvas
-    // operational surface. Colours resolve from the `.dark` token block in globals.css.
+    // suppressHydrationWarning: the ThemeScript toggles the 'dark' class
+    // synchronously before hydration — React sees a match, no mismatch warning.
     <html lang="en" className={`dark ${inter.variable}`} suppressHydrationWarning>
-      <body className="antialiased" suppressHydrationWarning>{children}</body>
+      <head>
+        {/*
+          ThemeScript — runs synchronously before first paint.
+          Reads localStorage preference (or system preference) and applies/removes
+          the 'dark' class on <html> before React hydrates.
+          This prevents any flash of the wrong theme.
+        */}
+        <script
+          id="theme-init"
+          dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }}
+        />
+      </head>
+      <body className="antialiased" suppressHydrationWarning>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

@@ -258,19 +258,33 @@ export async function POST(request: Request) {
     const baseTimestamp = hourlyTimestamps[0];
     const baseSpatialField = snapshotsMap.get(baseTimestamp);
 
+    // Only send spatialField to the client if it has features with renderable
+    // temperature data. An empty FeatureCollection (LIVE fallback when FortyGuard
+    // returns an unexpected format) should become null on the client so the map
+    // shows the clean empty state rather than invisible/transparent polygons.
+    const renderableSpatialField =
+      baseSpatialField &&
+      baseSpatialField.features.some((f) =>
+        Number.isFinite(Number(f.properties?.average_temperature))
+      )
+        ? baseSpatialField
+        : undefined;
+
     return NextResponse.json({
       success: true,
       decision,
       spatialDecision,
       jointDecision,
       scenarioAnalysis,
-      spatialField: baseSpatialField,
-      spatialFieldMetadata: {
-        baseTimestamp,
-        coverageType: 'BASE_TIMESTAMP_SNAPSHOT',
-        description: 'Spatial thermal surface represents the initial observation snapshot (t₀)',
-        totalEvaluatedHours: hourlyTimestamps.length,
-      },
+      spatialField: renderableSpatialField,
+      spatialFieldMetadata: renderableSpatialField
+        ? {
+            baseTimestamp,
+            coverageType: 'BASE_TIMESTAMP_SNAPSHOT',
+            description: 'Spatial thermal surface represents the initial observation snapshot (t₀)',
+            totalEvaluatedHours: hourlyTimestamps.length,
+          }
+        : undefined,
     });
   } catch (error) {
     const errorDetails = mapErrorToProductionDetails(error);

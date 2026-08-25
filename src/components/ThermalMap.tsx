@@ -3,15 +3,16 @@
 import { useEffect, useRef } from 'react';
 import { Map, Marker, Popup, type GeoJSONSource } from 'maplibre-gl';
 import type { LocationPoint, PolygonAOI, CandidateLocation } from '@/types/domain';
-
-// Minimal inline type for MapLibre GeoJSON source data casts.
-type GeoJSONFC = { type: 'FeatureCollection'; features: unknown[] };
+import { useTheme } from '@/components/ThemeProvider';
 import {
   type TempUnit,
   DEFAULT_TEMP_UNIT,
   getThermalLegendTicks,
   tempUnitSuffix,
 } from '@/lib/temperature';
+
+// Minimal inline type for MapLibre GeoJSON source data casts.
+type GeoJSONFC = { type: 'FeatureCollection'; features: unknown[] };
 
 interface ThermalMapProps {
   location: LocationPoint;
@@ -75,9 +76,9 @@ function computeBounds(
     if (lat > maxLat) maxLat = lat;
   }
 
-  // Small padding so markers on the edge stay fully inside the viewport
-  const padLng = Math.max(0.003, (maxLng - minLng) * 0.15);
-  const padLat = Math.max(0.003, (maxLat - minLat) * 0.15);
+  // Padding so markers on the edge stay fully inside the viewport
+  const padLng = Math.max(0.004, (maxLng - minLng) * 0.2);
+  const padLat = Math.max(0.004, (maxLat - minLat) * 0.2);
 
   return [
     [minLng - padLng, minLat - padLat],
@@ -100,7 +101,8 @@ export function ThermalMap({
   recommendedLocationId,
   unit = DEFAULT_TEMP_UNIT,
 }: ThermalMapProps) {
-  const mapContainer = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
+  const mapContainer   = useRef<HTMLDivElement>(null);
   const mapInstance    = useRef<Map | null>(null);
   const markersRef     = useRef<Marker[]>([]);
 
@@ -150,72 +152,73 @@ export function ThermalMap({
       validLocs.map((l) => l.loc),
     );
 
+    // ── Basemap tiles tailored by theme ──────────────────────────────────────
+    const isDark = theme === 'dark';
+    const baseTiles = isDark
+      ? [
+          'https://a.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png',
+          'https://b.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png',
+        ]
+      : [
+          'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+          'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+        ];
+
+    const labelTiles = isDark
+      ? [
+          'https://a.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}@2x.png',
+          'https://b.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}@2x.png',
+        ]
+      : [
+          'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
+          'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
+        ];
+
     // ── Create the map ────────────────────────────────────────────────────────
-    //
-    //  Layer order (bottom → top):
-    //    1.  carto-voyager-base  — light gray basemap WITHOUT labels
-    //    2.  thermal-tiles-fill — FortyGuard polygon temperature fill
-    //    3.  thermal-tiles-outline — polygon borders
-    //    4.  carto-voyager-labels — basemap labels only, rendered ABOVE thermal
-    //    5.  Markers (DOM)
-    //
-    //  CartoDB Voyager gives the strongest contrast for thermal colours
-    //  (vivid cyan → green → yellow → orange → red against light gray).
-    //
     const map = new Map({
       container: mapContainer.current,
       style: {
         version: 8,
         glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
         sources: {
-          'carto-voyager-base': {
+          'carto-base': {
             type: 'raster',
-            tiles: [
-              'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-              'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-            ],
+            tiles: baseTiles,
             tileSize: 256,
             attribution: '© CartoDB © OpenStreetMap',
           },
-          'carto-voyager-labels': {
+          'carto-labels': {
             type: 'raster',
-            tiles: [
-              'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
-              'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
-            ],
+            tiles: labelTiles,
             tileSize: 256,
           },
         },
         layers: [
           {
-            id: 'carto-voyager-base-layer',
+            id: 'carto-base-layer',
             type: 'raster',
-            source: 'carto-voyager-base',
+            source: 'carto-base',
             minzoom: 0,
             maxzoom: 22,
-            paint: { 'raster-opacity': 0.88 },
+            paint: { 'raster-opacity': isDark ? 0.95 : 0.85 },
           },
-          // carto-voyager-labels-layer added AFTER thermal fill — see map.on('load')
         ],
       },
       center: [centerLng, centerLat],
-      zoom: 13,
+      zoom: 14,
     });
 
     mapInstance.current = map;
 
     map.on('load', () => {
-      // ── Thermal polygon fill (below labels) ─────────────────────────────────
+      // ── 1. Thermal polygon fill (rendered above basemap, below labels) ─────
       if (thermalIsRenderable && spatialField) {
         map.addSource('thermal-tiles', {
           type: 'geojson',
           data: spatialField as unknown as GeoJSONFC,
         });
 
-        // Vivid temperature fill — bright enough to read against the Voyager basemap.
-        // All source values are Celsius (FortyGuard invariant).
-        // Colour stops extend from "very cool" to "extreme heat" to handle
-        // both fixture (28–31°C) and realistic LIVE ranges.
+        // High-contrast thermal palette (Celsius inputs)
         map.addLayer({
           id: 'thermal-tiles-fill',
           type: 'fill',
@@ -224,23 +227,22 @@ export function ThermalMap({
             'fill-color': [
               'interpolate',
               ['linear'],
-              ['coalesce', ['to-number', ['get', 'average_temperature'], -999], -999],
-              -998, 'transparent', // safety: feature has no temperature → skip
-              18, '#00c2ff',       // bright sky-blue — very cool
-              22, '#00e0a0',       // bright teal
-              25, '#00e060',       // vivid green
-              28, '#a8e600',       // yellow-green
-              30, '#ffe000',       // bright yellow
-              32, '#ff9000',       // vivid orange
-              34, '#ff3300',       // bright red
-              37, '#cc0055',       // crimson
-              40, '#7700aa',       // purple — extreme
+              ['to-number', ['get', 'average_temperature'], 25],
+              18, '#00d4ff', // cyan — very cool
+              22, '#00e5a3', // teal
+              25, '#10b981', // emerald
+              28, '#84cc16', // lime
+              30, '#facc15', // yellow
+              32, '#fb923c', // orange
+              34, '#f43f5e', // rose / hot
+              37, '#e11d48', // crimson
+              40, '#9333ea', // purple / extreme
             ],
-            'fill-opacity': 0.72,
+            'fill-opacity': isDark ? 0.82 : 0.72,
           },
         });
 
-        // Polygon border — 1px darker variant of the fill colour for crisp edges
+        // Crisp polygon outline
         map.addLayer({
           id: 'thermal-tiles-outline',
           type: 'line',
@@ -249,36 +251,28 @@ export function ThermalMap({
             'line-color': [
               'interpolate',
               ['linear'],
-              ['coalesce', ['to-number', ['get', 'average_temperature'], -999], -999],
-              -998, 'transparent',
-              22, '#00b4d8',
-              28, '#80b918',
-              32, '#ff6000',
-              37, '#880033',
+              ['to-number', ['get', 'average_temperature'], 25],
+              18, '#0284c7',
+              25, '#047857',
+              30, '#ca8a04',
+              34, '#be123c',
+              40, '#6b21a8',
             ],
-            'line-width': 1.5,
-            'line-opacity': 0.9,
+            'line-width': 2,
+            'line-opacity': 0.95,
           },
         });
       }
 
-      // ── CartoDB labels layer ON TOP of thermal fill ──────────────────────────
-      map.addSource('carto-voyager-labels', {
-        type: 'raster',
-        tiles: [
-          'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
-          'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
-        ],
-        tileSize: 256,
-      });
+      // ── 2. Labels layer (rendered above thermal fill for legibility) ────────
       map.addLayer({
-        id: 'carto-voyager-labels-layer',
+        id: 'carto-labels-layer',
         type: 'raster',
-        source: 'carto-voyager-labels',
-        paint: { 'raster-opacity': 1 },
+        source: 'carto-labels',
+        paint: { 'raster-opacity': isDark ? 0.9 : 1.0 },
       });
 
-      // ── Candidate markers (above everything) ─────────────────────────────────
+      // ── 3. Candidate markers (DOM overlay) ──────────────────────────────────
       for (const locItem of validLocs) {
         const el = document.createElement('div');
 
@@ -286,55 +280,56 @@ export function ThermalMap({
           // Recommended marker — hot-pink with animated pulse ring
           el.style.cssText = [
             'position:relative',
-            'width:36px',
-            'height:36px',
+            'width:38px',
+            'height:38px',
             'cursor:pointer',
-            'z-index:20',
+            'z-index:30',
           ].join(';');
           el.innerHTML = `
             <span style="
               position:absolute;inset:0;border-radius:50%;
-              background:rgba(236,72,153,0.25);
+              background:rgba(236,72,153,0.35);
               animation:map-marker-pulse 2s ease-in-out infinite;
             "></span>
             <span style="
               position:absolute;inset:4px;border-radius:50%;
               background:#ec4899;
-              border:3px solid #fff;
-              box-shadow:0 0 12px rgba(236,72,153,0.8),0 2px 8px rgba(0,0,0,0.5);
+              border:3px solid #ffffff;
+              box-shadow:0 0 16px rgba(236,72,153,0.9),0 2px 8px rgba(0,0,0,0.6);
             "></span>
           `;
         } else {
           el.style.cssText = [
-            'width:20px',
-            'height:20px',
-            'background:#1e293b',
-            'border:2.5px solid rgba(255,255,255,0.85)',
+            'width:22px',
+            'height:22px',
+            'background:' + (isDark ? '#0f172a' : '#ffffff'),
+            'border:2.5px solid ' + (isDark ? '#94a3b8' : '#334155'),
             'border-radius:50%',
-            'box-shadow:0 2px 8px rgba(0,0,0,0.6)',
+            'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
             'cursor:pointer',
-            'z-index:10',
+            'z-index:20',
           ].join(';');
         }
 
         const popup = new Popup({ offset: 20, closeButton: false }).setHTML(`
           <div style="
-            background:#0f172a;
-            border:1px solid rgba(30,45,69,0.9);
+            background:${isDark ? '#0f172a' : '#ffffff'};
+            border:1px solid ${isDark ? 'rgba(30,45,69,0.9)' : 'rgba(226,232,240,0.9)'};
             border-radius:8px;
             padding:8px 12px;
             min-width:160px;
             font-family:system-ui,sans-serif;
+            box-shadow:0 4px 16px rgba(0,0,0,0.25);
           ">
             <div style="
-              color:${locItem.isWinner ? '#ec4899' : '#94a3b8'};
+              color:${locItem.isWinner ? '#ec4899' : isDark ? '#94a3b8' : '#64748b'};
               font-weight:700;
-              font-size:11px;
+              font-size:10px;
               margin-bottom:3px;
               letter-spacing:0.05em;
               text-transform:uppercase;
-            ">${locItem.isWinner ? '★ RECOMMENDED' : '◎ Candidate'}</div>
-            <div style="color:#f1f5f9;font-size:13px;font-weight:600;">${locItem.name.split(' (')[0]}</div>
+            ">${locItem.isWinner ? '★ RECOMMENDED PLAN' : '◎ Candidate Location'}</div>
+            <div style="color:${isDark ? '#f1f5f9' : '#0f172a'};font-size:13px;font-weight:700;">${locItem.name.split(' (')[0]}</div>
           </div>
         `);
 
@@ -346,9 +341,9 @@ export function ThermalMap({
         markersRef.current.push(marker);
       }
 
-      // ── Fit the map to the thermal + candidate extent ────────────────────────
+      // ── 4. Fit the map to include thermal polygons + candidate markers ─────
       if (fitBounds) {
-        map.fitBounds(fitBounds, { padding: 48, maxZoom: 15, duration: 600 });
+        map.fitBounds(fitBounds, { padding: 50, maxZoom: 15, duration: 600 });
       }
     });
 
@@ -361,7 +356,7 @@ export function ThermalMap({
       try { map.remove(); } catch { /* safe */ }
       mapInstance.current = null;
     };
-  }, [location, spatialField, candidates, recommendedLocationId]);
+  }, [location, spatialField, candidates, recommendedLocationId, theme]);
 
   // ── Live-update the GeoJSON source when spatialField changes (no full remount) ──
   useEffect(() => {
@@ -411,7 +406,7 @@ export function ThermalMap({
                 className="w-3 h-3 rounded-sm inline-block flex-shrink-0 shadow-sm"
                 style={{ background: color }}
               />
-              <span className="text-slate-700 dark:text-slate-300" style={{ fontSize: '10px' }}>
+              <span className="text-slate-700 dark:text-slate-300 font-medium" style={{ fontSize: '10px' }}>
                 {label}
               </span>
             </div>

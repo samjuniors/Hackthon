@@ -45,24 +45,64 @@ function extractCoords(geometry: { type: string; coordinates: unknown }): [numbe
 }
 
 /**
- * Compute a tight bounding box covering the spatial field features AND all
- * candidate marker locations, padded by a small delta so edge markers aren't clipped.
+ * Generate a standard FortyGuard-style Area of Interest (AOI) bounding polygon
+ * centered at the target location when explicit tile polygons are pending or loading.
+ */
+function createTargetAoiGeoJSON(centerLat: number, centerLon: number, deltaLat = 0.012, deltaLon = 0.016): GeoJSONFC {
+  const minLon = centerLon - deltaLon;
+  const maxLon = centerLon + deltaLon;
+  const minLat = centerLat - deltaLat;
+  const maxLat = centerLat + deltaLat;
+
+  return {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { name: 'Operational Area of Interest (AOI)' },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [minLon, minLat],
+              [maxLon, minLat],
+              [maxLon, maxLat],
+              [minLon, maxLat],
+              [minLon, minLat],
+            ],
+          ],
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Compute bounding box covering spatial field features, candidates, and default target AOI.
  */
 function computeBounds(
   spatialField: PolygonAOI | null,
   candidateLocs: LocationPoint[],
+  targetLoc: LocationPoint
 ): [[number, number], [number, number]] | null {
   const allPts: [number, number][] = [];
 
-  if (spatialField) {
+  if (spatialField && spatialField.features.length > 0) {
     for (const f of spatialField.features) {
       allPts.push(...extractCoords(f.geometry as { type: string; coordinates: unknown }));
     }
   }
+
   for (const { longitude, latitude } of candidateLocs) {
     if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
       allPts.push([longitude, latitude]);
     }
+  }
+
+  // Always include the target location with a small perimeter
+  if (Number.isFinite(targetLoc.longitude) && Number.isFinite(targetLoc.latitude)) {
+    allPts.push([targetLoc.longitude - 0.014, targetLoc.latitude - 0.010]);
+    allPts.push([targetLoc.longitude + 0.014, targetLoc.latitude + 0.010]);
   }
 
   if (allPts.length === 0) return null;
@@ -76,9 +116,8 @@ function computeBounds(
     if (lat > maxLat) maxLat = lat;
   }
 
-  // Padding so markers on the edge stay fully inside the viewport
-  const padLng = Math.max(0.004, (maxLng - minLng) * 0.2);
-  const padLat = Math.max(0.004, (maxLat - minLat) * 0.2);
+  const padLng = Math.max(0.003, (maxLng - minLng) * 0.15);
+  const padLat = Math.max(0.003, (maxLat - minLat) * 0.15);
 
   return [
     [minLng - padLng, minLat - padLat],
@@ -109,19 +148,19 @@ export function ThermalMap({
   useEffect(() => {
     if (!mapContainer.current) return;
 
-    // ── Clean up previous markers ────────────────────────────────────────────
+    // Clean up previous markers
     for (const m of markersRef.current) {
       try { m.remove(); } catch { /* safe */ }
     }
     markersRef.current = [];
 
-    // ── Validate center coords ────────────────────────────────────────────────
+    // Validate center coordinates
     const isValidLat = Number.isFinite(location.latitude)  && location.latitude  >= -90  && location.latitude  <= 90;
     const isValidLon = Number.isFinite(location.longitude) && location.longitude >= -180 && location.longitude <= 180;
     const centerLng  = isValidLon ? location.longitude : -74.008;
     const centerLat  = isValidLat ? location.latitude  : 40.712;
 
-    // ── Build candidate list ──────────────────────────────────────────────────
+    // Candidate list
     const locsToRender: Array<{
       id: string; name: string; loc: LocationPoint; isWinner: boolean;
     }> =
@@ -132,7 +171,7 @@ export function ThermalMap({
             loc: c.location,
             isWinner: c.locationId === recommendedLocationId,
           }))
-        : [{ id: 'target', name: 'Candidate Location', loc: location, isWinner: true }];
+        : [{ id: 'target', name: 'Operational Center', loc: location, isWinner: true }];
 
     const validLocs = locsToRender.filter(
       (l) =>
@@ -140,19 +179,19 @@ export function ThermalMap({
         Number.isFinite(l.loc.longitude) && l.loc.longitude >= -180 && l.loc.longitude <= 180
     );
 
-    // ── Determine whether the spatial field has renderable temperature data ──
     const thermalIsRenderable =
       !!spatialField &&
       spatialField.features.length > 0 &&
       hasRenderableTemperatureData(spatialField);
 
-    // ── Compute fit bounds ────────────────────────────────────────────────────
+    // Compute fit bounds
     const fitBounds = computeBounds(
       thermalIsRenderable ? spatialField : null,
       validLocs.map((l) => l.loc),
+      location
     );
 
-    // ── Basemap tiles tailored by theme ──────────────────────────────────────
+    // Basemap URLs tailored to active theme
     const isDark = theme === 'dark';
     const baseTiles = isDark
       ? [
@@ -174,7 +213,7 @@ export function ThermalMap({
           'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
         ];
 
-    // ── Create the map ────────────────────────────────────────────────────────
+    // Create MapLibre map instance
     const map = new Map({
       container: mapContainer.current,
       style: {
@@ -200,7 +239,7 @@ export function ThermalMap({
             source: 'carto-base',
             minzoom: 0,
             maxzoom: 22,
-            paint: { 'raster-opacity': isDark ? 0.95 : 0.85 },
+            paint: { 'raster-opacity': isDark ? 0.95 : 0.88 },
           },
         ],
       },
@@ -211,14 +250,43 @@ export function ThermalMap({
     mapInstance.current = map;
 
     map.on('load', () => {
-      // ── 1. Thermal polygon fill (rendered above basemap, below labels) ─────
+      // ── 1. Target AOI Boundary (FortyGuard area boundary polygon) ─────────
+      const targetAoiData = createTargetAoiGeoJSON(centerLat, centerLng);
+      map.addSource('target-aoi', {
+        type: 'geojson',
+        data: targetAoiData as unknown as GeoJSONFC,
+      });
+
+      map.addLayer({
+        id: 'target-aoi-fill',
+        type: 'fill',
+        source: 'target-aoi',
+        paint: {
+          'fill-color': isDark ? '#ec4899' : '#0ea5e9',
+          'fill-opacity': thermalIsRenderable ? 0.04 : 0.12,
+        },
+      });
+
+      map.addLayer({
+        id: 'target-aoi-outline',
+        type: 'line',
+        source: 'target-aoi',
+        paint: {
+          'line-color': isDark ? '#f43f5e' : '#0284c7',
+          'line-width': 2.5,
+          'line-dasharray': thermalIsRenderable ? [2, 2] : [4, 2],
+          'line-opacity': 0.85,
+        },
+      });
+
+      // ── 2. Thermal Polygons (FortyGuard temperature grid) ─────────────────
       if (thermalIsRenderable && spatialField) {
         map.addSource('thermal-tiles', {
           type: 'geojson',
           data: spatialField as unknown as GeoJSONFC,
         });
 
-        // High-contrast thermal palette (Celsius inputs)
+        // High-contrast thermal polygon fill
         map.addLayer({
           id: 'thermal-tiles-fill',
           type: 'fill',
@@ -238,7 +306,7 @@ export function ThermalMap({
               37, '#e11d48', // crimson
               40, '#9333ea', // purple / extreme
             ],
-            'fill-opacity': isDark ? 0.82 : 0.72,
+            'fill-opacity': isDark ? 0.85 : 0.75,
           },
         });
 
@@ -264,15 +332,15 @@ export function ThermalMap({
         });
       }
 
-      // ── 2. Labels layer (rendered above thermal fill for legibility) ────────
+      // ── 3. Labels layer (rendered above thermal fill for legibility) ──────
       map.addLayer({
         id: 'carto-labels-layer',
         type: 'raster',
         source: 'carto-labels',
-        paint: { 'raster-opacity': isDark ? 0.9 : 1.0 },
+        paint: { 'raster-opacity': isDark ? 0.92 : 1.0 },
       });
 
-      // ── 3. Candidate markers (DOM overlay) ──────────────────────────────────
+      // ── 4. Candidate markers (DOM overlay) ────────────────────────────────
       for (const locItem of validLocs) {
         const el = document.createElement('div');
 
@@ -280,8 +348,8 @@ export function ThermalMap({
           // Recommended marker — hot-pink with animated pulse ring
           el.style.cssText = [
             'position:relative',
-            'width:38px',
-            'height:38px',
+            'width:40px',
+            'height:40px',
             'cursor:pointer',
             'z-index:30',
           ].join(';');
@@ -295,7 +363,7 @@ export function ThermalMap({
               position:absolute;inset:4px;border-radius:50%;
               background:#ec4899;
               border:3px solid #ffffff;
-              box-shadow:0 0 16px rgba(236,72,153,0.9),0 2px 8px rgba(0,0,0,0.6);
+              box-shadow:0 0 16px rgba(236,72,153,0.95),0 2px 8px rgba(0,0,0,0.6);
             "></span>
           `;
         } else {
@@ -341,13 +409,13 @@ export function ThermalMap({
         markersRef.current.push(marker);
       }
 
-      // ── 4. Fit the map to include thermal polygons + candidate markers ─────
+      // ── 5. Fit the map bounds smoothly ───────────────────────────────────
       if (fitBounds) {
-        map.fitBounds(fitBounds, { padding: 50, maxZoom: 15, duration: 600 });
+        map.fitBounds(fitBounds, { padding: 45, maxZoom: 15, duration: 600 });
       }
     });
 
-    // ── Cleanup ───────────────────────────────────────────────────────────────
+    // Cleanup
     return () => {
       for (const m of markersRef.current) {
         try { m.remove(); } catch { /* safe */ }
@@ -358,7 +426,7 @@ export function ThermalMap({
     };
   }, [location, spatialField, candidates, recommendedLocationId, theme]);
 
-  // ── Live-update the GeoJSON source when spatialField changes (no full remount) ──
+  // Live-update the GeoJSON source when spatialField changes (no full remount)
   useEffect(() => {
     const m = mapInstance.current;
     if (!m || !m.isStyleLoaded()) return;
@@ -380,7 +448,7 @@ export function ThermalMap({
       {/* Map canvas */}
       <div ref={mapContainer} className="w-full h-full" />
 
-      {/* ── Marker pulse keyframe — injected once ───────────────────────────── */}
+      {/* Marker pulse keyframe */}
       <style>{`
         @keyframes map-marker-pulse {
           0%, 100% { transform: scale(1); opacity: 0.8; }
@@ -388,25 +456,25 @@ export function ThermalMap({
         }
       `}</style>
 
-      {/* ── Thermal legend — bottom-left overlay ───────────────────────────── */}
+      {/* Thermal legend — bottom-left overlay */}
       <div
-        className="absolute bottom-3 left-3 bg-white/95 dark:bg-[#0d1422]/95 backdrop-blur-md px-3 py-2.5 rounded-xl shadow-xl border border-slate-200 dark:border-[#1e2d45]"
+        className="absolute bottom-3 left-3 bg-surface-card/95 backdrop-blur-md px-3.5 py-2.5 rounded-xl shadow-xl border border-border"
         data-testid="map-legend-ticks"
       >
         <div
-          className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5"
+          className="text-[10px] font-bold text-text-dimmed uppercase tracking-wider mb-1.5"
           data-testid="map-legend-header"
         >
           Thermal Scale ({tempUnitSuffix(unit)})
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {legendTicks.map(({ color, label }) => (
             <div key={label} className="flex items-center gap-1">
               <span
                 className="w-3 h-3 rounded-sm inline-block flex-shrink-0 shadow-sm"
                 style={{ background: color }}
               />
-              <span className="text-slate-700 dark:text-slate-300 font-medium" style={{ fontSize: '10px' }}>
+              <span className="text-text-primary font-mono font-medium" style={{ fontSize: '10px' }}>
                 {label}
               </span>
             </div>
@@ -414,42 +482,37 @@ export function ThermalMap({
         </div>
       </div>
 
-      {/* ── Selected tile badge — top-right ─────────────────────────────────── */}
+      {/* Target AOI Zone Indicator — top-left badge */}
+      <div className="absolute top-3 left-3 bg-surface-card/95 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-lg border border-border flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block border border-white/60" />
+        <span className="text-[10px] font-bold text-text-primary uppercase tracking-wide">
+          FortyGuard Operational AOI
+        </span>
+      </div>
+
+      {/* Selected tile badge — top-right */}
       {selectedTileId && (
-        <div className="absolute top-3 right-3 bg-white/95 dark:bg-[#0d1422]/95 backdrop-blur-md px-2.5 py-1.5 rounded-lg shadow-lg border border-slate-200 dark:border-cyan-500/30">
-          <span className="text-[10px] text-slate-500 dark:text-slate-400">Tile: </span>
-          <span className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-300">
+        <div className="absolute top-3 right-3 bg-surface-card/95 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-lg border border-accent-cyan/30">
+          <span className="text-[10px] text-text-muted">Active Tile: </span>
+          <span className="text-xs font-mono font-bold text-accent-cyan">
             {selectedTileId}
           </span>
         </div>
       )}
 
-      {/* ── Source attribution ──────────────────────────────────────────────── */}
-      {spatialField && hasRenderableTemperatureData(spatialField) && (
-        <div className="absolute bottom-3 right-3 bg-white/80 dark:bg-[#0d1422]/80 backdrop-blur-sm px-2 py-1 rounded-md">
-          <span className="text-[9px] text-slate-500 dark:text-slate-500 font-mono uppercase tracking-wide">
-            FortyGuard Thermal
-          </span>
-        </div>
-      )}
+      {/* Source attribution */}
+      <div className="absolute bottom-3 right-3 bg-surface-card/85 backdrop-blur-sm px-2.5 py-1 rounded-md border border-border">
+        <span className="text-[9px] text-text-dimmed font-mono uppercase tracking-wide">
+          FortyGuard Hyperlocal Thermal
+        </span>
+      </div>
 
-      {/* ── Empty state overlay ──────────────────────────────────────────────── */}
-      {!spatialField && (
+      {/* Empty state overlay (shown only when no spatialField AND no location) */}
+      {!spatialField && !location && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-white/95 dark:bg-[#0d1422]/90 backdrop-blur-md px-5 py-3 rounded-xl text-center border border-slate-200 dark:border-[#1e2d45] shadow-lg">
-            <p className="text-slate-500 dark:text-slate-400 text-sm">
-              Run decision to render thermal field
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ── No temperature data overlay ──────────────────────────────────────── */}
-      {spatialField && !hasRenderableTemperatureData(spatialField) && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-none">
-          <div className="bg-amber-50/95 dark:bg-amber-950/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-amber-200 dark:border-amber-700/40 shadow-md">
-            <p className="text-amber-700 dark:text-amber-300 text-xs font-medium">
-              No spatial temperature data in current response
+          <div className="bg-surface-card/95 backdrop-blur-md px-5 py-3 rounded-xl text-center border border-border shadow-lg">
+            <p className="text-text-muted text-sm">
+              Select a location to render the thermal field
             </p>
           </div>
         </div>

@@ -119,50 +119,50 @@ export function LocationSearch({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <label htmlFor="location-search-input" className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+        <label htmlFor="location-search-input" className="text-xs font-bold text-text-primary flex items-center gap-1.5">
           <span>📍 Operating Location</span>
         </label>
         <button
           type="button"
           onClick={() => setShowCoords(!showCoords)}
-          className="text-[10px] text-cyan-400 hover:text-cyan-300 font-mono underline"
+          className="text-[10px] text-accent-cyan hover:underline font-mono"
         >
           {showCoords ? 'Hide Lat/Lon' : 'Coordinates'}
         </button>
       </div>
 
       {/* Selected Location Card */}
-      <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 space-y-1.5">
+      <div className="bg-surface-deep p-3 rounded-xl border border-border space-y-1.5">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0" />
-            <span className="text-xs font-semibold text-white truncate" data-testid="selected-location-name">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2.5 h-2.5 rounded-full bg-accent-cyan shrink-0" />
+            <span className="text-xs font-bold text-text-primary truncate" data-testid="selected-location-name">
               {selectedLocation.name}
             </span>
           </div>
           <Badge
             variant="outline"
-            className="text-[10px] font-mono shrink-0 border-cyan-500/40 text-cyan-300 bg-cyan-950/40"
+            className="text-[10px] font-mono shrink-0 border-accent-cyan/40 text-accent-cyan bg-accent-cyan-bg"
           >
             {selectedLocation.category}
           </Badge>
         </div>
 
-        <div className="text-[11px] font-mono text-slate-400 flex items-center justify-between">
+        <div className="text-[11px] font-mono text-text-muted flex items-center justify-between">
           <span>
             {selectedLocation.latitude.toFixed(4)}°, {selectedLocation.longitude.toFixed(4)}°
           </span>
           {selectedLocation.zipCode && (
-            <span className="text-slate-500">ZIP {selectedLocation.zipCode}</span>
+            <span className="text-text-dimmed">ZIP {selectedLocation.zipCode}</span>
           )}
         </div>
 
         {/* Fixture Mode Limitation Warning */}
         {isSelectedNonDemoInFixture && (
-          <div className="p-2 rounded bg-amber-950/60 border border-amber-500/40 text-[11px] text-amber-200 space-y-1">
-            <p className="font-semibold">⚠️ Fixture Mode Notice</p>
-            <p className="text-[10px] leading-tight text-amber-300/90">
-              DEMO mode uses captured Manhattan thermal tiles. To evaluate {selectedLocation.name} with real hyperlocal data, switch to LIVE mode.
+          <div className="p-2.5 rounded-lg bg-accent-amber-bg border border-accent-amber/40 text-[11px] text-accent-amber-text space-y-1 mt-2">
+            <p className="font-bold text-accent-amber">⚠️ Fixture Mode Notice</p>
+            <p className="text-[10px] leading-tight opacity-90">
+              DEMO mode uses captured Manhattan thermal tiles. To evaluate {selectedLocation.name} with real FortyGuard data, switch to LIVE mode.
             </p>
             {onSwitchToLive && (
               <Button
@@ -170,7 +170,7 @@ export function LocationSearch({
                 size="sm"
                 variant="outline"
                 onClick={onSwitchToLive}
-                className="mt-1 h-6 px-2 text-[10px] bg-emerald-950 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900"
+                className="mt-1 h-6 px-2 text-[10px] bg-accent-emerald text-white border-none hover:opacity-90"
               >
                 Switch to LIVE Mode
               </Button>
@@ -181,7 +181,7 @@ export function LocationSearch({
 
       {/* Search Input Box with Relative Dropdown Wrapper */}
       <div className="relative" ref={wrapperRef}>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <input
               id="location-search-input"
@@ -230,12 +230,12 @@ export function LocationSearch({
                   }
                 }
               }}
-              placeholder={isFixture ? 'Search Manhattan demo sites...' : 'Search metro area or use GPS...'}
-              className="w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500 font-sans"
+              placeholder={isFixture ? 'Search Manhattan demo sites…' : 'Search metro area (e.g. Los Angeles)…'}
+              className="w-full bg-surface-deep border border-border rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-dimmed focus:outline-none focus:border-accent-cyan font-sans transition-colors"
               data-testid="location-search-input"
             />
             {isSearching ? (
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 border border-slate-600 border-t-cyan-400 rounded-full animate-spin" />
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 border-2 border-border border-t-accent-cyan rounded-full animate-spin" />
             ) : query ? (
               <button
                 type="button"
@@ -245,7 +245,7 @@ export function LocationSearch({
                   setIsOpen(false);
                   setActiveIndex(-1);
                 }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-dimmed hover:text-text-primary text-xs"
               >
                 ✕
               </button>
@@ -259,15 +259,15 @@ export function LocationSearch({
             disabled={isLocating}
             onClick={handleUseCurrentLocation}
             title="Use current GPS location"
-            className="px-2.5 text-xs border-slate-800 bg-slate-950 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/50 min-h-[32px] sm:min-h-[28px]"
+            className="px-3 text-xs border-border bg-surface-elevated text-text-secondary hover:text-accent-cyan hover:border-accent-cyan min-h-[36px] rounded-lg transition-colors"
             data-testid="gps-location-button"
           >
-            {isLocating ? '📡 Locating...' : '📍 GPS'}
+            {isLocating ? '📡 Locating…' : '📍 GPS'}
           </Button>
         </div>
 
         {gpsError && (
-          <p className="text-[10px] text-red-400 mt-1 font-mono">{gpsError}</p>
+          <p className="text-[10px] text-accent-red mt-1 font-mono">{gpsError}</p>
         )}
 
         {/* Search Results Dropdown */}
@@ -276,7 +276,7 @@ export function LocationSearch({
             id="location-results-list"
             role="listbox"
             aria-label="Location suggestions"
-            className="absolute z-50 left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-slate-900 border border-slate-700 rounded-md shadow-2xl shadow-black/80 py-1 divide-y divide-slate-800"
+            className="absolute z-50 left-0 right-0 mt-1.5 max-h-64 overflow-y-auto bg-surface-card border border-border rounded-xl shadow-2xl py-1 divide-y divide-border"
           >
             {results.length > 0 ? (
               results.map((loc, idx) => {
@@ -296,27 +296,27 @@ export function LocationSearch({
                       setActiveIndex(-1);
                     }}
                     onMouseEnter={() => setActiveIndex(idx)}
-                    className={`w-full text-left px-3 py-2 flex items-start justify-between gap-2 text-xs transition-colors ${
+                    className={`w-full text-left px-3.5 py-2.5 flex items-start justify-between gap-2 text-xs transition-colors ${
                       isFocused
-                        ? 'bg-slate-800 text-white'
+                        ? 'bg-surface-elevated text-text-primary'
                         : isSelected
-                        ? 'bg-cyan-950/40 text-cyan-200'
-                        : 'text-slate-200 hover:bg-slate-800'
+                        ? 'bg-accent-cyan-bg text-accent-cyan-text'
+                        : 'text-text-primary hover:bg-surface-elevated'
                     }`}
                     data-testid={`location-option-${loc.id}`}
                   >
                     <div className="min-w-0">
-                      <div className="font-medium truncate">{loc.name}</div>
-                      <div className="text-[10px] text-slate-400 truncate">
+                      <div className="font-bold truncate">{loc.name}</div>
+                      <div className="text-[10px] text-text-muted truncate mt-0.5">
                         {loc.description || loc.displayName}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="text-[10px] font-mono text-slate-400 block">
+                      <span className="text-[10px] font-mono text-text-dimmed block">
                         {loc.latitude.toFixed(2)}°, {loc.longitude.toFixed(2)}°
                       </span>
                       {loc.isDemoOnly && (
-                        <Badge variant="outline" className="text-[9px] border-amber-500/40 text-amber-300">
+                        <Badge variant="outline" className="text-[9px] border-accent-amber/40 text-accent-amber bg-accent-amber-bg mt-0.5">
                           Demo Only
                         </Badge>
                       )}
@@ -325,9 +325,9 @@ export function LocationSearch({
                 );
               })
             ) : (
-              <div className="p-3 text-xs space-y-2 bg-slate-950" data-testid="location-search-empty-state">
-                <p className="text-slate-300 font-semibold">No matching supported metro area found.</p>
-                <p className="text-[11px] text-slate-400 leading-tight">
+              <div className="p-3.5 text-xs space-y-2 bg-surface-card" data-testid="location-search-empty-state">
+                <p className="text-text-primary font-bold">No matching supported metro area found.</p>
+                <p className="text-[11px] text-text-muted leading-relaxed">
                   Search supports curated US metropolitan operational hubs (NYC, LA, SF, San Diego, Chicago, Phoenix, Austin, Miami, etc.).
                 </p>
                 <div className="pt-1 flex items-center gap-2 flex-wrap">
@@ -337,9 +337,9 @@ export function LocationSearch({
                     variant="outline"
                     onClick={handleUseCurrentLocation}
                     disabled={isLocating}
-                    className="h-7 text-xs bg-slate-900 border-cyan-500/40 text-cyan-300 hover:bg-cyan-950"
+                    className="h-7 text-xs bg-surface-elevated border-border text-accent-cyan hover:bg-surface-deep"
                   >
-                    {isLocating ? '📡 Locating...' : '📍 Use My GPS Location'}
+                    {isLocating ? '📡 Locating…' : '📍 Use My GPS Location'}
                   </Button>
                   <button
                     type="button"
@@ -347,7 +347,7 @@ export function LocationSearch({
                       setShowCoords(true);
                       setIsOpen(false);
                     }}
-                    className="text-[11px] text-slate-400 hover:text-white underline font-mono"
+                    className="text-[11px] text-text-muted hover:text-text-primary underline font-mono"
                   >
                     Enter Coordinates
                   </button>
@@ -360,7 +360,7 @@ export function LocationSearch({
 
       {/* Preset Location Chips */}
       <div className="space-y-1.5">
-        <label className="text-[11px] font-mono text-slate-400">
+        <label className="text-[11px] font-bold uppercase tracking-wider text-text-dimmed">
           {isFixture ? 'Demo Sites' : 'Popular Metros'}
         </label>
         <div className="flex flex-wrap gap-1.5">
@@ -377,10 +377,10 @@ export function LocationSearch({
                   setIsOpen(false);
                   onSelectLocation(loc);
                 }}
-                className={`px-2 py-1 rounded text-[10px] font-mono transition-colors ${
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all ${
                   isSelected
-                    ? 'bg-cyan-600 text-white font-bold'
-                    : 'bg-slate-950 border border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                    ? 'bg-accent-cyan text-white shadow-sm font-bold'
+                    : 'bg-surface-deep border border-border text-text-secondary hover:border-text-muted hover:text-text-primary hover:bg-surface-elevated'
                 }`}
                 data-testid={`preset-chip-${loc.id}`}
               >
@@ -393,9 +393,9 @@ export function LocationSearch({
 
       {/* Expandable Manual Coordinate Inputs */}
       {showCoords && (
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border">
           <div>
-            <label htmlFor="manual-lat-input" className="text-[10px] font-mono text-slate-400 block">Latitude</label>
+            <label htmlFor="manual-lat-input" className="text-[10px] font-mono text-text-muted block">Latitude</label>
             <input
               id="manual-lat-input"
               type="number"
@@ -409,11 +409,11 @@ export function LocationSearch({
                   );
                 }
               }}
-              className="w-full mt-0.5 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
+              className="w-full mt-0.5 bg-surface-deep border border-border rounded-lg px-2.5 py-1.5 text-xs text-text-primary font-mono focus:outline-none focus:border-accent-cyan"
             />
           </div>
           <div>
-            <label htmlFor="manual-lon-input" className="text-[10px] font-mono text-slate-400 block">Longitude</label>
+            <label htmlFor="manual-lon-input" className="text-[10px] font-mono text-text-muted block">Longitude</label>
             <input
               id="manual-lon-input"
               type="number"
@@ -427,7 +427,7 @@ export function LocationSearch({
                   );
                 }
               }}
-              className="w-full mt-0.5 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
+              className="w-full mt-0.5 bg-surface-deep border border-border rounded-lg px-2.5 py-1.5 text-xs text-text-primary font-mono focus:outline-none focus:border-accent-cyan"
             />
           </div>
         </div>

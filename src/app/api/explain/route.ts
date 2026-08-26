@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { explainDecision } from '@/lib/explanation/ai-explainer';
 import type { ExplainableDecisionInput } from '@/types/explanation';
+import type { PreferredAIProvider } from '@/types/provider';
 import { AppError } from '@/types/errors';
 import { z } from 'zod';
 
@@ -18,6 +19,7 @@ const ExplainRequestSchema = z.object({
     modelVersion: z.literal('v1.0.0-spatial-thermal-baseline'),
   }),
   activeScenario: z.any().optional(),
+  preferredProvider: z.enum(['auto', 'gemini', 'claude', 'zai']).optional(),
 });
 
 export async function POST(req: Request) {
@@ -38,13 +40,15 @@ export async function POST(req: Request) {
       );
     }
 
+    const data = parseResult.data;
     const input: ExplainableDecisionInput = {
-      jointDecision: parseResult.data.jointDecision as unknown as ExplainableDecisionInput['jointDecision'],
-      activeScenario: parseResult.data.activeScenario as unknown as ExplainableDecisionInput['activeScenario'],
+      jointDecision: data.jointDecision as unknown as ExplainableDecisionInput['jointDecision'],
+      activeScenario: data.activeScenario as unknown as ExplainableDecisionInput['activeScenario'],
     };
 
+    const preferredProvider: PreferredAIProvider | undefined = data.preferredProvider;
 
-    const explanation = await explainDecision(input);
+    const explanation = await explainDecision(input, { preferredProvider });
 
     return NextResponse.json({
       success: true,

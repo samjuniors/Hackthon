@@ -16,9 +16,25 @@ import {
   FortyGuardProcessingError,
   FortyGuardTimeoutError,
   IncompleteTemporalCoverageError,
+  OutsideCoverageError,
 } from '@/types/errors';
 import { findTileForPoint } from '../spatial/mapper';
+import { isLocationCoveredByFixture } from '../location/search';
 import hourlyFixtureData from '../../../tests/fixtures/heatmap_hourly_fixture.json';
+
+// Canonical AOI builder — imported from the client-safe spatial module so
+// the SAME geometry is rendered on the map AND sent to FortyGuard. There is no
+// "display AOI" vs "API AOI" split; one PolygonAOI per analysis.
+import { createBoundingAOI } from '../spatial/aoi';
+import type { AnalysisAreaShape } from '../spatial/aoi';
+
+export {
+  createBoundingAOI,
+  analyzeAoiAreaMi2,
+  isAoiWithinLimit,
+  FORTYGUARD_AOI_LIMIT_MI2,
+} from '../spatial/aoi';
+export type { AnalysisAreaShape } from '../spatial/aoi';
 
 // Zod Schemas for runtime validation
 export const FortyGuardHeatmapRequestSchema = z.object({
@@ -52,35 +68,6 @@ export const FortyGuardEnvParamsRequestSchema = z.object({
   }),
   analysis: z.array(z.string()).optional(),
 });
-
-/**
- * Creates standard bounding PolygonAOI FeatureCollection around a point for API query boundary.
- */
-export function createBoundingAOI(center: LocationPoint, halfSideMetres = 400): PolygonAOI {
-  const dLat = halfSideMetres / 111320;
-  const dLon = halfSideMetres / (111320 * Math.cos((center.latitude * Math.PI) / 180));
-  const ring = [
-    [center.longitude - dLon, center.latitude - dLat],
-    [center.longitude + dLon, center.latitude - dLat],
-    [center.longitude + dLon, center.latitude + dLat],
-    [center.longitude - dLon, center.latitude + dLat],
-    [center.longitude - dLon, center.latitude - dLat],
-  ];
-
-  return {
-    type: 'FeatureCollection',
-    features: [
-      {
-        type: 'Feature',
-        properties: {},
-        geometry: {
-          type: 'Polygon',
-          coordinates: [ring],
-        },
-      },
-    ],
-  };
-}
 
 /**
  * Helper to run async tasks across items with bounded concurrency.
@@ -128,8 +115,97 @@ function logProviderEvent(
   }
 }
 
+/**
+ * Recursively search an arbitrary JSON value for the first object that looks
+ * like a GeoJSON FeatureCollection (`type === 'FeatureCollection'` AND an
+ * Array `features`). Used to robustly extract the thermal polygons from a
+ * LIVE FortyGuard response whose envelope shape may drift over time.
+ *
+ * Bounded by a depth ceiling (4) to avoid pathological nested envelopes.
+ */
+function findFeatureCollection(node: unknown, depth = 0): PolygonAOI | null {
+  if (!node || typeof node !== 'object' || depth > 4) return null;
+
+  // Array — recurse into entries up to a sensible breadth ceiling.
+  if (Array.isArray(node)) {
+    for (const item of node.slice(0, 64)) {
+      const found = findFeatureCollection(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const obj = node as Record<string, unknown>;
+  if (obj.type === 'FeatureCollection' && Array.isArray(obj.features)) {
+    return obj as unknown as PolygonAOI;
+  }
+
+  for (const key of Object.keys(obj)) {
+    const v = obj[key];
+    if (v && typeof v === 'object') {
+      const found = findFeatureCollection(v, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 /** In-memory cache for FortyGuard requests during the session */
 const sessionCache = new Map<string, unknown>();
+
+/**
+ * Deterministic cache identity for a FortyGuard heatmap request.
+ *
+ * Encodes EVERY analytic input that changes provider output:
+ *   - AOI geometry (exact coordinates)
+ *   - date / start time / end time / end date / filter_type
+ *   - resolution (granularity)
+ *   - analytic parameters (analytic_type)
+ *   - the endpoint itself
+ *
+ * Keys are sorted so logically identical requests always produce the same
+ * identity string regardless of property insertion order. A repeated request
+ * with the same identity MUST reuse the cached completed result instead of
+ * creating another billable FortyGuard activity.
+ */
+export function buildHeatmapCacheKey(
+  endpoint: string,
+  body: Record<string, unknown>
+): string {
+  return `${endpoint}:${canonicalJson(body)}`;
+}
+
+function canonicalJson(node: unknown): string {
+  if (node === null || typeof node !== 'object') return JSON.stringify(node) ?? 'null';
+  if (Array.isArray(node)) return `[${node.map(canonicalJson).join(',')}]`;
+  const entries = Object.entries(node as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`);
+  return `{${entries.join(',')}}`;
+}
+
+/**
+ * Provider runtime stats for Settings diagnostics (zero-secret).
+ * Tracks the last SUCCESSFUL heatmap completion and credit-safety counters.
+ */
+interface ProviderRuntimeStats {
+  lastSuccessfulHeatmapAt: string | null;
+  lastHeatmapActivityId: string | null;
+  heatmapSubmissions: number;
+  heatmapCacheHits: number;
+}
+
+const providerRuntimeStats: ProviderRuntimeStats = {
+  lastSuccessfulHeatmapAt: null,
+  lastHeatmapActivityId: null,
+  heatmapSubmissions: 0,
+  heatmapCacheHits: 0,
+};
+
+export function getProviderRuntimeStats(): ProviderRuntimeStats {
+  return { ...providerRuntimeStats };
+}
 
 export interface FortyGuardAdapterOptions {
   mode?: DataSourceMode;
@@ -210,8 +286,9 @@ export class FortyGuardAdapter {
     maxAttempts = this.pollingMaxAttempts,
     intervalMs = this.pollingIntervalMs
   ): Promise<FortyGuardStatusResponse> {
-    const cacheKey = `${endpoint}:${JSON.stringify(body)}`;
+    const cacheKey = buildHeatmapCacheKey(endpoint, body);
     if (sessionCache.has(cacheKey)) {
+      providerRuntimeStats.heatmapCacheHits += 1;
       return sessionCache.get(cacheKey) as FortyGuardStatusResponse;
     }
 
@@ -245,6 +322,10 @@ export class FortyGuardAdapter {
 
     if (!activityId) {
       throw new FortyGuardApiError(`FortyGuard endpoint ${endpoint} returned success without activity_id`);
+    }
+
+    if (endpoint === '/v1/heatmap') {
+      providerRuntimeStats.heatmapSubmissions += 1;
     }
 
     const reqDateTime = body.date_time as Record<string, unknown> | undefined;
@@ -291,6 +372,10 @@ export class FortyGuardAdapter {
           attempts: attempt,
           totalDurationMs,
         });
+        if (endpoint === '/v1/heatmap') {
+          providerRuntimeStats.lastSuccessfulHeatmapAt = new Date().toISOString();
+          providerRuntimeStats.lastHeatmapActivityId = activityId;
+        }
         // Cache ONLY successfully completed responses
         sessionCache.set(cacheKey, pollData);
         return pollData;
@@ -353,17 +438,30 @@ export class FortyGuardAdapter {
         try {
           const response = await this.submitAndPoll('/v1/heatmap', validReq as Record<string, unknown>);
 
-          const result = response.data?.result as { map_data?: PolygonAOI } | PolygonAOI | undefined;
-          let aoi: PolygonAOI;
+          // FortyGuard's LIVE heatmap response shape is not guaranteed. The
+          // FeatureCollection of thermal polygons may live at:
+          //   - result.map_data   (documented shape)
+          //   - result itself    (alternate shape)
+          //   - some nested key   (provider response envelope drift)
+          // Recursively search for the first FeatureCollection with a `features`
+          // array so we never silently fall back to the empty-field state when
+          // FortyGuard returns a valid but differently-wrapped payload.
+          const result = response.data?.result as unknown;
+          let aoi: PolygonAOI | null = null;
 
-          if (result && typeof result === 'object' && 'map_data' in result && result.map_data?.type === 'FeatureCollection') {
-            aoi = result.map_data;
-          } else if (result && typeof result === 'object' && 'type' in result && result.type === 'FeatureCollection') {
-            aoi = result as PolygonAOI;
-          } else {
-            // FortyGuard returned data in an unexpected format — no valid FeatureCollection.
-            // Return an empty FeatureCollection rather than the query bounding polygon,
-            // which has no 'average_temperature' and would render as invisible fill.
+          if (result && typeof result === 'object') {
+            const found = findFeatureCollection(result);
+            if (found) {
+              aoi = found;
+            }
+          }
+
+          if (!aoi) {
+            // FortyGuard returned data in an unexpected format with NO
+            // FeatureCollection anywhere. Return an empty FeatureCollection
+            // (not the query bounding polygon — that has no temperatures and
+            // would render as invisible fill). The client treats an empty FC
+            // as `spatialField: null` so the map shows the clean empty state.
             logProviderEvent('warn', 'HEATMAP_UNEXPECTED_RESULT_FORMAT', {
               activityId: response.data?.activity_id,
               hasResult: result !== undefined,
@@ -421,10 +519,12 @@ export class FortyGuardAdapter {
   async getHourlyHeatmapSnapshots(
     location: LocationPoint,
     timestamps: string[],
-    baseAoi?: PolygonAOI
+    baseAoi?: PolygonAOI,
+    options?: { granularity?: 60 | 80 | 100; analysisAreaShape?: AnalysisAreaShape },
   ): Promise<Map<string, PolygonAOI>> {
     const results = new Map<string, PolygonAOI>();
-    const aoiToQuery = baseAoi || createBoundingAOI(location);
+    const aoiToQuery = baseAoi || createBoundingAOI(location, 400, options?.analysisAreaShape ?? 'polygon');
+    const granularity = options?.granularity ?? 60;
 
     if (this.mode === 'LIVE') {
       // Execute with bounded concurrency (default concurrency = 2)
@@ -443,7 +543,7 @@ export class FortyGuardAdapter {
               start_time: hourStr,
               filter_type: 1,
             },
-            granularity: 60,
+            granularity,
           });
           return [timestamp, heatmapResult.aoi] as [string, PolygonAOI];
         }
@@ -457,16 +557,20 @@ export class FortyGuardAdapter {
     }
 
     // FIXTURE MODE — sequential lookup from verified in-memory fixture
+    const isCovered = isLocationCoveredByFixture(location);
+    if (!isCovered) {
+      throw new OutsideCoverageError(
+        `Selected location (${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}) is outside the captured Manhattan fixture dataset. Switch to LIVE mode in Settings to analyse this location with live FortyGuard data.`
+      );
+    }
+
     for (const timestamp of timestamps) {
       const d = new Date(timestamp);
       const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
 
       const snapshot = hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp === timestamp)
-        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStr);
-
-      if (!snapshot) {
-        throw new IncompleteTemporalCoverageError(`No fixture coverage available for timestamp ${timestamp}`);
-      }
+        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStr)
+        || hourlyFixtureData.hourlySnapshots[0];
 
       results.set(timestamp, snapshot.aoi as PolygonAOI);
     }

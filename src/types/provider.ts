@@ -2,7 +2,18 @@ import type { DataSourceMode } from './provenance';
 
 export type ProviderStatus = 'UNKNOWN' | 'CHECKING' | 'CONNECTED' | 'ERROR';
 
-export type AIProviderName = 'GEMINI' | 'OPENAI' | 'NONE';
+/**
+ * AI explanation providers in the fallback chain.
+ * Order: Gemini → Claude → Z.ai → deterministic fallback.
+ * NONE is reserved for the deterministic explainer (no AI provider used).
+ */
+export type AIProviderName = 'GEMINI' | 'CLAUDE' | 'ZAI' | 'NONE';
+
+/**
+ * The user/system preferred provider preference (persisted client-side, sent
+ * to the explain endpoint). 'auto' = respect the natural chain order.
+ */
+export type PreferredAIProvider = 'auto' | 'gemini' | 'claude' | 'zai';
 
 export interface FortyGuardHealthResponse {
   configured: boolean;
@@ -14,14 +25,31 @@ export interface FortyGuardHealthResponse {
   checkedAt: string;
 }
 
+/**
+ * Status of a single provider in the fallback chain (used by the health
+ * endpoint to report which providers are configured + reachable).
+ */
+export interface ProviderChainEntry {
+  provider: AIProviderName;
+  configured: boolean;
+  connected: boolean | null; // null = not tested (e.g. not configured)
+  latencyMs?: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export interface AIHealthResponse {
   configured: boolean;
-  provider: AIProviderName;
+  provider: AIProviderName; // active provider (first configured + connected in chain)
   connected: boolean;
   latencyMs?: number;
   errorCode?: string;
   errorMessage?: string;
   checkedAt: string;
+  /** Ordered status of every provider in the chain. */
+  providerChain?: ProviderChainEntry[];
+  /** The user/system preferred provider (affects chain ordering). */
+  preferredProvider?: PreferredAIProvider;
 }
 
 export interface NamedLocation {

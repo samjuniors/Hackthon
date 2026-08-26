@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider, THEME_SCRIPT } from "@/components/ThemeProvider";
 
@@ -31,8 +32,9 @@ export default function RootLayout({
           the 'dark' class on <html> before React hydrates.
           This prevents any flash of the wrong theme.
         */}
-        <script
+        <Script
           id="theme-init"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }}
         />
       </head>

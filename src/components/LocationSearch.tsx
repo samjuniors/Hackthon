@@ -360,13 +360,18 @@ export function LocationSearch({
 
       {/* Preset Location Chips */}
       <div className="space-y-1.5">
-        <label className="text-[11px] font-bold uppercase tracking-wider text-text-dimmed">
-          {isFixture ? 'Demo Sites' : 'Popular Metros'}
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] font-bold uppercase tracking-wider text-text-dimmed">
+            {isFixture ? 'Captured Demo Sites (Manhattan)' : 'Metropolitan Operational Hubs'}
+          </label>
+          <span className="text-[10px] text-accent-cyan font-mono font-medium">
+            {isFixture ? 'Offline Verified' : 'Live Queries'}
+          </span>
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {(isFixture
             ? METROPOLITAN_LOCATIONS.filter((l) => l.isDemoOnly)
-            : METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly).slice(0, 5)
+            : METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly)
           ).map((loc) => {
             const isSelected = selectedLocation.id === loc.id;
             return (
@@ -377,10 +382,10 @@ export function LocationSearch({
                   setIsOpen(false);
                   onSelectLocation(loc);
                 }}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-medium transition-all ${
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-accent-cyan text-white shadow-sm font-bold'
-                    : 'bg-surface-deep border border-border text-text-secondary hover:border-text-muted hover:text-text-primary hover:bg-surface-elevated'
+                    ? 'bg-accent-cyan text-white shadow-md font-bold ring-1 ring-accent-cyan'
+                    : 'bg-surface-deep border border-border text-text-secondary hover:border-accent-cyan/50 hover:text-text-primary hover:bg-surface-elevated'
                 }`}
                 data-testid={`preset-chip-${loc.id}`}
               >

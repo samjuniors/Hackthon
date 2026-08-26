@@ -1,0 +1,1265 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback, useRef } from 'react';
+     4→import dynamic from 'next/dynamic';
+     5→import { LocationSearch } from '@/components/LocationSearch';
+     6→import { ProviderHealthCard } from '@/components/ProviderHealthCard';
+     7→import { useTheme } from '@/components/ThemeProvider';
+     8→
+     9→import type {
+    10→  DecisionResult,
+    11→  SpatialDecisionResult,
+    12→  JointDecisionResult,
+    13→  ScenarioAnalysisResult,
+    14→  WhatIfScenarioResult,
+    15→  PolygonAOI,
+    16→} from '@/types/domain';
+    17→
+    18→import type { DecisionExplanation } from '@/types/explanation';
+    19→import type { DataSourceMode } from '@/types/provenance';
+    20→import type {
+    21→  ProviderStatus,
+    22→  FortyGuardHealthResponse,
+    23→  AIHealthResponse,
+    24→  NamedLocation,
+    25→  ProductionErrorDetails,
+    26→} from '@/types/provider';
+    27→import { METROPOLITAN_LOCATIONS, isLocationCoveredByFixture } from '@/lib/location/search';
+    28→import {
+    29→  useTempUnit,
+    30→  fmtTemp,
+    31→  fmtTempDelta,
+    32→  tempUnitSuffix,
+    33→  translateExplanationToUnit,
+    34→} from '@/lib/temperature';
+    35→
+    36→// Dynamically import MapLibre map component to bypass SSR canvas requirement
+    37→const ThermalMap = dynamic(() => import('@/components/ThermalMap'), {
+    38→  ssr: false,
+    39→  loading: () => (
+    40→    <div className="w-full h-[420px] sm:h-[480px] lg:h-[520px] rounded-xl bg-surface-card flex items-center justify-center border border-border">
+    41→      <span className="text-text-muted text-xs font-mono animate-pulse">
+    42→        Initializing Hyperlocal Thermal Canvas…
+    43→      </span>
+    44→    </div>
+    45→  ),
+    46→});
+    47→
+    48→// ─────────────────────────────────────────────────────────────────────────────
+    49→// Utilities
+    50→// ─────────────────────────────────────────────────────────────────────────────
+    51→
+    52→async function safeJsonFetch<T = Record<string, unknown>>(
+    53→  url: string,
+    54→  init?: RequestInit
+    55→): Promise<{ ok: boolean; data: T | null }> {
+    56→  try {
+    57→    const res  = await fetch(url, init);
+    58→    const text = await res.text();
+    59→    if (!text || !text.trim()) return { ok: res.ok, data: null };
+    60→    try {
+    61→      return { ok: res.ok, data: JSON.parse(text) as T };
+    62→    } catch {
+    63→      return { ok: false, data: null };
+    64→    }
+    65→  } catch {
+    66→    return { ok: false, data: null };
+    67→  }
+    68→}
+    69→
+    70→function fmtTimeWindow(start: string, end: string, tz?: string) {
+    71→  const fmt = (iso: string) =>
+    72→    new Date(iso).toLocaleTimeString([], {
+    73→      hour: '2-digit',
+    74→      minute: '2-digit',
+    75→      timeZone: tz || 'UTC',
+    76→    });
+    77→  const endFmt = new Date(end).toLocaleTimeString([], {
+    78→    hour: '2-digit',
+    79→    minute: '2-digit',
+    80→    timeZone: tz || 'UTC',
+    81→    timeZoneName: 'short',
+    82→  });
+    83→  return `${fmt(start)} – ${endFmt}`;
+    84→}
+    85→
+    86→function formatIsoTimesInText(text: string, tz?: string) {
+    87→  if (!text) return text;
+    88→  const isoRegex = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g;
+    89→  return text.replace(isoRegex, (match) => {
+    90→    try {
+    91→      return new Date(match).toLocaleTimeString([], {
+    92→        hour: '2-digit',
+    93→        minute: '2-digit',
+    94→        timeZone: tz || 'UTC',
+    95→        timeZoneName: 'short',
+    96→      });
+    97→    } catch { return match; }
+    98→  });
+    99→}
+   100→
+   101→// ─────────────────────────────────────────────────────────────────────────────
+   102→// Sub-components
+   103→// ─────────────────────────────────────────────────────────────────────────────
+   104→
+   105→function StatusDot({ status, mode }: { status: ProviderStatus; mode?: DataSourceMode }) {
+   106→  if (mode === 'FIXTURE') {
+   107→    return (
+   108→      <span className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--status-demo)' }}>
+   109→        <span className="w-2 h-2 rounded-full inline-block" style={{ background: 'var(--status-demo)' }} />
+   110→        DEMO
+   111→      </span>
+   112→    );
+   113→  }
+   114→  const map: Record<ProviderStatus, { dot: string; label: string; pulse?: boolean }> = {
+   115→    CONNECTED: { dot: 'var(--status-live)',    label: 'LIVE',    pulse: true },
+   116→    CHECKING:  { dot: 'var(--status-demo)',    label: 'CHECKING' },
+   117→    ERROR:     { dot: 'var(--status-error)',   label: 'OFFLINE' },
+   118→    UNKNOWN:   { dot: 'var(--status-unknown)', label: 'UNKNOWN' },
+   119→  };
+   120→  const s = map[status] ?? map.UNKNOWN;
+   121→  return (
+   122→    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted">
+   123→      <span
+   124→        className={`w-2 h-2 rounded-full inline-block${s.pulse ? ' status-dot-live' : ''}`}
+   125→        style={{ background: s.dot }}
+   126→      />
+   127→      {s.label}
+   128→    </span>
+   129→  );
+   130→}
+   131→
+   132→function SectionHeading({ children }: { children: React.ReactNode }) {
+   133→  return (
+   134→    <h2 className="text-[11px] font-bold uppercase tracking-widest text-text-dimmed mb-3">
+   135→      {children}
+   136→    </h2>
+   137→  );
+   138→}
+   139→
+   140→function ThemeToggle() {
+   141→  const { theme, toggleTheme } = useTheme();
+   142→  return (
+   143→    <button
+   144→      type="button"
+   145→      onClick={toggleTheme}
+   146→      aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+   147→      title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+   148→      className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full border border-border hover:border-border bg-surface-elevated hover:bg-surface-deep transition-all text-text-muted hover:text-text-primary"
+   149→    >
+   150→      {theme === 'dark' ? (
+   151→        // Sun icon — click to go light
+   152→        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+   153→          <circle cx="12" cy="12" r="4"/>
+   154→          <line x1="12" y1="2"  x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
+   155→          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+   156→          <line x1="2" y1="12" x2="4"  y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
+   157→          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+   158→        </svg>
+   159→      ) : (
+   160→        // Moon icon — click to go dark
+   161→        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+   162→          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+   163→        </svg>
+   164→      )}
+   165→    </button>
+   166→  );
+   167→}
+   168→
+   169→// ─────────────────────────────────────────────────────────────────────────────
+   170→// Main Page
+   171→// ─────────────────────────────────────────────────────────────────────────────
+   172→
+   173→export default function WorkspacePage() {
+   174→  const [mode, setMode]                   = useState<DataSourceMode>('FIXTURE');
+   175→  const [selectedLocation, setSelectedLocation] = useState<NamedLocation>(METROPOLITAN_LOCATIONS[0]);
+   176→  const [duration, setDuration]           = useState<number>(3);
+   177→  const [unit, setUnit]                   = useTempUnit();
+   178→
+   179→  const [fgStatus, setFgStatus]           = useState<ProviderStatus>('UNKNOWN');
+   180→  const [fgHealth, setFgHealth]           = useState<FortyGuardHealthResponse | null>(null);
+   181→  const [aiStatus, setAiStatus]           = useState<ProviderStatus>('UNKNOWN');
+   182→  const [aiHealth, setAiHealth]           = useState<AIHealthResponse | null>(null);
+   183→
+   184→  const [loading, setLoading]             = useState<boolean>(false);
+   185→  const [decision, setDecision]           = useState<DecisionResult | null>(null);
+   186→  const [spatialDecision, setSpatialDecision] = useState<SpatialDecisionResult | null>(null);
+   187→  const [jointDecision, setJointDecision] = useState<JointDecisionResult | null>(null);
+   188→  const [scenarioAnalysis, setScenarioAnalysis] = useState<ScenarioAnalysisResult | null>(null);
+   189→  const [selectedScenarioId, setSelectedScenarioId] = useState<string>('scenario-temporal-shift');
+   190→  const [explanation, setExplanation]     = useState<DecisionExplanation | null>(null);
+   191→  const [explaining, setExplaining]       = useState<boolean>(false);
+   192→  const [spatialField, setSpatialField]   = useState<PolygonAOI | null>(null);
+   193→  const [spatialFieldMeta, setSpatialFieldMeta] = useState<{
+   194→    baseTimestamp: string;
+   195→    coverageType: string;
+   196→    description: string;
+   197→    totalEvaluatedHours: number;
+   198→  } | null>(null);
+   199→  const [errorDetails, setErrorDetails]   = useState<ProductionErrorDetails | null>(null);
+   200→  const [showAllPlans, setShowAllPlans]   = useState(false);
+   201→  const [showProvenance, setShowProvenance] = useState(false);
+   202→
+   203→  // ──────────────────────────── Health Checks ────────────────────────────────
+   204→
+   205→  const checkFortyGuardHealth = useCallback(async (checkMode: DataSourceMode = mode) => {
+   206→    setFgStatus('CHECKING');
+   207→    try {
+   208→      const { ok, data } = await safeJsonFetch<{ success?: boolean; health?: FortyGuardHealthResponse }>(
+   209→        '/api/health/fortyguard',
+   210→        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: checkMode }) }
+   211→      );
+   212→      if (ok && data?.success && data.health) {
+   213→        setFgHealth(data.health);
+   214→        setFgStatus(data.health.connected ? 'CONNECTED' : 'ERROR');
+   215→      } else {
+   216→        setFgStatus('ERROR');
+   217→      }
+   218→    } catch { setFgStatus('ERROR'); }
+   219→  }, [mode]);
+   220→
+   221→  const checkAIHealth = useCallback(async () => {
+   222→    setAiStatus('CHECKING');
+   223→    try {
+   224→      const { ok, data } = await safeJsonFetch<{ success?: boolean; health?: AIHealthResponse }>(
+   225→        '/api/health/ai', { method: 'POST' }
+   226→      );
+   227→      if (ok && data?.success && data.health) {
+   228→        setAiHealth(data.health);
+   229→        setAiStatus(data.health.connected ? 'CONNECTED' : data.health.configured ? 'ERROR' : 'UNKNOWN');
+   230→      } else {
+   231→        setAiStatus('ERROR');
+   232→      }
+   233→    } catch { setAiStatus('ERROR'); }
+   234→  }, []);
+   235→
+   236→  // ──────────────────────────── AI Explanation ───────────────────────────────
+   237→
+   238→  const fetchExplanation = useCallback(async (
+   239→    jointDec: JointDecisionResult,
+   240→    activeScen?: WhatIfScenarioResult
+   241→  ) => {
+   242→    setExplaining(true);
+   243→    try {
+   244→      const { ok, data } = await safeJsonFetch<{ success?: boolean; explanation?: DecisionExplanation }>(
+   245→        '/api/explain',
+   246→        {
+   247→          method: 'POST',
+   248→          headers: { 'content-type': 'application/json' },
+   249→          body: JSON.stringify({ jointDecision: jointDec, activeScenario: activeScen }),
+   250→        }
+   251→      );
+   252→      if (ok && data?.success && data.explanation) setExplanation(data.explanation);
+   253→    } catch { /* Non-blocking */ } finally { setExplaining(false); }
+   254→  }, []);
+   255→
+   256→  const activeRequestIdRef = useRef<number>(0);
+   257→  const modeRef            = useRef<DataSourceMode>(mode);
+   258→  const selectedLocationRef = useRef<NamedLocation>(selectedLocation);
+   259→  const durationRef        = useRef<number>(duration);
+   260→
+   261→  useEffect(() => {
+   262→    modeRef.current            = mode;
+   263→    selectedLocationRef.current = selectedLocation;
+   264→    durationRef.current        = duration;
+   265→  }, [mode, selectedLocation, duration]);
+   266→
+   267→  // ──────────────────────────── Decision Pipeline ─────────────────────────────
+   268→
+   269→  const runDecisionPipeline = useCallback(async (
+   270→    loc = selectedLocationRef.current,
+   271→    durationHours = durationRef.current,
+   272→    dataSourceMode = modeRef.current
+   273→  ) => {
+   274→    const requestId = ++activeRequestIdRef.current;
+   275→    setLoading(true);
+   276→    setErrorDetails(null);
+   277→
+   278→    try {
+   279→      const { ok, data } = await safeJsonFetch<{
+   280→        success?: boolean;
+   281→        decision?: DecisionResult;
+   282→        spatialDecision?: SpatialDecisionResult;
+   283→        jointDecision?: JointDecisionResult;
+   284→        scenarioAnalysis?: ScenarioAnalysisResult;
+   285→        spatialField?: PolygonAOI;
+   286→        spatialFieldMetadata?: {
+   287→          baseTimestamp: string;
+   288→          coverageType: string;
+   289→          description: string;
+   290→          totalEvaluatedHours: number;
+   291→        };
+   292→        error?: { code?: string; message?: string; details?: ProductionErrorDetails };
+   293→      }>('/api/decision', {
+   294→        method: 'POST',
+   295→        headers: { 'content-type': 'application/json' },
+   296→        body: JSON.stringify({ latitude: loc.latitude, longitude: loc.longitude, durationHours, mode: dataSourceMode }),
+   297→      });
+   298→
+   299→      if (requestId !== activeRequestIdRef.current) return;
+   300→
+   301→      if (!ok || !data?.success) {
+   302→        if (data?.error?.details) {
+   303→          setErrorDetails(data.error.details);
+   304→        } else {
+   305→          setErrorDetails({
+   306→            code: data?.error?.code || 'PIPELINE_ERROR',
+   307→            message: data?.error?.message || 'Decision pipeline execution failed.',
+   308→            recoverySuggestion: 'Verify parameters and provider connectivity.',
+   309→            category: 'PROVIDER',
+   310→          });
+   311→        }
+   312→        throw new Error(data?.error?.message || 'Decision calculation failed');
+   313→      }
+   314→
+   315→      setDecision(data.decision || null);
+   316→      setSpatialDecision(data.spatialDecision || null);
+   317→      setJointDecision(data.jointDecision || null);
+   318→      setScenarioAnalysis(data.scenarioAnalysis || null);
+   319→      setSpatialField(data.spatialField || null);
+   320→      setSpatialFieldMeta(data.spatialFieldMetadata || null);
+   321→
+   322→      if (dataSourceMode === 'LIVE') setFgStatus('CONNECTED');
+   323→
+   324→      if (data.jointDecision) {
+   325→        const activeScen =
+   326→          data.scenarioAnalysis?.scenarios?.find((s: WhatIfScenarioResult) => s.scenarioId === selectedScenarioId) ||
+   327→          data.scenarioAnalysis?.scenarios?.[0];
+   328→        fetchExplanation(data.jointDecision, activeScen);
+   329→      }
+   330→    } catch {
+   331→      if (requestId === activeRequestIdRef.current) {
+   332→        setDecision(null);
+   333→        setSpatialDecision(null);
+   334→        setJointDecision(null);
+   335→        setScenarioAnalysis(null);
+   336→        setExplanation(null);
+   337→        if (dataSourceMode === 'LIVE') setFgStatus('ERROR');
+   338→      }
+   339→    } finally {
+   340→      if (requestId === activeRequestIdRef.current) setLoading(false);
+   341→    }
+   342→  }, [fetchExplanation, selectedScenarioId]);
+   343→
+   344→  const handleSelectLocation = useCallback((loc: NamedLocation) => {
+   345→    setSelectedLocation(loc);
+   346→    selectedLocationRef.current = loc;
+   347→    setDecision(null);
+   348→    setSpatialDecision(null);
+   349→    setJointDecision(null);
+   350→    setScenarioAnalysis(null);
+   351→    setSpatialField(null);
+   352→    setSpatialFieldMeta(null);
+   353→    setExplanation(null);
+   354→    setErrorDetails(null);
+   355→
+   356→    const currentMode = modeRef.current;
+   357→    if (currentMode === 'LIVE' || isLocationCoveredByFixture(loc)) {
+   358→      runDecisionPipeline(loc, durationRef.current, currentMode);
+   359→    }
+   360→  }, [runDecisionPipeline]);
+   361→
+   362→  const handleModeChange = useCallback((newMode: DataSourceMode) => {
+   363→    modeRef.current = newMode;
+   364→    setMode(newMode);
+   365→    setDecision(null);
+   366→    setSpatialDecision(null);
+   367→    setJointDecision(null);
+   368→    setScenarioAnalysis(null);
+   369→    setSpatialField(null);
+   370→    setSpatialFieldMeta(null);
+   371→    setExplanation(null);
+   372→    setErrorDetails(null);
+   373→
+   374→    void checkFortyGuardHealth(newMode);
+   375→
+   376→    const currentLoc = selectedLocationRef.current;
+   377→    if (newMode === 'FIXTURE') {
+   378→      if (!isLocationCoveredByFixture(currentLoc)) {
+   379→        const defaultFixtureLoc = METROPOLITAN_LOCATIONS[0];
+   380→        setSelectedLocation(defaultFixtureLoc);
+   381→        selectedLocationRef.current = defaultFixtureLoc;
+   382→        runDecisionPipeline(defaultFixtureLoc, durationRef.current, 'FIXTURE');
+   383→      } else {
+   384→        runDecisionPipeline(currentLoc, durationRef.current, 'FIXTURE');
+   385→      }
+   386→    } else {
+   387→      runDecisionPipeline(currentLoc, durationRef.current, 'LIVE');
+   388→    }
+   389→  }, [checkFortyGuardHealth, runDecisionPipeline]);
+   390→
+   391→  // ──────────────────────────── Initial Mount ─────────────────────────────────
+   392→
+   393→  useEffect(() => {
+   394→    let isMounted = true;
+   395→
+   396→    void safeJsonFetch<{ success?: boolean; health?: FortyGuardHealthResponse }>(
+   397→      '/api/health/fortyguard',
+   398→      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'FIXTURE' }) }
+   399→    ).then(({ ok, data }) => {
+   400→      if (!isMounted) return;
+   401→      if (ok && data?.success && data.health) {
+   402→        setFgHealth(data.health);
+   403→        setFgStatus(data.health.connected ? 'CONNECTED' : 'ERROR');
+   404→      }
+   405→    }).catch(() => {});
+   406→
+   407→    void safeJsonFetch<{ success?: boolean; health?: AIHealthResponse }>(
+   408→      '/api/health/ai', { method: 'POST' }
+   409→    ).then(({ ok, data }) => {
+   410→      if (!isMounted) return;
+   411→      if (ok && data?.success && data.health) {
+   412→        setAiHealth(data.health);
+   413→        setAiStatus(data.health.connected ? 'CONNECTED' : data.health.configured ? 'ERROR' : 'UNKNOWN');
+   414→      }
+   415→    }).catch(() => {});
+   416→
+   417→    void (async () => { if (isMounted) await runDecisionPipeline(METROPOLITAN_LOCATIONS[0], 3, 'FIXTURE'); })();
+   418→
+   419→    return () => { isMounted = false; };
+   420→  }, [runDecisionPipeline]);
+   421→
+   422→  // Derived state
+   423→  const isFixtureMismatch = mode === 'FIXTURE' && !isLocationCoveredByFixture(selectedLocation);
+   424→  const activeScenario =
+   425→    scenarioAnalysis?.scenarios?.find((s) => s.scenarioId === selectedScenarioId) ||
+   426→    scenarioAnalysis?.scenarios?.[0] || null;
+   427→  const top3Plans     = jointDecision?.rankedPlans.slice(0, 3) ?? [];
+   428→  const remainingPlans = jointDecision?.rankedPlans.slice(3) ?? [];
+   429→
+   430→  // ─────────────────────────────────────────────────────────────────────────────
+   431→  // RENDER
+   432→  // ─────────────────────────────────────────────────────────────────────────────
+   433→
+   434→  return (
+   435→    <main className="min-h-screen bg-surface-bg text-text-primary" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+   436→
+   437→      {/* ══════════════════════════════════════════════════════════════════════
+   438→          HEADER
+   439→      ══════════════════════════════════════════════════════════════════════ */}
+   440→      <header className="sticky top-0 z-50 border-b border-border backdrop-blur-xl" style={{ background: 'var(--surface-header)' }}>
+   441→        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+   442→
+   443→          {/* Title */}
+   444→          <div className="min-w-0">
+   445→            <h1 className="text-lg sm:text-xl font-black tracking-tight text-text-primary leading-tight">
+   446→              Thermal Decision Engine
+   447→            </h1>
+   448→            <p className="text-[11px] text-text-muted mt-0 hidden sm:block">
+   449→              FortyGuard hyperlocal intelligence → WHERE + WHEN decisions
+   450→            </p>
+   451→          </div>
+   452→
+   453→          {/* Controls */}
+   454→          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+   455→
+   456→            {/* °F / °C toggle */}
+   457→            <div
+   458→              role="group"
+   459→              aria-label="Temperature unit selection"
+   460→              className="flex items-center bg-surface-elevated p-1 rounded-full border border-border"
+   461→              data-testid="temp-unit-toggle"
+   462→            >
+   463→              {(['F', 'C'] as const).map((u) => (
+   464→                <button
+   465→                  key={u}
+   466→                  type="button"
+   467→                  aria-pressed={unit === u}
+   468→                  data-testid={`temp-unit-${u.toLowerCase()}`}
+   469→                  onClick={() => setUnit(u)}
+   470→                  className={`min-h-[36px] min-w-[36px] px-3 py-1 rounded-full text-xs font-bold font-mono transition-all flex items-center justify-center ${
+   471→                    unit === u
+   472→                      ? 'bg-accent-cyan text-white shadow-sm'
+   473→                      : 'text-text-muted hover:text-text-primary'
+   474→                  }`}
+   475→                >
+   476→                  °{u}
+   477→                </button>
+   478→              ))}
+   479→            </div>
+   480→
+   481→            {/* Status indicators */}
+   482→            <div className="hidden sm:flex items-center gap-3">
+   483→              <div className="flex flex-col items-end gap-0.5">
+   484→                <span className="text-[9px] text-text-dimmed uppercase tracking-wider font-medium">FortyGuard</span>
+   485→                <StatusDot status={fgStatus} mode={mode === 'FIXTURE' ? 'FIXTURE' : undefined} />
+   486→              </div>
+   487→
+   488→              <div className="w-px h-7 bg-border" />
+   489→
+   490→              <div className="flex flex-col items-end gap-0.5">
+   491→                <span className="text-[9px] text-text-dimmed uppercase tracking-wider font-medium">AI</span>
+   492→                <StatusDot status={aiStatus} />
+   493→              </div>
+   494→            </div>
+   495→
+   496→            {/* Mode badge */}
+   497→            {mode === 'FIXTURE' ? (
+   498→              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent-amber-bg text-accent-amber border border-border">
+   499→                DEMO
+   500→              </span>
+   501→            ) : (
+   502→              <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent-emerald-bg text-accent-emerald border border-border">
+   503→                LIVE
+   504→              </span>
+   505→            )}
+   506→
+   507→            {/* Theme toggle */}
+   508→            <ThemeToggle />
+   509→          </div>
+   510→        </div>
+   511→      </header>
+   512→
+   513→      {/* ══════════════════════════════════════════════════════════════════════
+   514→          MAIN CONTENT
+   515→      ══════════════════════════════════════════════════════════════════════ */}
+   516→      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-5 lg:py-6">
+   517→        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
+   518→
+   519→          {/* ═══════════════════════════════════════════════════════════════
+   520→              LEFT PANEL — Control Workspace (4 cols on large screens)
+   521→          ═══════════════════════════════════════════════════════════════ */}
+   522→          <div className="lg:col-span-4 space-y-4">
+   523→
+   524→            {/* DEMO notice */}
+   525→            {mode === 'FIXTURE' && (
+   526→              <div className="rounded-xl p-3.5 border border-border bg-accent-amber-bg">
+   527→                <div className="flex items-center gap-2 mb-1">
+   528→                  <span className="text-sm" style={{ color: 'var(--accent-amber)' }}>⬡</span>
+   529→                  <span className="text-sm font-bold" style={{ color: 'var(--accent-amber)' }}>
+   530→                    DEMO — Captured FortyGuard Data
+   531→                  </span>
+   532→                </div>
+   533→                <p className="text-xs leading-relaxed" style={{ color: 'var(--accent-amber-text)', opacity: 0.85 }}>
+   534→                  Offline demonstration using a 12-hour Manhattan thermal field capture.
+   535→                  Switch to LIVE API to analyse any location in real time.
+   536→                </p>
+   537→              </div>
+   538→            )}
+   539→
+   540→            {/* ── Execution Mode ── */}
+   541→            <div className="rounded-xl border border-border bg-surface-card p-4">
+   542→              <SectionHeading>Execution Mode</SectionHeading>
+   543→              <div className="grid grid-cols-2 gap-2">
+   544→                <button
+   545→                  onClick={() => handleModeChange('FIXTURE')}
+   546→                  className={`min-h-[44px] rounded-lg text-sm font-semibold transition-all border ${
+   547→                    mode === 'FIXTURE'
+   548→                      ? 'border-accent-amber bg-accent-amber-bg text-accent-amber'
+   549→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   550→                  }`}
+   551→                >
+   552→                  DEMO
+   553→                </button>
+   554→                <button
+   555→                  onClick={() => handleModeChange('LIVE')}
+   556→                  className={`min-h-[44px] rounded-lg text-sm font-semibold transition-all border ${
+   557→                    mode === 'LIVE'
+   558→                      ? 'border-accent-emerald bg-accent-emerald-bg text-accent-emerald'
+   559→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   560→                  }`}
+   561→                >
+   562→                  LIVE API
+   563→                </button>
+   564→              </div>
+   565→            </div>
+   566→
+   567→            {/* ── Location + Duration + Run ── */}
+   568→            <div className="rounded-xl border border-border bg-surface-card p-4 space-y-4">
+   569→              <LocationSearch
+   570→                selectedLocation={selectedLocation}
+   571→                mode={mode}
+   572→                onSelectLocation={handleSelectLocation}
+   573→                onSwitchToLive={() => handleModeChange('LIVE')}
+   574→              />
+   575→
+   576→              <div className="border-t border-border" />
+   577→
+   578→              {/* Duration slider */}
+   579→              <div>
+   580→                <div className="flex items-center justify-between mb-2">
+   581→                  <span className="text-sm font-medium text-text-secondary">Operation Duration</span>
+   582→                  <span className="text-base font-black text-accent-cyan font-mono" data-testid="duration-display">
+   583→                    {duration}h
+   584→                  </span>
+   585→                </div>
+   586→                <div className="relative h-2 bg-surface-deep rounded-full">
+   587→                  <div
+   588→                    className="absolute left-0 top-0 h-full rounded-full transition-all"
+   589→                    style={{
+   590→                      width: `${((duration - 1) / 3) * 100}%`,
+   591→                      background: 'var(--accent-cyan)',
+   592→                    }}
+   593→                  />
+   594→                  <input
+   595→                    type="range" min={1} max={4} step={1} value={duration}
+   596→                    onChange={(e) => {
+   597→                      const dur = parseInt(e.target.value);
+   598→                      setDuration(dur);
+   599→                      if (mode === 'LIVE' || isLocationCoveredByFixture(selectedLocation)) {
+   600→                        runDecisionPipeline(selectedLocation, dur, mode);
+   601→                      }
+   602→                    }}
+   603→                    className="absolute inset-0 w-full opacity-0 cursor-pointer h-full"
+   604→                  />
+   605→                </div>
+   606→                <div className="flex justify-between text-[10px] text-text-dimmed mt-1.5 font-mono">
+   607→                  {[1,2,3,4].map(h => (
+   608→                    <span key={h} className={duration === h ? 'font-bold' : ''} style={duration === h ? { color: 'var(--accent-cyan)' } : {}}>
+   609→                      {h}h
+   610→                    </span>
+   611→                  ))}
+   612→                </div>
+   613→              </div>
+   614→
+   615→              <div className="border-t border-border" />
+   616→
+   617→              {/* Active location indicator */}
+   618→              <div
+   619→                className="rounded-lg p-3 bg-surface-deep border border-border space-y-1"
+   620→                data-testid="active-analysis-location-indicator"
+   621→              >
+   622→                <div className="flex items-center justify-between">
+   623→                  <span className="text-[9px] font-bold uppercase tracking-widest text-text-dimmed">Analysis Location</span>
+   624→                  <span
+   625→                    className="px-2 py-0.5 rounded text-[10px] font-bold border"
+   626→                    style={mode === 'LIVE'
+   627→                      ? { background: 'var(--accent-cyan-bg)', color: 'var(--accent-cyan)', borderColor: 'var(--accent-cyan)' }
+   628→                      : { background: 'var(--accent-amber-bg)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)' }
+   629→                    }
+   630→                    data-testid="analysis-mode-badge"
+   631→                  >
+   632→                    {mode === 'LIVE' ? 'LIVE — FortyGuard' : 'DEMO — Manhattan Fixture'}
+   633→                  </span>
+   634→                </div>
+   635→                <div className="text-sm font-bold text-text-primary leading-tight" data-testid="active-analysis-location-name">
+   636→                  {selectedLocation.name}
+   637→                </div>
+   638→                <div className="text-[11px] font-mono flex items-center justify-between" style={{ color: 'var(--accent-cyan)' }} data-testid="active-analysis-location-coords">
+   639→                  <span>{selectedLocation.latitude.toFixed(4)}°, {selectedLocation.longitude.toFixed(4)}°</span>
+   640→                  {selectedLocation.city && (
+   641→                    <span className="text-text-muted font-sans text-[10px]">
+   642→                      {selectedLocation.city}, {selectedLocation.state || selectedLocation.country}
+   643→                    </span>
+   644→                  )}
+   645→                </div>
+   646→              </div>
+   647→
+   648→              {/* Run button */}
+   649→              {isFixtureMismatch ? (
+   650→                <button
+   651→                  onClick={() => handleModeChange('LIVE')}
+   652→                  data-testid="recalculate-decision-btn"
+   653→                  className="w-full h-12 rounded-xl text-sm font-bold transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 text-white"
+   654→                  style={{ background: 'linear-gradient(135deg, var(--accent-emerald), #0d9488)', boxShadow: '0 4px 16px rgba(5,150,105,0.3)' }}
+   655→                >
+   656→                  ⚡ Switch to LIVE to Calculate
+   657→                </button>
+   658→              ) : (
+   659→                <button
+   660→                  disabled={loading}
+   661→                  onClick={() => runDecisionPipeline(selectedLocation, duration, mode)}
+   662→                  data-testid="recalculate-decision-btn"
+   663→                  className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+   664→                    loading
+   665→                      ? 'bg-surface-elevated text-text-dimmed cursor-not-allowed'
+   666→                      : 'text-white hover:scale-[1.01] active:scale-[0.99]'
+   667→                  }`}
+   668→                  style={loading ? {} : {
+   669→                    background: 'linear-gradient(135deg, var(--accent-cyan), #0284c7)',
+   670→                    boxShadow: '0 4px 16px rgba(14,165,233,0.3)',
+   671→                  }}
+   672→                >
+   673→                  {loading ? (
+   674→                    <span className="flex items-center gap-2">
+   675→                      <span className="w-4 h-4 border-2 border-text-dimmed border-t-accent-cyan rounded-full animate-spin" style={{ borderTopColor: 'var(--accent-cyan)' }} />
+   676→                      Evaluating thermal field…
+   677→                    </span>
+   678→                  ) : '⚡ Calculate Decision'}
+   679→                </button>
+   680→              )}
+   681→            </div>
+   682→
+   683→            {/* ── Provider Health ── */}
+   684→            <ProviderHealthCard
+   685→              mode={mode}
+   686→              fortyGuardStatus={fgStatus}
+   687→              fortyGuardHealth={fgHealth}
+   688→              aiStatus={aiStatus}
+   689→              aiHealth={aiHealth}
+   690→              onTestFortyGuard={() => checkFortyGuardHealth(mode)}
+   691→              onTestAI={checkAIHealth}
+   692→            />
+   693→
+   694→            <div className="text-[10px] text-text-dimmed font-mono text-center">
+   695→              FortyGuard Hackathon&apos;26
+   696→            </div>
+   697→          </div>
+   698→
+   699→          {/* ═══════════════════════════════════════════════════════════════
+   700→              RIGHT PANEL — Decision Workspace (8 cols)
+   701→          ═══════════════════════════════════════════════════════════════ */}
+   702→          <div className="lg:col-span-8 space-y-5">
+   703→
+   704→            {/* ── Error Banner ── */}
+   705→            {errorDetails && (
+   706→              <div
+   707→                className="rounded-xl p-4 border-2 space-y-3"
+   708→                style={{ borderColor: 'var(--accent-red)', background: 'var(--accent-red-bg)' }}
+   709→                data-testid="production-error-banner"
+   710→              >
+   711→                <div className="flex items-start justify-between gap-3">
+   712→                  <div>
+   713→                    <div className="flex items-center gap-2 mb-1">
+   714→                      <span className="text-base">🔴</span>
+   715→                      <span className="font-bold text-sm" style={{ color: 'var(--accent-red-text)' }}>
+   716→                        {errorDetails.code === 'OUTSIDE_COVERAGE'
+   717→                          ? 'FortyGuard Coverage Unavailable'
+   718→                          : 'Analysis Halted'}
+   719→                      </span>
+   720→                      <code className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-surface-elevated text-text-muted">
+   721→                        {errorDetails.code}
+   722→                      </code>
+   723→                    </div>
+   724→                    <p className="text-sm leading-relaxed" style={{ color: 'var(--accent-red-text)' }}>{errorDetails.message}</p>
+   725→                    <p className="text-xs mt-1 text-text-muted">
+   726→                      <strong className="text-text-primary">Action:</strong> {errorDetails.recoverySuggestion}
+   727→                    </p>
+   728→                  </div>
+   729→                  <div className="flex gap-2 shrink-0">
+   730→                    <button
+   731→                      onClick={() => runDecisionPipeline(selectedLocation, duration, mode)}
+   732→                      className="px-3 py-1.5 text-xs rounded-lg border border-border bg-surface-elevated text-text-primary hover:bg-surface-deep transition-colors"
+   733→                    >
+   734→                      Retry
+   735→                    </button>
+   736→                    {mode === 'LIVE' && (
+   737→                      <button
+   738→                        onClick={() => handleModeChange('FIXTURE')}
+   739→                        className="px-3 py-1.5 text-xs rounded-lg border text-accent-amber hover:bg-accent-amber-bg transition-colors"
+   740→                        style={{ borderColor: 'var(--accent-amber)', background: 'var(--accent-amber-bg)' }}
+   741→                      >
+   742→                        Demo Mode
+   743→                      </button>
+   744→                    )}
+   745→                  </div>
+   746→                </div>
+   747→
+   748→                {/* Alternative locations */}
+   749→                <div className="pt-2 border-t border-border text-xs">
+   750→                  <span className="text-text-muted">Supported metro alternatives: </span>
+   751→                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+   752→                    {METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly).slice(0, 4).map((altLoc) => (
+   753→                      <button
+   754→                        key={altLoc.id}
+   755→                        onClick={() => { handleSelectLocation(altLoc); runDecisionPipeline(altLoc, duration, 'LIVE'); }}
+   756→                        className="px-2 py-1 rounded border border-border bg-surface-elevated text-accent-cyan hover:border-accent-cyan text-[10px] font-mono transition-colors"
+   757→                      >
+   758→                        {altLoc.name}
+   759→                      </button>
+   760→                    ))}
+   761→                  </div>
+   762→                </div>
+   763→              </div>
+   764→            )}
+   765→
+   766→            {/* ══ THERMAL MAP ══════════════════════════════════════════════════ */}
+   767→            <div className="rounded-xl border border-border bg-surface-card overflow-hidden">
+   768→              <div className="px-4 pt-4 pb-3 flex items-center justify-between">
+   769→                <div>
+   770→                  <h2 className="text-base font-bold text-text-primary">Thermal Map</h2>
+   771→                  <p className="text-xs text-text-muted mt-0.5">
+   772→                    FortyGuard spatial temperature distribution
+   773→                    {spatialFieldMeta?.baseTimestamp && (
+   774→                      <span className="font-mono ml-1.5" style={{ color: 'var(--accent-cyan)', opacity: 0.8 }}>
+   775→                        · {new Date(spatialFieldMeta.baseTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC
+   776→                      </span>
+   777→                    )}
+   778→                  </p>
+   779→                </div>
+   780→                <span className="text-xs text-text-dimmed font-mono hidden sm:block">
+   781→                  {selectedLocation.name.split(' (')[0]}
+   782→                </span>
+   783→              </div>
+   784→
+   785→              <div className="px-4 pb-4">
+   786→                <ThermalMap
+   787→                  location={{ latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }}
+   788→                  spatialField={spatialField}
+   789→                  selectedTileId={decision?.evidenceBundle.selectedTileId}
+   790→                  candidates={spatialDecision?.rankedLocations.map((r) => ({
+   791→                    locationId: r.locationId,
+   792→                    name: r.name,
+   793→                    location: r.location,
+   794→                  }))}
+   795→                  recommendedLocationId={spatialDecision?.recommendedLocation.locationId}
+   796→                  unit={unit}
+   797→                />
+   798→              </div>
+   799→            </div>
+   800→
+   801→            {/* ══ RECOMMENDED OPERATIONAL PLAN ════════════════════════════════ */}
+   802→            {jointDecision && !errorDetails ? (
+   803→              <div
+   804→                className="rounded-xl border bg-surface-card overflow-hidden card-enter"
+   805→                style={{ borderColor: 'var(--accent-emerald)' }}
+   806→                data-testid="decision-card"
+   807→              >
+   808→                {/* Hero row */}
+   809→                <div className="px-5 pt-5 pb-5">
+   810→                  <div className="flex items-center gap-2 mb-5">
+   811→                    <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: 'var(--accent-emerald)' }}>
+   812→                      ★ Recommended Operational Plan
+   813→                    </span>
+   814→                    <span
+   815→                      className="px-2 py-0.5 rounded text-[10px] font-mono border"
+   816→                      style={{ background: 'var(--surface-elevated)', color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+   817→                    >
+   818→                      {jointDecision.dataSource}
+   819→                    </span>
+   820→                  </div>
+   821→
+   822→                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+   823→                    {/* WHERE */}
+   824→                    <div className="space-y-1">
+   825→                      <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">📍 WHERE</div>
+   826→                      <div className="text-xl font-black text-text-primary leading-tight">
+   827→                        {jointDecision.recommendedPlan.location.name.split(' (')[0]}
+   828→                      </div>
+   829→                      <div className="text-[11px] font-mono text-text-muted">
+   830→                        {jointDecision.recommendedPlan.location.locationId}
+   831→                      </div>
+   832→                    </div>
+   833→
+   834→                    {/* WHEN */}
+   835→                    <div className="space-y-1">
+   836→                      <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">⏱ WHEN</div>
+   837→                      <div className="text-xl font-black text-text-primary font-mono leading-tight">
+   838→                        {fmtTimeWindow(jointDecision.recommendedPlan.window.startTime, jointDecision.recommendedPlan.window.endTime, selectedLocation.timezone)}
+   839→                      </div>
+   840→                      <div className="text-[11px] text-text-muted">
+   841→                        <span data-testid="recommended-duration">{jointDecision.recommendedPlan.window.durationHours}h duration</span>
+   842→                      </div>
+   843→                    </div>
+   844→
+   845→                    {/* TEMP */}
+   846→                    <div className="space-y-1">
+   847→                      <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+   848→                        🌡 MODELED TEMP ({tempUnitSuffix(unit)})
+   849→                      </div>
+   850→                      <div
+   851→                        className="text-4xl font-black font-mono leading-tight thermal-glow-emerald"
+   852→                        style={{ color: 'var(--accent-emerald)' }}
+   853→                        data-testid="recommended-temp-display"
+   854→                      >
+   855→                        {fmtTemp(jointDecision.recommendedPlan.exposureScore, unit)}
+   856→                      </div>
+   857→                      <div className="text-[11px] text-text-muted">Mean across window</div>
+   858→                    </div>
+   859→                  </div>
+   860→
+   861→                  {/* Advantage banner */}
+   862→                  {jointDecision.rankedPlans.length > 1 && (
+   863→                    <div
+   864→                      className="mt-5 rounded-lg px-4 py-3 text-sm"
+   865→                      style={{
+   866→                        background: 'var(--accent-emerald-bg)',
+   867→                        border: '1px solid var(--accent-emerald)',
+   868→                        color: 'var(--accent-emerald-text)',
+   869→                      }}
+   870→                    >
+   871→                      <span className="font-semibold">Best feasible plan</span> across{' '}
+   872→                      <strong className="text-text-primary">{jointDecision.searchSpace.locationCount} locations × {jointDecision.searchSpace.windowCount} windows</strong>{' '}
+   873→                      ({jointDecision.searchSpace.totalEvaluatedPlans} evaluated). Saves{' '}
+   874→                      <span className="font-black font-mono thermal-glow-amber" style={{ color: 'var(--accent-amber)' }} data-testid="advantage-delta-display">
+   875→                        {fmtTempDelta(jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1].deltaVsBest, unit)}
+   876→                      </span>{' '}
+   877→                      vs worst plan.
+   878→                    </div>
+   879→                  )}
+   880→                </div>
+   881→
+   882→                {/* ── Top 3 candidate plans ── */}
+   883→                <div className="px-5 py-4 border-t border-border">
+   884→                  <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed mb-3">
+   885→                    Top Candidate Plans
+   886→                  </div>
+   887→                  <div className="space-y-2" data-testid="top-3-plans">
+   888→                    {top3Plans.map((plan) => (
+   889→                      <div
+   890→                        key={plan.planId}
+   891→                        className={`flex items-center justify-between rounded-lg px-3 py-2.5 border ${
+   892→                          plan.rank === 1 ? '' : ''
+   893→                        }`}
+   894→                        style={plan.rank === 1
+   895→                          ? { background: 'var(--accent-emerald-bg)', borderColor: 'var(--accent-emerald)' }
+   896→                          : { background: 'var(--surface-elevated)', borderColor: 'var(--border)' }
+   897→                        }
+   898→                      >
+   899→                        <div className="flex items-center gap-3 min-w-0">
+   900→                          <span
+   901→                            className="text-sm font-bold font-mono shrink-0"
+   902→                            style={{ color: plan.rank === 1 ? 'var(--accent-emerald)' : 'var(--text-dimmed)' }}
+   903→                          >
+   904→                            #{plan.rank}
+   905→                          </span>
+   906→                          <div className="min-w-0">
+   907→                            <div
+   908→                              className="text-sm font-semibold truncate"
+   909→                              style={{ color: plan.rank === 1 ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+   910→                            >
+   911→                              {plan.location.name.split(' (')[0]}
+   912→                            </div>
+   913→                            <div className="text-[11px] font-mono text-text-muted">
+   914→                              {fmtTimeWindow(plan.window.startTime, plan.window.endTime, selectedLocation.timezone)}
+   915→                            </div>
+   916→                          </div>
+   917→                        </div>
+   918→                        <div className="text-right shrink-0 ml-3">
+   919→                          <div
+   920→                            className="text-base font-black font-mono"
+   921→                            style={{ color: plan.rank === 1 ? 'var(--accent-emerald)' : 'var(--text-secondary)' }}
+   922→                          >
+   923→                            {fmtTemp(plan.exposureScore, unit)}
+   924→                          </div>
+   925→                          {plan.deltaVsBest > 0 && (
+   926→                            <div className="text-[11px] font-mono" style={{ color: 'var(--accent-amber)' }}>
+   927→                              {fmtTempDelta(plan.deltaVsBest, unit)}
+   928→                            </div>
+   929→                          )}
+   930→                        </div>
+   931→                      </div>
+   932→                    ))}
+   933→                  </div>
+   934→
+   935→                  {/* Show all / collapse */}
+   936→                  {remainingPlans.length > 0 && (
+   937→                    <div className="mt-3">
+   938→                      <button
+   939→                        onClick={() => setShowAllPlans(!showAllPlans)}
+   940→                        className="text-[11px] font-medium transition-colors flex items-center gap-1"
+   941→                        style={{ color: 'var(--accent-cyan)' }}
+   942→                      >
+   943→                        {showAllPlans ? '▲ Hide' : `▼ Show all ${jointDecision.rankedPlans.length} plans`}
+   944→                      </button>
+   945→
+   946→                      {showAllPlans && (
+   947→                        <div className="mt-2 overflow-x-auto rounded-lg border border-border">
+   948→                          <table className="w-full text-xs font-mono text-left" data-testid="candidate-plans-table">
+   949→                            <thead className="bg-surface-deep text-text-muted border-b border-border">
+   950→                              <tr>
+   951→                                <th className="py-2 px-3">Rank</th>
+   952→                                <th className="py-2 px-3">Location</th>
+   953→                                <th className="py-2 px-3">Window (UTC)</th>
+   954→                                <th className="py-2 px-3">Tile</th>
+   955→                                <th className="py-2 px-3">Exposure ({tempUnitSuffix(unit)})</th>
+   956→                                <th className="py-2 px-3">Δ Best</th>
+   957→                              </tr>
+   958→                            </thead>
+   959→                            <tbody className="divide-y divide-border">
+   960→                              {jointDecision.rankedPlans.map((plan) => (
+   961→                                <tr
+   962→                                  key={plan.planId}
+   963→                                  style={plan.rank === 1
+   964→                                    ? { background: 'var(--accent-emerald-bg)', color: 'var(--accent-emerald-text)' }
+   965→                                    : { color: 'var(--text-muted)' }
+   966→                                  }
+   967→                                >
+   968→                                  <td className="py-2 px-3 font-bold">#{plan.rank}</td>
+   969→                                  <td className="py-2 px-3">
+   970→                                    <span style={{ color: 'var(--accent-cyan)' }}>{plan.location.locationId}</span>{' '}
+   971→                                    <span className="text-[10px] text-text-dimmed">({plan.location.name.split(' (')[0]})</span>
+   972→                                  </td>
+   973→                                  <td className="py-2 px-3">{fmtTimeWindow(plan.window.startTime, plan.window.endTime, selectedLocation.timezone)}</td>
+   974→                                  <td className="py-2 px-3 text-text-dimmed">{plan.tileId}</td>
+   975→                                  <td className="py-2 px-3 font-bold">{fmtTemp(plan.exposureScore, unit)}</td>
+   976→                                  <td className="py-2 px-3">
+   977→                                    {plan.deltaVsBest === 0 ? (
+   978→                                      <span style={{ color: 'var(--accent-emerald)' }}>0.00 (Best)</span>
+   979→                                    ) : (
+   980→                                      <span style={{ color: 'var(--accent-amber)' }}>{fmtTempDelta(plan.deltaVsBest, unit)}</span>
+   981→                                    )}
+   982→                                  </td>
+   983→                                </tr>
+   984→                              ))}
+   985→                            </tbody>
+   986→                          </table>
+   987→                        </div>
+   988→                      )}
+   989→                    </div>
+   990→                  )}
+   991→                </div>
+   992→
+   993→                {/* Data provenance */}
+   994→                <div className="px-5 py-3 border-t border-border">
+   995→                  <button
+   996→                    onClick={() => setShowProvenance(!showProvenance)}
+   997→                    className="text-[11px] text-text-dimmed hover:text-text-muted transition-colors flex items-center gap-1"
+   998→                  >
+   999→                    {showProvenance ? '▲ Hide' : '▼ Data provenance'}
+  1000→                  </button>
+  1001→                  {showProvenance && (
+  1002→                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+  1003→                      <div className="rounded-lg p-3 border border-border bg-surface-elevated space-y-1">
+  1004→                        <div className="flex items-center gap-1.5">
+  1005→                          <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent-cyan)' }} />
+  1006→                          <span className="font-bold" style={{ color: 'var(--accent-cyan)' }}>DATA SOURCE</span>
+  1007→                        </div>
+  1008→                        <p className="font-mono text-[11px] text-text-muted">
+  1009→                          Mode: <span className="text-text-primary">{jointDecision.dataSource}</span>
+  1010→                        </p>
+  1011→                        <p className="text-[11px] text-text-dimmed">
+  1012→                          {jointDecision.searchSpace.locationCount} spatial sites × {jointDecision.searchSpace.windowCount} windows
+  1013→                          = {jointDecision.searchSpace.totalEvaluatedPlans} plans evaluated.
+  1014→                        </p>
+  1015→                      </div>
+  1016→                      <div className="rounded-lg p-3 border border-border bg-surface-elevated space-y-1">
+  1017→                        <div className="flex items-center gap-1.5">
+  1018→                          <span className="w-2 h-2 rounded-full" style={{ background: 'var(--accent-indigo)' }} />
+  1019→                          <span className="font-bold" style={{ color: 'var(--accent-indigo)' }}>DERIVED</span>
+  1020→                        </div>
+  1021→                        <p className="text-[11px] text-text-muted">
+  1022→                          Tile average temperatures are FortyGuard spatial polygon aggregations (<span className="font-mono" style={{ color: 'var(--accent-cyan)' }}>DERIVED</span>).
+  1023→                        </p>
+  1024→                      </div>
+  1025→                    </div>
+  1026→                  )}
+  1027→                </div>
+  1028→              </div>
+  1029→            ) : !loading && !errorDetails ? (
+  1030→              <div className="rounded-xl border border-border bg-surface-card px-5 py-12 text-center">
+  1031→                <div className="text-2xl mb-2">🌡</div>
+  1032→                <p className="text-text-muted text-sm font-medium">Run the decision to see the recommended operational plan.</p>
+  1033→                <p className="text-text-dimmed text-xs mt-1">Select a location, set a duration, then click Calculate.</p>
+  1034→              </div>
+  1035→            ) : null}
+  1036→
+  1037→            {/* ══ WHAT-IF CONSTRAINT SENSITIVITY ═════════════════════════════ */}
+  1038→            {scenarioAnalysis && scenarioAnalysis.scenarios.length > 0 && !errorDetails && (
+  1039→              <div className="rounded-xl border border-border bg-surface-card overflow-hidden" data-testid="what-if-card">
+  1040→                <div className="px-5 pt-5 pb-4 border-b border-border">
+  1041→                  <div className="flex items-center gap-2 mb-1">
+  1042→                    <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: 'var(--accent-indigo)' }}>
+  1043→                      ⊕ What-If Constraint Sensitivity
+  1044→                    </span>
+  1045→                  </div>
+  1046→                  <p className="text-xs text-text-muted">
+  1047→                    Modeled temperature cost when operational constraints override the unconstrained optimum P₀.
+  1048→                  </p>
+  1049→                </div>
+  1050→
+  1051→                <div className="px-5 py-4">
+  1052→                  {/* Scenario selector */}
+  1053→                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-5">
+  1054→                    {scenarioAnalysis.scenarios.map((sc) => (
+  1055→                      <button
+  1056→                        key={sc.scenarioId}
+  1057→                        onClick={() => {
+  1058→                          setSelectedScenarioId(sc.scenarioId);
+  1059→                          if (jointDecision) fetchExplanation(jointDecision, sc);
+  1060→                        }}
+  1061→                        className="text-left rounded-lg px-3 py-2.5 text-sm transition-all border"
+  1062→                        style={selectedScenarioId === sc.scenarioId
+  1063→                          ? { background: 'var(--accent-indigo-bg)', borderColor: 'var(--accent-indigo)', color: 'var(--text-primary)' }
+  1064→                          : { background: 'var(--surface-elevated)', borderColor: 'var(--border)', color: 'var(--text-muted)' }
+  1065→                        }
+  1066→                      >
+  1067→                        <div className="font-semibold text-[13px] leading-tight">{sc.scenarioName}</div>
+  1068→                        <div className="text-[10px] opacity-70 mt-0.5">{sc.constraintType}</div>
+  1069→                      </button>
+  1070→                    ))}
+  1071→                  </div>
+  1072→
+  1073→                  {/* Constraint flow */}
+  1074→                  {activeScenario && (
+  1075→                    <div className="space-y-3">
+  1076→                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  1077→                        {/* Baseline */}
+  1078→                        <div className="rounded-lg p-4 border border-border bg-surface-elevated">
+  1079→                          <div className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--accent-cyan)' }}>BASELINE P₀</div>
+  1080→                          <div
+  1081→                            className="text-2xl font-black font-mono mb-1"
+  1082→                            style={{ color: 'var(--accent-cyan)' }}
+  1083→                            data-testid="whatif-baseline-temp"
+  1084→                          >
+  1085→                            {fmtTemp(activeScenario.baselinePlan.exposureScore, unit)}
+  1086→                          </div>
+  1087→                          <div className="text-sm font-semibold text-text-primary leading-tight">
+  1088→                            {activeScenario.baselinePlan.location.name.split(' (')[0]}
+  1089→                          </div>
+  1090→                          <div className="text-[11px] font-mono text-text-muted mt-0.5">
+  1091→                            {fmtTimeWindow(activeScenario.baselinePlan.window.startTime, activeScenario.baselinePlan.window.endTime, selectedLocation.timezone)}
+  1092→                          </div>
+  1093→                        </div>
+  1094→
+  1095→                        {/* Constraint */}
+  1096→                        <div className="rounded-lg p-4 border flex flex-col justify-center" style={{ background: 'var(--accent-indigo-bg)', borderColor: 'var(--accent-indigo)' }}>
+  1097→                          <div className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--accent-indigo)' }}>CONSTRAINT</div>
+  1098→                          <div className="text-sm font-semibold text-text-primary leading-snug">
+  1099→                            {activeScenario.constraintDescription}
+  1100→                          </div>
+  1101→                          <div className="text-[10px] font-mono mt-1.5 opacity-80" style={{ color: 'var(--accent-indigo)' }}>
+  1102→                            {activeScenario.constraintType}
+  1103→                          </div>
+  1104→                        </div>
+  1105→
+  1106→                        {/* Constrained result */}
+  1107→                        <div className="rounded-lg p-4 border bg-surface-elevated" style={{ borderColor: 'var(--accent-amber)' }}>
+  1108→                          <div className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--accent-amber)' }}>CONSTRAINED P&apos;</div>
+  1109→                          <div
+  1110→                            className="text-2xl font-black font-mono mb-1"
+  1111→                            style={{ color: 'var(--accent-amber)' }}
+  1112→                            data-testid="whatif-constrained-temp"
+  1113→                          >
+  1114→                            {activeScenario.constrainedPlan
+  1115→                              ? fmtTemp(activeScenario.constrainedPlan.exposureScore, unit)
+  1116→                              : 'Infeasible'}
+  1117→                          </div>
+  1118→                          <div className="text-sm font-semibold text-text-primary leading-tight">
+  1119→                            {activeScenario.constrainedPlan?.location.name.split(' (')[0] || 'No Feasible Plan'}
+  1120→                          </div>
+  1121→                          <div className="text-[11px] font-mono text-text-muted mt-0.5">
+  1122→                            {activeScenario.constrainedPlan
+  1123→                              ? fmtTimeWindow(activeScenario.constrainedPlan.window.startTime, activeScenario.constrainedPlan.window.endTime, selectedLocation.timezone)
+  1124→                              : activeScenario.infeasibleReason || 'Infeasible'}
+  1125→                          </div>
+  1126→                        </div>
+  1127→                      </div>
+  1128→
+  1129→                      {/* Thermal cost banner */}
+  1130→                      {activeScenario.status === 'FEASIBLE' && activeScenario.costOfConstraintCelsius !== null ? (
+  1131→                        <div className="constraint-cost rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  1132→                          <div className="flex items-baseline gap-3">
+  1133→                            <span
+  1134→                              className="text-4xl font-black font-mono thermal-glow-amber"
+  1135→                              style={{ color: 'var(--accent-amber)' }}
+  1136→                              data-testid="whatif-cost-display"
+  1137→                            >
+  1138→                              {fmtTempDelta(activeScenario.costOfConstraintCelsius, unit)}
+  1139→                            </span>
+  1140→                            <div>
+  1141→                              <div className="text-sm font-bold text-text-primary">THERMAL COST</div>
+  1142→                              <div className="text-xs text-text-muted">
+  1143→                                Temperature increase under {activeScenario.scenarioName}
+  1144→                              </div>
+  1145→                            </div>
+  1146→                          </div>
+  1147→                          <div className="flex items-center gap-2 text-[11px] font-mono flex-wrap">
+  1148→                            {[
+  1149→                              { label: 'Location', shifted: activeScenario.locationShifted },
+  1150→                              { label: 'Window',   shifted: activeScenario.windowShifted },
+  1151→                            ].map(({ label, shifted }) => (
+  1152→                              <span
+  1153→                                key={label}
+  1154→                                className="px-2 py-1 rounded border"
+  1155→                                style={shifted
+  1156→                                  ? { background: 'var(--accent-amber-bg)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)' }
+  1157→                                  : { background: 'var(--surface-elevated)', color: 'var(--text-muted)', borderColor: 'var(--border)' }
+  1158→                                }
+  1159→                              >
+  1160→                                {label}: {shifted ? 'Shifted' : 'Same'}
+  1161→                              </span>
+  1162→                            ))}
+  1163→                          </div>
+  1164→                        </div>
+  1165→                      ) : (
+  1166→                        <div className="rounded-lg px-4 py-3 text-sm border" style={{ background: 'var(--accent-red-bg)', borderColor: 'var(--accent-red)', color: 'var(--accent-red-text)' }}>
+  1167→                          ⚠️ Infeasible Scenario: {activeScenario.infeasibleReason}
+  1168→                        </div>
+  1169→                      )}
+  1170→                    </div>
+  1171→                  )}
+  1172→                </div>
+  1173→              </div>
+  1174→            )}
+  1175→
+  1176→            {/* ══ DECISION EXPLANATION ════════════════════════════════════════ */}
+  1177→            {explanation && !errorDetails && (() => {
+  1178→              const displayExplanation = translateExplanationToUnit(explanation, unit);
+  1179→              const summaryText         = formatIsoTimesInText(displayExplanation.summary, selectedLocation.timezone);
+  1180→              const whyThisPlanText     = formatIsoTimesInText(displayExplanation.whyThisPlan, selectedLocation.timezone);
+  1181→              const constraintImpactText = displayExplanation.constraintImpact
+  1182→                ? formatIsoTimesInText(displayExplanation.constraintImpact, selectedLocation.timezone)
+  1183→                : '';
+  1184→              return (
+  1185→                <div className="rounded-xl border border-border bg-surface-card overflow-hidden">
+  1186→                  <div className="px-5 pt-5 pb-4 border-b border-border">
+  1187→                    <div className="flex items-center justify-between gap-3">
+  1188→                      <div className="flex items-center gap-2 flex-wrap">
+  1189→                        <span className="text-[11px] font-black uppercase tracking-widest text-text-dimmed">
+  1190→                          Decision Explanation
+  1191→                        </span>
+  1192→                        {displayExplanation.generatedBy === 'AI_GROUNDED_EXPLAINER' ? (
+  1193→                          <span
+  1194→                            className="px-2 py-0.5 rounded text-[10px] font-semibold border"
+  1195→                            style={{ background: 'var(--accent-indigo-bg)', color: 'var(--accent-indigo)', borderColor: 'var(--accent-indigo)' }}
+  1196→                          >
+  1197→                            🤖 Gemini Grounded AI
+  1198→                          </span>
+  1199→                        ) : (
+  1200→                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold border border-border bg-surface-elevated text-text-muted">
+  1201→                            ⚡ Deterministic Explainer
+  1202→                          </span>
+  1203→                        )}
+  1204→                      </div>
+  1205→                      <button
+  1206→                        disabled={explaining}
+  1207→                        onClick={() => {
+  1208→                          if (jointDecision) {
+  1209→                            const activeScen = scenarioAnalysis?.scenarios?.find((s) => s.scenarioId === selectedScenarioId);
+  1210→                            fetchExplanation(jointDecision, activeScen);
+  1211→                          }
+  1212→                        }}
+  1213→                        className="text-[11px] text-text-dimmed hover:text-text-muted transition-colors shrink-0"
+  1214→                      >
+  1215→                        {explaining ? '↻ Synthesizing…' : '↻ Refresh'}
+  1216→                      </button>
+  1217→                    </div>
+  1218→                  </div>
+  1219→
+  1220→                  <div className="px-5 py-4 space-y-3">
+  1221→                    {/* Summary */}
+  1222→                    <div className="rounded-lg bg-surface-deep border border-border p-4">
+  1223→                      <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--accent-indigo)' }}>Operational Summary</div>
+  1224→                      <p className="text-text-primary leading-relaxed text-sm">{summaryText}</p>
+  1225→                    </div>
+  1226→
+  1227→                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  1228→                      <div className="rounded-lg bg-surface-deep border border-border p-4">
+  1229→                        <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--accent-cyan)' }}>Why This Plan Wins</div>
+  1230→                        <p className="text-text-secondary leading-relaxed text-sm">{whyThisPlanText}</p>
+  1231→                      </div>
+  1232→
+  1233→                      {constraintImpactText && (
+  1234→                        <div className="rounded-lg bg-surface-deep border border-border p-4">
+  1235→                          <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--accent-amber)' }}>What-If Impact</div>
+  1236→                          <p className="text-text-secondary leading-relaxed text-sm">{constraintImpactText}</p>
+  1237→                        </div>
+  1238→                      )}
+  1239→                    </div>
+  1240→
+  1241→                    {/* Epistemic boundary */}
+  1242→                    <div className="rounded-lg p-3 border border-border bg-surface-elevated">
+  1243→                      <div className="flex items-center gap-1.5 mb-1">
+  1244→                        <span className="text-xs">🛡️</span>
+  1245→                        <span className="text-[10px] font-semibold text-text-muted">Epistemic & Provenance Boundary</span>
+  1246→                        {displayExplanation.fallbackReason && (
+  1247→                          <code className="text-[9px] font-mono ml-1" style={{ color: 'var(--accent-amber)', opacity: 0.8 }}>
+  1248→                            ({displayExplanation.fallbackReason})
+  1249→                          </code>
+  1250→                        )}
+  1251→                      </div>
+  1252→                      <p className="text-[11px] text-text-muted leading-relaxed">{displayExplanation.epistemicNotice}</p>
+  1253→                    </div>
+  1254→                  </div>
+  1255→                </div>
+  1256→              );
+  1257→            })()}
+  1258→
+  1259→          </div>{/* end right panel */}
+  1260→        </div>
+  1261→      </div>
+  1262→    </main>
+  1263→  );
+  1264→}
+  1265→

@@ -338,7 +338,7 @@ export async function testSpecificProvider(
  * Reports which providers are configured + connected, and which is active.
  */
 export async function testAIConnection(
-  options?: { timeoutMs?: number; preferredProvider?: PreferredAIProvider },
+  options?: { timeoutMs?: number; preferredProvider?: PreferredAIProvider; providerConfig?: { provider?: string; apiKey?: string } },
 ): Promise<AIHealthResponse> {
   const checkedAt = new Date().toISOString();
   const preferred = options?.preferredProvider ?? 'auto';
@@ -381,3 +381,49 @@ export async function testAIConnection(
     providerChain,
   };
 }
+
+/** Compatibility export for detectAIProvider */
+export function detectAIProvider(config?: { provider?: string; apiKey?: string }): {
+  provider: string;
+  providerName: AIProviderName;
+  model: string;
+} {
+  const provider = config?.provider?.toLowerCase();
+  if (provider === 'gemini' || (config?.apiKey && config.apiKey.startsWith('AIzaSy'))) {
+    return {
+      provider: 'gemini',
+      providerName: 'GEMINI',
+      model: GEMINI_DEFAULT_MODEL,
+    };
+  }
+  if (provider === 'claude' || (config?.apiKey && config.apiKey.startsWith('sk-ant-'))) {
+    return {
+      provider: 'claude',
+      providerName: 'CLAUDE',
+      model: CLAUDE_DEFAULT_MODEL,
+    };
+  }
+  if (provider === 'openai' || (config?.apiKey && config.apiKey.startsWith('sk-proj-'))) {
+    return {
+      provider: 'openai',
+      providerName: 'NONE',
+      model: 'gpt-4o-mini',
+    };
+  }
+  return {
+    provider: 'deterministic',
+    providerName: 'NONE',
+    model: 'deterministic-rules',
+  };
+}
+
+/** Compatibility export for invokeAIProvider */
+export async function invokeAIProvider(
+  systemPrompt: string,
+  userPrompt: string,
+  options?: { providerConfig?: { provider?: string; apiKey?: string; model?: string }; timeoutMs?: number }
+): Promise<ProviderInvocationResult> {
+  const provider = (options?.providerConfig?.provider?.toLowerCase() as ProviderKind) || 'gemini';
+  return invokeSpecificProvider(provider, systemPrompt, userPrompt, { timeoutMs: options?.timeoutMs });
+}
+

@@ -1,4 +1,3 @@
-import 'server-only';
 import type { AnalysisTemporalInput } from './analysis-window';
 import {
   TIME_MODE_FILTER_TYPE,

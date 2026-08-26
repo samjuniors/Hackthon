@@ -63,6 +63,9 @@ export interface ExplainDecisionOptions {
   mockLlmResponse?: unknown;
   /** Test hook: skip providers and force deterministic. */
   forceDeterministic?: boolean;
+  /** Compatibility fields for test callers */
+  apiKey?: string;
+  provider?: string;
 }
 
 /**

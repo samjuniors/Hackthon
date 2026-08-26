@@ -444,8 +444,11 @@ export function searchLocations(query: string, maxResults = 8): NamedLocation[] 
 /**
  * Returns preset location options for quick selection in the UI.
  */
-export function getPresetLocations(_isFixtureMode?: boolean): NamedLocation[] {
-  return METROPOLITAN_LOCATIONS.slice(0, 8);
+export function getPresetLocations(isFixtureMode?: boolean): NamedLocation[] {
+  if (isFixtureMode) {
+    return METROPOLITAN_LOCATIONS.filter((l) => l.isDemoOnly);
+  }
+  return METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly);
 }
 
 /**

@@ -1,59 +1,61 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # dependencies
-node_modules
+/node_modules
 /.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+.pnp.js
+.yarn/install-state.gz
 
-# testing
+# testing & coverage
 /coverage
+/test-results/
+/playwright-report/
+/blob-report/
+tests/e2e/evidence/
+tests/e2e/*.png
+*.png
 
-# next.js
+# next.js & build output
 /.next/
 /out/
-
-# production
 /build
+.vercel/
 
-# misc
-.DS_Store
-*.pem
+# environment & secrets (NEVER commit local credentials)
+.env
+.env*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# debug
+# debug & process logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
+pnpm-debug.log*
+*.log
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-local-*
-.claude
-.z-ai-config
-*.log
-dev.log
-dev.out.log
-test
-prompt
 
-server.log
-# Skills directory
-/skills/
-# Sandbox/dev artifacts (not part of the product)
-/tool-results/
-/start-dev.sh
-/upload/
-/dev.log
+# OS & Certificates
+.DS_Store
+Thumbs.db
+*.pem
+
+# Editor & IDE local caches & AI agent folders
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.cursor/
+.agents/
+.qodo/
+.gemini/
+
+# package manager locks (using pnpm-lock.yaml only)
+bun.lock
+yarn.lock
+package-lock.json

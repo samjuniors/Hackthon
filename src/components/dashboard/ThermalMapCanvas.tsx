@@ -71,7 +71,9 @@ export function ThermalMapCanvas({
       ? FIXTURE_TEMPORAL_METADATA.captureLabel
       : undefined;
   const locationLabel = selectedLocation
-    ? `${selectedLocation.name}${selectedLocation.state ? `, ${selectedLocation.state}` : ''}`
+    ? selectedLocation.name.endsWith(`, ${selectedLocation.state}`)
+      ? selectedLocation.name
+      : `${selectedLocation.name}${selectedLocation.state ? `, ${selectedLocation.state}` : ''}`
     : locationName.split(' (')[0];
 
   return (

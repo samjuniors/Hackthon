@@ -17,6 +17,7 @@ import {
   FIXTURE_TEMPORAL_METADATA,
   isValidDateStr,
   isValidTimeStr,
+  todayLocalDate,
 } from '@/lib/temporal/analysis-window';
 
 interface ControlRailProps {
@@ -94,6 +95,12 @@ export function ControlRail({
     temporalInput.timeMode !== 'range-of-hours' ||
     (startValid && endValid && bounds.end > bounds.start);
   const allValid = dateValid && startValid && endValid && rangeValid;
+
+  // Honest forecast note (no invented provider boundaries): a future date is
+  // surfaced explicitly so a LIVE request never silently becomes an arbitrary
+  // future query. The exact forecast horizon is the provider's decision and is
+  // reported verbatim in the error banner if FortyGuard rejects the window.
+  const isFutureDate = dateValid && tz ? temporalInput.date > todayLocalDate(tz) : false;
 
   return (
     <div className="space-y-4">
@@ -338,6 +345,13 @@ export function ControlRail({
             </p>
           )}
 
+          {/* Honest future-date note — never silently query an arbitrary future window */}
+          {mode === 'LIVE' && isFutureDate && (
+            <p className="text-[10px] mt-1.5" style={{ color: 'var(--accent-amber)' }}>
+              Future date selected — subject to FortyGuard forecast availability. The provider reports any unsupported window verbatim.
+            </p>
+          )}
+
           {/* Human-readable window preview (what will be sent to FortyGuard) */}
           {allValid && (
             <p className="text-[10px] font-mono text-text-muted mt-2 leading-relaxed">
@@ -377,38 +391,33 @@ export function ControlRail({
           </div>
         </div>
 
-        {/* Generate button — preserves recalculate-decision-btn testid (both variants) */}
-        {isFixtureMismatch ? (
-          <button
-            onClick={onSwitchToLive}
-            data-testid="recalculate-decision-btn"
-            className="w-full h-12 rounded-xl text-sm font-bold transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 text-white"
-            style={{ background: 'linear-gradient(135deg, var(--accent-emerald), #0d9488)', boxShadow: '0 4px 16px rgba(5,150,105,0.3)' }}
-          >
-            ⚡ Switch to LIVE to Generate
-          </button>
-        ) : (
-          <motion.button
-            whileTap={{ scale: 0.99 }}
-            disabled={loading}
-            onClick={onGenerate}
-            data-testid="recalculate-decision-btn"
-            className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-              loading ? 'bg-surface-elevated text-text-dimmed cursor-not-allowed' : 'text-white hover:scale-[1.01] active:scale-[0.99]'
-            }`}
-            style={loading ? {} : {
-              background: 'linear-gradient(135deg, var(--accent-cyan), #0284c7)',
-              boxShadow: '0 4px 16px rgba(14,165,233,0.3)',
-            }}
-          >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <span className="w-4 h-4 border-2 border-text-dimmed rounded-full animate-spin" style={{ borderTopColor: 'var(--accent-cyan)' }} />
-                Generating thermal field…
-              </span>
-            ) : '⚡ Generate Thermal Field'}
-          </motion.button>
-        )}
+        {/* Generate button */}
+        <motion.button
+          whileTap={{ scale: 0.99 }}
+          disabled={loading}
+          onClick={onGenerate}
+          data-testid="recalculate-decision-btn"
+          className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+            loading ? 'bg-surface-elevated text-text-dimmed cursor-not-allowed' : 'text-white hover:scale-[1.01] active:scale-[0.99]'
+          }`}
+          style={loading ? {} : {
+            background: mode === 'LIVE'
+              ? 'linear-gradient(135deg, var(--accent-emerald), #0d9488)'
+              : 'linear-gradient(135deg, var(--accent-cyan), #0284c7)',
+            boxShadow: mode === 'LIVE'
+              ? '0 4px 16px rgba(5,150,105,0.3)'
+              : '0 4px 16px rgba(14,165,233,0.3)',
+          }}
+        >
+          {loading ? (
+            <span className="flex items-center gap-2">
+              <span className="w-4 h-4 border-2 border-text-dimmed rounded-full animate-spin" style={{ borderTopColor: 'var(--accent-cyan)' }} />
+              Generating thermal field…
+            </span>
+          ) : (
+            `⚡ Generate Thermal Field (${mode === 'LIVE' ? 'LIVE' : 'DEMO'})`
+          )}
+        </motion.button>
       </div>
 
       {/* ── SYSTEM STATUS ── */}

@@ -148,3 +148,29 @@ Work Log:
 Stage Summary:
 - LIVE probe complete. Honest capability metadata captured for the provider capability model: plan_type=Hackathon, 2M credit cap (exhausted), billing cycle Aug 20 – Sep 24 2026, 1656 heatmap calls already used. No regional restriction observable (credit gate precedes geographic validation). 150 mi² limit not surfaced by API — will label as "documented default".
 - Next: build provider capability types + temporal model + user prefs extension, then backend (decision route + adapter), then frontend (ControlRail WHEN + ThermalMapCanvas header + RecommendedOperation SOURCE + SettingsDrawer diagnostics), then page.tsx wiring, then Agent Browser verify, then report.
+
+---
+
+Task ID: 5 (final pre-demo credit-safety pass)
+Agent: orchestrator (main)
+Task: FINAL PRE-DEMO FORTYGUARD + TEMPORAL + CREDIT-SAFETY PASS. Verify account/credits, harden credit-safe caching, keep LIVE honest on failure, single-map lifecycle, docs reconciliation, full test suite.
+
+Work Log:
+- Re-verified the live account via POST /v1/system/fetch-api-key-usage (zero-credit endpoint), Aug 26 2026: plan_type="Hackathon", total_available_credits=2,000,000, cycle_credits_used=6,994,120, cycle_remaining_credits=-4,994,120 (EXHAUSTED), key active/expiry 2026-09-24T08:02:15Z, billing cycle Aug 20 - Sep 24 2026, activity_breakdown: Heatmap Generation 6,988,320 credits / 1,656 calls.
+- ONE controlled minimal /v1/heatmap probe (small AOI, filter_type=1, granularity=100): HTTP 402 "Insufficient credits: this request costs 4220 credits and 0 remain". Usage re-check proved NO activity was created (count stayed 1,656) and no credits moved. A successful LIVE run therefore CANNOT be verified with the current key - documented as UNKNOWN rather than claimed.
+- adapter.ts: added buildHeatmapCacheKey() - deterministic sorted-key identity over endpoint + AOI geometry + date_time block + granularity + analytic params. submitAndPoll now uses it; cache hits and provider submissions are counted; lastSuccessfulHeatmapAt + lastHeatmapActivityId recorded on Completed.
+- types/fortyguard-capability.ts + api/health/fortyguard/route.ts + SettingsDrawer.tsx: provider diagnostics now include "Last successful heatmap" timestamp + activity id (server runtime merge, zero secrets).
+- page.tsx: alt-location selection NO LONGER auto-runs a LIVE pipeline (credit safety) - selects + resets WHEN only.
+- ErrorBanner.tsx: Section-12 wording - "Analysis Halted" (+ "FortyGuard provider error" when LIVE/provider), buttons "Retry Live" and "Continue with Verified Demo".
+- ThermalMap.tsx: Map created EXACTLY ONCE per lifetime - both dark+light basemap/label raster sources declared up-front; theme flips now use setLayoutProperty/setPaintProperty instead of map.remove()+recreate.
+- ControlRail.tsx: honest future-date note in LIVE mode ("subject to FortyGuard forecast availability") without inventing a numeric horizon boundary.
+- server-conversion.ts: fixed garbled double-iteration comments (logic untouched).
+- package.json: added typecheck/test scripts; cross-platform build (scripts/postbuild.mjs replaces cp -r). pnpm-workspace.yaml for pnpm v11 native-build allowlist + verifyDepsBeforeRun=false. vitest added as devDependency; node_modules had to be fully reinstalled (previous tree was corrupted).
+- tsconfig excludes examples/ scaffold. eslint.config.mjs scoped override for unused shadcn carousel scaffold; use-mobile.ts refactored to useSyncExternalStore (fixes new react-hooks/set-state-in-effect errors).
+- NEW tests/unit/* (vitest, offline): temporal WHEN model (filter_type mapping, derived duration, PDT formatting, fixture anchoring), canonical AOI (polygon/circle geometry, limit rejection not shrinking, fixture containment), deterministic cache identity (key-order independence, sensitivity to every analytic input), adapter-boundary local-to-UTC conversion (LA/NY/Tokyo incl. DST offset) + FortyGuard date_time blocks per filter_type.
+- Runtime E2E against the production build with a LOCAL mock FortyGuard (no real credits touched): LIVE path proves activity creation -> polling -> Completed -> GeoJSON extraction -> feature count -> recommendation; identical repeat Generate created ZERO new activities (mock counter heatmapPosts stayed at exactly the first-run count = cache hit). DEMO path returns the captured 3 features with honest capture label; OUTSIDE_COVERAGE surfaces as a real 404 error; LIVE without explicit WHEN is rejected; /api/explain + /api/location/search produce ZERO FortyGuard traffic. 21/21 + 6/6 checks pass.
+
+Stage Summary:
+- pnpm typecheck: PASS (0 errors). pnpm lint: PASS (0 errors, 78 pre-existing warnings in shadcn scaffold). pnpm test: 19/19. pnpm build: PASS. Mock-E2E: 27/27 across two runners.
+- REAL LIVE smoke remains blocked by exhausted credits (HTTP 402). Everything downstream of a successful response (polling/extraction/render/cache) IS verified via the mock harness; authentication + credit accounting verified against the real API.
+- README.md created (reality-aligned); data contract frozen for demo video.

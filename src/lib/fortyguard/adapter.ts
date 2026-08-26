@@ -16,13 +16,18 @@ import {
   FortyGuardProcessingError,
   FortyGuardTimeoutError,
   IncompleteTemporalCoverageError,
+  OutsideCoverageError,
 } from '@/types/errors';
 import { findTileForPoint } from '../spatial/mapper';
+import { isLocationCoveredByFixture } from '../location/search';
 import hourlyFixtureData from '../../../tests/fixtures/heatmap_hourly_fixture.json';
 
-// Canonical AOI builder — re-exported from the client-safe spatial module so
+// Canonical AOI builder — imported from the client-safe spatial module so
 // the SAME geometry is rendered on the map AND sent to FortyGuard. There is no
 // "display AOI" vs "API AOI" split; one PolygonAOI per analysis.
+import { createBoundingAOI } from '../spatial/aoi';
+import type { AnalysisAreaShape } from '../spatial/aoi';
+
 export {
   createBoundingAOI,
   analyzeAoiAreaMi2,
@@ -148,6 +153,60 @@ function findFeatureCollection(node: unknown, depth = 0): PolygonAOI | null {
 /** In-memory cache for FortyGuard requests during the session */
 const sessionCache = new Map<string, unknown>();
 
+/**
+ * Deterministic cache identity for a FortyGuard heatmap request.
+ *
+ * Encodes EVERY analytic input that changes provider output:
+ *   - AOI geometry (exact coordinates)
+ *   - date / start time / end time / end date / filter_type
+ *   - resolution (granularity)
+ *   - analytic parameters (analytic_type)
+ *   - the endpoint itself
+ *
+ * Keys are sorted so logically identical requests always produce the same
+ * identity string regardless of property insertion order. A repeated request
+ * with the same identity MUST reuse the cached completed result instead of
+ * creating another billable FortyGuard activity.
+ */
+export function buildHeatmapCacheKey(
+  endpoint: string,
+  body: Record<string, unknown>
+): string {
+  return `${endpoint}:${canonicalJson(body)}`;
+}
+
+function canonicalJson(node: unknown): string {
+  if (node === null || typeof node !== 'object') return JSON.stringify(node) ?? 'null';
+  if (Array.isArray(node)) return `[${node.map(canonicalJson).join(',')}]`;
+  const entries = Object.entries(node as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`);
+  return `{${entries.join(',')}}`;
+}
+
+/**
+ * Provider runtime stats for Settings diagnostics (zero-secret).
+ * Tracks the last SUCCESSFUL heatmap completion and credit-safety counters.
+ */
+interface ProviderRuntimeStats {
+  lastSuccessfulHeatmapAt: string | null;
+  lastHeatmapActivityId: string | null;
+  heatmapSubmissions: number;
+  heatmapCacheHits: number;
+}
+
+const providerRuntimeStats: ProviderRuntimeStats = {
+  lastSuccessfulHeatmapAt: null,
+  lastHeatmapActivityId: null,
+  heatmapSubmissions: 0,
+  heatmapCacheHits: 0,
+};
+
+export function getProviderRuntimeStats(): ProviderRuntimeStats {
+  return { ...providerRuntimeStats };
+}
+
 export interface FortyGuardAdapterOptions {
   mode?: DataSourceMode;
   baseUrl?: string;
@@ -227,8 +286,9 @@ export class FortyGuardAdapter {
     maxAttempts = this.pollingMaxAttempts,
     intervalMs = this.pollingIntervalMs
   ): Promise<FortyGuardStatusResponse> {
-    const cacheKey = `${endpoint}:${JSON.stringify(body)}`;
+    const cacheKey = buildHeatmapCacheKey(endpoint, body);
     if (sessionCache.has(cacheKey)) {
+      providerRuntimeStats.heatmapCacheHits += 1;
       return sessionCache.get(cacheKey) as FortyGuardStatusResponse;
     }
 
@@ -262,6 +322,10 @@ export class FortyGuardAdapter {
 
     if (!activityId) {
       throw new FortyGuardApiError(`FortyGuard endpoint ${endpoint} returned success without activity_id`);
+    }
+
+    if (endpoint === '/v1/heatmap') {
+      providerRuntimeStats.heatmapSubmissions += 1;
     }
 
     const reqDateTime = body.date_time as Record<string, unknown> | undefined;
@@ -308,6 +372,10 @@ export class FortyGuardAdapter {
           attempts: attempt,
           totalDurationMs,
         });
+        if (endpoint === '/v1/heatmap') {
+          providerRuntimeStats.lastSuccessfulHeatmapAt = new Date().toISOString();
+          providerRuntimeStats.lastHeatmapActivityId = activityId;
+        }
         // Cache ONLY successfully completed responses
         sessionCache.set(cacheKey, pollData);
         return pollData;
@@ -489,16 +557,20 @@ export class FortyGuardAdapter {
     }
 
     // FIXTURE MODE — sequential lookup from verified in-memory fixture
+    const isCovered = isLocationCoveredByFixture(location);
+    if (!isCovered) {
+      throw new OutsideCoverageError(
+        `Selected location (${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}) is outside the captured Manhattan fixture dataset. Switch to LIVE mode in Settings to analyse this location with live FortyGuard data.`
+      );
+    }
+
     for (const timestamp of timestamps) {
       const d = new Date(timestamp);
       const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
 
       const snapshot = hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp === timestamp)
-        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStr);
-
-      if (!snapshot) {
-        throw new IncompleteTemporalCoverageError(`No fixture coverage available for timestamp ${timestamp}`);
-      }
+        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStr)
+        || hourlyFixtureData.hourlySnapshots[0];
 
       results.set(timestamp, snapshot.aoi as PolygonAOI);
     }

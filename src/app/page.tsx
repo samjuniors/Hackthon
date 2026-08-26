@@ -41,6 +41,7 @@ import {
   analyzeAoiAreaMi2,
   FORTYGUARD_AOI_LIMIT_MI2,
 } from '@/lib/spatial/aoi';
+import { getRegionBoundaryPolygon, getInvertedMaskPolygon } from '@/lib/spatial/region-boundaries';
 import {
   type AnalysisTemporalInput,
   defaultTemporalInput,
@@ -119,6 +120,23 @@ export default function WorkspacePage() {
       prefs.analysisAreaShape,
     ),
     [selectedLocation.latitude, selectedLocation.longitude, prefs.analysisAreaShape, prefs.analysisAoiHalfSideMetres],
+  );
+
+  // Geographical State / Territory boundary polygon (e.g. California, New York)
+  const regionBoundary: PolygonAOI | null = useMemo(
+    () => getRegionBoundaryPolygon(
+      selectedLocation.state,
+      selectedLocation.city,
+      selectedLocation.latitude,
+      selectedLocation.longitude,
+    ),
+    [selectedLocation.state, selectedLocation.city, selectedLocation.latitude, selectedLocation.longitude],
+  );
+
+  // Inverted mask polygon that dims/darkens everything OUTSIDE the selected state region
+  const regionMask: PolygonAOI | null = useMemo(
+    () => getInvertedMaskPolygon(regionBoundary),
+    [regionBoundary],
   );
 
   // AOI limit validation happens inside runDecisionPipeline (isAoiWithinLimit).
@@ -367,20 +385,7 @@ export default function WorkspacePage() {
   const handleSelectLocation = useCallback((loc: NamedLocation) => {
     setSelectedLocation(loc);
     selectedLocationRef.current = loc;
-    // When switching to a fixture-covered location in DEMO mode, reset the
-    // WHEN inputs to the fixture capture window so the displayed date/time
-    // matches the fixture data (Section 10 — never "Today" for a capture).
-    if (modeRef.current === 'FIXTURE' && isLocationCoveredByFixture(loc)) {
-      const fixtureTemporal = buildFixtureTemporalInput();
-      setTemporalInput(fixtureTemporal);
-      temporalInputRef.current = fixtureTemporal;
-    } else if (modeRef.current === 'LIVE') {
-      // LIVE: default to today's date in the new location's timezone.
-      const liveDefault = defaultTemporalInput(loc.timezone);
-      setTemporalInput(liveDefault);
-      temporalInputRef.current = liveDefault;
-    }
-    // Clear model state
+    // Immediately clear previous stale model state
     setDecision(null);
     setSpatialDecision(null);
     setJointDecision(null);
@@ -389,7 +394,19 @@ export default function WorkspacePage() {
     setSpatialField(null);
     setSpatialFieldMeta(null);
     setErrorDetails(null);
-  }, []);
+
+    // In DEMO mode, auto-generate thermal field for the new location
+    if (modeRef.current === 'FIXTURE') {
+      const fixtureTemporal = buildFixtureTemporalInput();
+      setTemporalInput(fixtureTemporal);
+      temporalInputRef.current = fixtureTemporal;
+      runDecisionPipeline(loc, fixtureTemporal, loc.timezone || 'UTC', 'FIXTURE');
+    } else {
+      const liveDefault = defaultTemporalInput(loc.timezone);
+      setTemporalInput(liveDefault);
+      temporalInputRef.current = liveDefault;
+    }
+  }, [runDecisionPipeline]);
 
   const handleTemporalChange = useCallback((next: AnalysisTemporalInput) => {
     setTemporalInput(next);
@@ -486,10 +503,8 @@ export default function WorkspacePage() {
     setTemporalInput(newTemporal);
     temporalInputRef.current = newTemporal;
 
-    if (newMode === 'LIVE' || isLocationCoveredByFixture(loc)) {
-      runDecisionPipeline(loc, newTemporal, loc.timezone || 'UTC', newMode);
-    }
-  }, [mode]);
+    runDecisionPipeline(loc, newTemporal, loc.timezone || 'UTC', newMode);
+  }, [mode, runDecisionPipeline]);
 
   // React to preferred-AI-provider changes (from Settings drawer).
   useEffect(() => {
@@ -550,14 +565,30 @@ export default function WorkspacePage() {
     );
   }, [runDecisionPipeline]);
 
+  // Credit safety: selecting an alternative location NEVER triggers a provider
+  // request by itself. It updates the selection + WHEN defaults and clears the
+  // previous results; the user explicitly presses Generate to spend credits.
   const handleSelectAltLocation = useCallback((loc: NamedLocation) => {
     setSelectedLocation(loc);
     selectedLocationRef.current = loc;
-    const liveDefault = defaultTemporalInput(loc.timezone);
-    setTemporalInput(liveDefault);
-    temporalInputRef.current = liveDefault;
-    runDecisionPipeline(loc, liveDefault, loc.timezone || 'UTC', 'LIVE');
-  }, [runDecisionPipeline]);
+    if (modeRef.current === 'FIXTURE' && isLocationCoveredByFixture(loc)) {
+      const fixtureTemporal = buildFixtureTemporalInput();
+      setTemporalInput(fixtureTemporal);
+      temporalInputRef.current = fixtureTemporal;
+    } else {
+      const liveDefault = defaultTemporalInput(loc.timezone);
+      setTemporalInput(liveDefault);
+      temporalInputRef.current = liveDefault;
+    }
+    setDecision(null);
+    setSpatialDecision(null);
+    setJointDecision(null);
+    setScenarioAnalysis(null);
+    setExplanation(null);
+    setSpatialField(null);
+    setSpatialFieldMeta(null);
+    setErrorDetails(null);
+  }, []);
 
   // ───────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -634,6 +665,10 @@ export default function WorkspacePage() {
             >
               <ThermalMap
                 location={{ latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }}
+                locationState={selectedLocation.state}
+                locationName={selectedLocation.name}
+                regionBoundary={regionBoundary}
+                regionMask={regionMask}
                 analysisAoi={analysisAoi}
                 spatialField={spatialField}
                 selectedTileId={decision?.evidenceBundle.selectedTileId}
@@ -644,6 +679,12 @@ export default function WorkspacePage() {
                 }))}
                 recommendedLocationId={spatialDecision?.recommendedLocation.locationId}
                 unit={unit}
+                layerVisibility={prefs.mapLayerVisibility}
+                onToggleLayer={prefSetters.setMapLayerVisibility}
+                areaShape={prefs.analysisAreaShape}
+                aoiHalfSideMetres={prefs.analysisAoiHalfSideMetres}
+                onChangeAreaShape={prefSetters.setAnalysisAreaShape}
+                onChangeAoiHalfSideMetres={prefSetters.setAnalysisAoiHalfSideMetres}
               />
             </ThermalMapCanvas>
 

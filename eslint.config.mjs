@@ -44,6 +44,13 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "no-useless-escape": "off",
   },
 }, {
+  // shadcn scaffold component — unused by the dashboard; embla's sync
+  // setState-in-effect pattern is third-party code we do not maintain.
+  files: ["src/components/ui/carousel.tsx"],
+  rules: {
+    "react-hooks/set-state-in-effect": "off",
+  },
+}, {
   ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
 }];
 

@@ -36,10 +36,13 @@ export function ErrorBanner({
           <div className="flex items-center gap-2 mb-1">
             <span className="text-base">🔴</span>
             <span className="font-bold text-sm" style={{ color: 'var(--accent-red-text)' }}>
-              {errorDetails.code === 'OUTSIDE_COVERAGE'
-                ? 'FortyGuard Coverage Unavailable'
-                : 'Analysis Halted'}
+              Analysis Halted
             </span>
+            {mode === 'LIVE' && errorDetails.category === 'PROVIDER' && (
+              <span className="text-xs font-semibold" style={{ color: 'var(--accent-red-text)' }}>
+                FortyGuard provider error
+              </span>
+            )}
             <code className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-surface-elevated text-text-muted">
               {errorDetails.code}
             </code>
@@ -54,7 +57,7 @@ export function ErrorBanner({
             onClick={onRetry}
             className="px-3 py-1.5 min-h-[36px] text-xs rounded-lg border border-border bg-surface-elevated text-text-primary hover:bg-surface-deep transition-colors"
           >
-            Retry
+            {mode === 'LIVE' ? 'Retry Live' : 'Retry'}
           </button>
           {mode === 'LIVE' && (
             <button
@@ -62,7 +65,7 @@ export function ErrorBanner({
               className="px-3 py-1.5 min-h-[36px] text-xs rounded-lg border text-accent-amber hover:bg-accent-amber-bg transition-colors"
               style={{ borderColor: 'var(--accent-amber)', background: 'var(--accent-amber-bg)' }}
             >
-              Demo Mode
+              Continue with Verified Demo
             </button>
           )}
         </div>

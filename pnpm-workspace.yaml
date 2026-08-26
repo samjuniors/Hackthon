@@ -1,0 +1,27 @@
+packages: []
+
+allowBuilds:
+  '@parcel/watcher': set this to true or false
+  '@prisma/client': set this to true or false
+  '@prisma/engines': set this to true or false
+  '@swc/core': set this to true or false
+  es5-ext: set this to true or false
+  esbuild: set this to true or false
+  prisma: set this to true or false
+  sharp: set this to true or false
+  unrs-resolver: set this to true or false
+
+# Allow native dependency build scripts (pnpm v11 blocks them by default).
+onlyBuiltDependencies:
+  - '@parcel/watcher'
+  - '@prisma/client'
+  - '@prisma/engines'
+  - '@swc/core'
+  - es5-ext
+  - esbuild
+  - prisma
+  - sharp
+  - unrs-resolver
+
+# Don't re-run dependency verification before every script.
+verifyDepsBeforeRun: false

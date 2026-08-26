@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Map, Marker, Popup, type GeoJSONSource } from 'maplibre-gl';
 import type { LocationPoint, PolygonAOI, CandidateLocation } from '@/types/domain';
 import { useTheme } from '@/components/ThemeProvider';
@@ -10,7 +10,9 @@ import {
   getThermalLegendTicks,
   tempUnitSuffix,
 } from '@/lib/temperature';
-
+import type { MapLayerVisibility, AnalysisAreaShape, AoiHalfSideMetres } from '@/lib/user-preferences';
+import { AOI_HALF_SIDE_PRESETS } from '@/lib/user-preferences';
+import { Flame, MapPin, Tag, Box, Circle as CircleIcon, Maximize2, Map as MapIcon, Check, ZoomIn, Sun, Moon } from 'lucide-react';
 import type { FeatureCollection } from 'geojson';
 
 // Minimal inline type for MapLibre GeoJSON source data casts.
@@ -19,23 +21,38 @@ type GeoJSONFC = FeatureCollection;
 interface ThermalMapProps {
   /** User-selected analysis center. Used for fallback fit + marker. */
   location: LocationPoint;
+  /** State or territory code/name (e.g. CA, NY) */
+  locationState?: string;
+  locationName?: string;
+  /**
+   * Geographical / State Boundary Polygon (e.g. California state polygon, New York state polygon).
+   */
+  regionBoundary?: PolygonAOI | null;
+  /**
+   * Inverted Mask Polygon covering outside the state region to dim/darken the exterior.
+   */
+  regionMask?: PolygonAOI | null;
   /**
    * Canonical Analysis AOI — the EXACT geometry sent to FortyGuard.
-   * Rendered as the visible AOI boundary on the map. Source of truth:
-   * src/lib/spatial/aoi.ts createBoundingAOI(). Built client-side in page.tsx
-   * and passed to BOTH this map AND /api/decision so visible == requested.
+   * Rendered as the visible AOI boundary on the map.
    */
   analysisAoi: PolygonAOI | null;
   /**
-   * FortyGuard thermal field — REAL feature collection (no fabrication).
-   * DEMO = captured 3 Manhattan cells. LIVE = whatever FortyGuard returns.
-   * Rendered as filled polygons below the AOI boundary.
+   * FortyGuard thermal field — REAL feature collection.
    */
   spatialField: PolygonAOI | null;
   selectedTileId?: string | number;
   candidates?: CandidateLocation[];
   recommendedLocationId?: string;
   unit?: TempUnit;
+  /** Map layer toggles synchronized with user preferences */
+  layerVisibility?: MapLayerVisibility;
+  onToggleLayer?: (v: Partial<MapLayerVisibility>) => void;
+  /** AOI shape & dimension controls */
+  areaShape?: AnalysisAreaShape;
+  aoiHalfSideMetres?: AoiHalfSideMetres;
+  onChangeAreaShape?: (s: AnalysisAreaShape) => void;
+  onChangeAoiHalfSideMetres?: (m: AoiHalfSideMetres) => void;
 }
 
 /** Empty FeatureCollection sentinel for source initialization / clear. */
@@ -63,44 +80,61 @@ function extractCoords(geometry: { type: string; coordinates: unknown }): [numbe
 }
 
 /**
- * Compute bounding box covering the canonical AOI, thermal field, candidates,
- * and the selected location (with a small perimeter so the marker is always
- * visible even when no AOI/thermal data has arrived yet).
+ * Compute bounding box covering the regional boundary, AOI, thermal field, candidates,
+ * and the selected location.
  */
 function computeBounds(
   analysisAoi: PolygonAOI | null,
   spatialField: PolygonAOI | null,
   candidateLocs: LocationPoint[],
   targetLoc: LocationPoint,
+  regionBoundary?: PolygonAOI | null,
+  fitToRegionOnly = false,
 ): [[number, number], [number, number]] | null {
   const allPts: [number, number][] = [];
 
-  // AOI vertices (highest priority — defines the analysis area)
-  if (analysisAoi && analysisAoi.features.length > 0) {
-    for (const f of analysisAoi.features) {
+  if (fitToRegionOnly && regionBoundary && regionBoundary.features.length > 0) {
+    for (const f of regionBoundary.features) {
       allPts.push(...extractCoords(f.geometry as { type: string; coordinates: unknown }));
     }
-  }
-
-  // Thermal field vertices (so cells are framed even if they extend past the AOI)
-  if (spatialField && spatialField.features.length > 0) {
-    for (const f of spatialField.features) {
-      allPts.push(...extractCoords(f.geometry as { type: string; coordinates: unknown }));
+  } else {
+    // Include the target location with local perimeter
+    if (Number.isFinite(targetLoc.longitude) && Number.isFinite(targetLoc.latitude)) {
+      allPts.push([targetLoc.longitude, targetLoc.latitude]);
     }
-  }
 
-  // Candidate coordinates
-  for (const { longitude, latitude } of candidateLocs) {
-    if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
-      allPts.push([longitude, latitude]);
+    // Local AOI vertices near targetLoc
+    if (analysisAoi && analysisAoi.features.length > 0) {
+      for (const f of analysisAoi.features) {
+        const pts = extractCoords(f.geometry as { type: string; coordinates: unknown });
+        for (const [lng, lat] of pts) {
+          if (Math.abs(lng - targetLoc.longitude) < 0.25 && Math.abs(lat - targetLoc.latitude) < 0.25) {
+            allPts.push([lng, lat]);
+          }
+        }
+      }
     }
-  }
 
-  // Always include the target location with a small perimeter so the marker
-  // is visible even when no AOI/thermal data has arrived yet.
-  if (Number.isFinite(targetLoc.longitude) && Number.isFinite(targetLoc.latitude)) {
-    allPts.push([targetLoc.longitude - 0.004, targetLoc.latitude - 0.003]);
-    allPts.push([targetLoc.longitude + 0.004, targetLoc.latitude + 0.003]);
+    // Thermal field vertices near targetLoc
+    if (spatialField && spatialField.features.length > 0) {
+      for (const f of spatialField.features) {
+        const pts = extractCoords(f.geometry as { type: string; coordinates: unknown });
+        for (const [lng, lat] of pts) {
+          if (Math.abs(lng - targetLoc.longitude) < 0.25 && Math.abs(lat - targetLoc.latitude) < 0.25) {
+            allPts.push([lng, lat]);
+          }
+        }
+      }
+    }
+
+    // Candidate coordinates near targetLoc
+    for (const { longitude, latitude } of candidateLocs) {
+      if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
+        if (Math.abs(longitude - targetLoc.longitude) < 0.25 && Math.abs(latitude - targetLoc.latitude) < 0.25) {
+          allPts.push([longitude, latitude]);
+        }
+      }
+    }
   }
 
   if (allPts.length === 0) return null;
@@ -114,8 +148,9 @@ function computeBounds(
     if (lat > maxLat) maxLat = lat;
   }
 
-  const padLng = Math.max(0.003, (maxLng - minLng) * 0.18);
-  const padLat = Math.max(0.003, (maxLat - minLat) * 0.18);
+  const padRatio = fitToRegionOnly ? 0.08 : 0.35;
+  const padLng = Math.max(0.0008, (maxLng - minLng) * padRatio);
+  const padLat = Math.max(0.0008, (maxLat - minLat) * padRatio);
 
   return [
     [minLng - padLng, minLat - padLat],
@@ -125,122 +160,229 @@ function computeBounds(
 
 /** Return true if the spatial field contains at least one feature with a valid temperature. */
 function hasRenderableTemperatureData(aoi: PolygonAOI | null | undefined): boolean {
-  return !!aoi && aoi.features.some((f) =>
+  return !!aoi && aoi.features.length > 0 && aoi.features.some((f) =>
     Number.isFinite(Number(f.properties?.average_temperature))
   );
 }
 
 export function ThermalMap({
   location,
+  locationState,
+  locationName,
+  regionBoundary,
+  regionMask,
   analysisAoi,
   spatialField,
   selectedTileId,
   candidates,
   recommendedLocationId,
   unit = DEFAULT_TEMP_UNIT,
+  layerVisibility = { thermal: true, candidates: true, labels: true, aoi: true },
+  onToggleLayer,
+  areaShape = 'polygon',
+  aoiHalfSideMetres = 400,
+  onChangeAreaShape,
+  onChangeAoiHalfSideMetres,
 }: ThermalMapProps) {
-  const { theme } = useTheme();
+  const { theme, toggleTheme } = useTheme();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const markersRef = useRef<Marker[]>([]);
   const [mapReady, setMapReady] = useState(false);
+  const [showSizeMenu, setShowSizeMenu] = useState(false);
+  const [showRegionBoundary, setShowRegionBoundary] = useState(true);
+
+  // Function to apply theme styles to all map layers
+  const applyThemeToMap = useCallback((isDark: boolean) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    try {
+      if (map.getLayer('carto-base-dark-layer')) {
+        map.setLayoutProperty('carto-base-dark-layer', 'visibility', isDark ? 'visible' : 'none');
+        map.setPaintProperty('carto-base-dark-layer', 'raster-opacity', isDark ? 0.95 : 0);
+      }
+      if (map.getLayer('carto-base-light-layer')) {
+        map.setLayoutProperty('carto-base-light-layer', 'visibility', isDark ? 'none' : 'visible');
+        map.setPaintProperty('carto-base-light-layer', 'raster-opacity', isDark ? 0 : 0.95);
+      }
+      if (map.getLayer('region-mask-fill')) {
+        map.setPaintProperty('region-mask-fill', 'fill-color', isDark ? '#000000' : '#0f172a');
+        map.setPaintProperty('region-mask-fill', 'fill-opacity', isDark ? 0.55 : 0.40);
+      }
+      if (map.getLayer('carto-labels-dark-layer')) {
+        map.setLayoutProperty('carto-labels-dark-layer', 'visibility', isDark && (layerVisibility.labels !== false) ? 'visible' : 'none');
+      }
+      if (map.getLayer('carto-labels-light-layer')) {
+        map.setLayoutProperty('carto-labels-light-layer', 'visibility', !isDark && (layerVisibility.labels !== false) ? 'visible' : 'none');
+      }
+      if (map.getLayer('aoi-outline')) {
+        map.setPaintProperty('aoi-outline', 'line-color', isDark ? '#fb7185' : '#be123c');
+      }
+      if (map.getLayer('aoi-fill')) {
+        map.setPaintProperty('aoi-fill', 'fill-color', '#f43f5e');
+        map.setPaintProperty('aoi-fill', 'fill-opacity', isDark ? 0.16 : 0.10);
+      }
+      if (map.getLayer('region-boundary-outline')) {
+        map.setPaintProperty('region-boundary-outline', 'line-color', isDark ? '#fb7185' : '#be123c');
+      }
+      if (map.getLayer('region-boundary-fill')) {
+        map.setPaintProperty('region-boundary-fill', 'fill-color', isDark ? '#f43f5e' : '#be123c');
+        map.setPaintProperty('region-boundary-fill', 'fill-opacity', isDark ? 0.16 : 0.10);
+      }
+      map.triggerRepaint();
+    } catch {
+      /* safe */
+    }
+  }, [layerVisibility.labels]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // Mount effect — create the MapLibre Map ONCE per theme change.
-  //
-  // The Map instance is NOT recreated when location / spatialField / analysisAoi
-  // / candidates / recommendedLocationId change. Those updates flow through
-  // source.setData() and Marker#remove() + new Marker() in the effects below.
-  //
-  // Theme change is the only legitimate reason to recreate the Map: the
-  // basemap raster tile URL is part of the source definition and swapping it
-  // mid-flight causes visual glitches. Theme change is user-initiated and
-  // infrequent, so recreation is acceptable. The data effects re-apply
-  // thermal/AOI/marker state after the new map reports `mapReady=true`.
+  // Mount effect — create the MapLibre Map
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
     const isDark = theme === 'dark';
 
-    // Validate center coordinates (defensive — page.tsx validates too)
     const isValidLat = Number.isFinite(location.latitude) && location.latitude >= -90 && location.latitude <= 90;
     const isValidLon = Number.isFinite(location.longitude) && location.longitude >= -180 && location.longitude <= 180;
     const centerLng = isValidLon ? location.longitude : -74.008;
     const centerLat = isValidLat ? location.latitude : 40.712;
 
-    const baseTiles = isDark
-      ? [
-          'https://a.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png',
-          'https://b.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png',
-        ]
-      : [
-          'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-          'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-        ];
-
-    const labelTiles = isDark
-      ? [
-          'https://a.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}@2x.png',
-          'https://b.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}@2x.png',
-        ]
-      : [
-          'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
-          'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
-        ];
-
-    // AOI outline color: white in dark mode, slate-900 in light mode.
-    // Chosen because it is NOT in the thermal color ramp (cyan→emerald→yellow
-    // →orange→rose→purple), so the AOI boundary stays distinguishable from any
-    // thermal cell color underneath it.
-    const aoiOutlineColor = isDark ? '#ffffff' : '#0f172a';
-    const aoiFillColor = isDark ? '#ffffff' : '#0f172a';
+    const darkBaseTiles = [
+      'https://a.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png',
+      'https://b.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png',
+    ];
+    const lightBaseTiles = [
+      'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+      'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+    ];
+    const darkLabelTiles = [
+      'https://a.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}@2x.png',
+      'https://b.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}@2x.png',
+    ];
+    const lightLabelTiles = [
+      'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
+      'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
+    ];
 
     const map = new Map({
       container: mapContainerRef.current,
       style: {
         version: 8,
         glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-        // ALL sources (raster + geojson) are pre-defined in the style so
-        // MapLibre establishes worker connections for the geojson sources
-        // during style loading. Calling addSource() AFTER load resulted in
-        // the source's worker connection never being established (dispatcher
-        // and actor were undefined), so polygons never rendered.
         sources: {
-          'carto-base': {
+          'carto-base-dark': {
             type: 'raster',
-            tiles: baseTiles,
+            tiles: darkBaseTiles,
             tileSize: 256,
             attribution: '© CartoDB © OpenStreetMap',
           },
-          'carto-labels': {
+          'carto-base-light': {
             type: 'raster',
-            tiles: labelTiles,
+            tiles: lightBaseTiles,
+            tileSize: 256,
+            attribution: '© CartoDB © OpenStreetMap',
+          },
+          'carto-labels-dark': {
+            type: 'raster',
+            tiles: darkLabelTiles,
             tileSize: 256,
           },
-          // Thermal field source — populated via setData() in the data effect.
+          'carto-labels-light': {
+            type: 'raster',
+            tiles: lightLabelTiles,
+            tileSize: 256,
+          },
+          'region-mask': {
+            type: 'geojson',
+            data: EMPTY_FC,
+          },
+          'region-boundary': {
+            type: 'geojson',
+            data: EMPTY_FC,
+          },
           'thermal-tiles': {
             type: 'geojson',
             data: EMPTY_FC,
           },
-          // Canonical AOI source — populated via setData() in the data effect.
-          // Same geometry as sent to FortyGuard.
           'analysis-aoi': {
             type: 'geojson',
             data: EMPTY_FC,
           },
         },
         layers: [
-          // 1. Basemap
+          // 1. Basemap (Dark & Light)
           {
-            id: 'carto-base-layer',
+            id: 'carto-base-dark-layer',
             type: 'raster',
-            source: 'carto-base',
+            source: 'carto-base-dark',
             minzoom: 0,
             maxzoom: 22,
-            paint: { 'raster-opacity': isDark ? 0.95 : 0.92 },
+            paint: { 'raster-opacity': isDark ? 0.95 : 0 },
+            layout: { visibility: isDark ? 'visible' : 'none' },
           },
-          // 2. Thermal field (real FortyGuard polygons — below AOI boundary)
+          {
+            id: 'carto-base-light-layer',
+            type: 'raster',
+            source: 'carto-base-light',
+            minzoom: 0,
+            maxzoom: 22,
+            paint: { 'raster-opacity': isDark ? 0 : 0.95 },
+            layout: { visibility: isDark ? 'none' : 'visible' },
+          },
+          // 2. Spotlight Mask — Dims the entire world OUTSIDE the selected state region
+          {
+            id: 'region-mask-fill',
+            type: 'fill',
+            source: 'region-mask',
+            paint: {
+              'fill-color': isDark ? '#000000' : '#0f172a',
+              'fill-opacity': isDark ? 0.55 : 0.40,
+            },
+          },
+          // 3. Geographical State/Region Boundary (Crimson / Ruby red highlight)
+          {
+            id: 'region-boundary-fill',
+            type: 'fill',
+            source: 'region-boundary',
+            paint: {
+              'fill-color': isDark ? '#f43f5e' : '#be123c',
+              'fill-opacity': isDark ? 0.16 : 0.10,
+            },
+          },
+          {
+            id: 'region-boundary-glow',
+            type: 'line',
+            source: 'region-boundary',
+            paint: {
+              'line-color': isDark ? '#fb7185' : '#e11d48',
+              'line-width': 8,
+              'line-opacity': 0.6,
+              'line-blur': 4,
+            },
+          },
+          {
+            id: 'region-boundary-outline',
+            type: 'line',
+            source: 'region-boundary',
+            paint: {
+              'line-color': isDark ? '#fb7185' : '#be123c',
+              'line-width': 3.5,
+              'line-opacity': 1.0,
+            },
+          },
+          // 4. Local AOI interior tint
+          {
+            id: 'aoi-fill',
+            type: 'fill',
+            source: 'analysis-aoi',
+            paint: {
+              'fill-color': '#f43f5e',
+              'fill-opacity': isDark ? 0.12 : 0.08,
+            },
+          },
+          // 5. Thermal field polygons (HERO layer)
           {
             id: 'thermal-tiles-fill',
             type: 'fill',
@@ -260,7 +402,7 @@ export function ThermalMap({
                 37, '#e11d48',
                 40, '#9333ea',
               ],
-              'fill-opacity': isDark ? 0.82 : 0.72,
+              'fill-opacity': isDark ? 0.88 : 0.78,
             },
           },
           {
@@ -278,18 +420,20 @@ export function ThermalMap({
                 34, '#be123c',
                 40, '#6b21a8',
               ],
-              'line-width': 1.5,
-              'line-opacity': 0.9,
+              'line-width': 2,
+              'line-opacity': 0.95,
             },
           },
-          // 3. AOI boundary (translucent fill + crisp dashed outline)
+          // 6. Local AOI Region boundary outline & glow (Red/Crimson)
           {
-            id: 'aoi-fill',
-            type: 'fill',
+            id: 'aoi-glow',
+            type: 'line',
             source: 'analysis-aoi',
             paint: {
-              'fill-color': aoiFillColor,
-              'fill-opacity': 0.06,
+              'line-color': '#f43f5e',
+              'line-width': 8,
+              'line-opacity': 0.5,
+              'line-blur': 4,
             },
           },
           {
@@ -297,80 +441,64 @@ export function ThermalMap({
             type: 'line',
             source: 'analysis-aoi',
             paint: {
-              'line-color': aoiOutlineColor,
-              'line-width': 2.5,
-              'line-dasharray': [4, 2],
-              'line-opacity': 0.9,
+              'line-color': isDark ? '#fb7185' : '#be123c',
+              'line-width': 3.5,
+              'line-opacity': 1.0,
             },
           },
-          // 4. Labels on top of all map layers (DOM markers float above by default)
+          // 6. Labels
           {
-            id: 'carto-labels-layer',
+            id: 'carto-labels-dark-layer',
             type: 'raster',
-            source: 'carto-labels',
-            paint: { 'raster-opacity': isDark ? 0.92 : 1.0 },
+            source: 'carto-labels-dark',
+            paint: { 'raster-opacity': 0.92 },
+            layout: { visibility: isDark ? 'visible' : 'none' },
+          },
+          {
+            id: 'carto-labels-light-layer',
+            type: 'raster',
+            source: 'carto-labels-light',
+            paint: { 'raster-opacity': 1.0 },
+            layout: { visibility: isDark ? 'none' : 'visible' },
           },
         ],
       },
       center: [centerLng, centerLat],
-      zoom: 14,
+      zoom: 13,
     });
 
     mapRef.current = map;
 
-    // Debug: expose map instance for inspection.
     if (typeof window !== 'undefined') {
       (window as unknown as { __thermalMap?: unknown }).__thermalMap = map;
     }
 
-    // The 'load' event fires when the map is FULLY ready — style parsed +
-    // first frame rendered + worker connected to all sources. We use 'load'
-    // (not 'style.load') because 'style.load' fires before the worker has
-    // connected to the geojson sources, causing setData() to silently no-op.
-    // Fallback to 'style.load' + delay if 'load' never fires (slow tiles).
     const markReady = () => {
-      if (mapContainerRef.current) {
-        mapContainerRef.current.dataset.mapLoadFired = 'true';
-        mapContainerRef.current.dataset.mapLoadTime = String(Date.now());
-      }
       setMapReady(true);
+      map.resize();
+      applyThemeToMap(theme === 'dark');
     };
 
     if (map.isStyleLoaded()) {
       markReady();
     } else {
       map.once('load', markReady);
-      // Fallback: if 'load' hasn't fired after style.load + 800ms, mark ready
-      // anyway so the data effect can attempt setData (the source's worker
-      // connection should be established by then).
-      map.once('style.load', () => {
-        setTimeout(() => {
-          if (!mapContainerRef.current?.dataset?.mapLoadFired) {
-            markReady();
-          }
-        }, 800);
+      setTimeout(markReady, 400);
+    }
+
+    // Auto-resize observer on container
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      ro = new ResizeObserver(() => {
+        if (mapRef.current) {
+          mapRef.current.resize();
+        }
       });
+      ro.observe(mapContainerRef.current);
     }
 
-    // Debug: catch any error events.
-    map.on('error', (e) => {
-      if (mapContainerRef.current) {
-        mapContainerRef.current.dataset.mapError = String(
-          (mapContainerRef.current.dataset.mapError || '') + '|' + (e?.error?.message || String(e?.type || 'unknown'))
-        ).slice(0, 500);
-      }
-    });
-    if (mapContainerRef.current) {
-      mapContainerRef.current.dataset.mapCreated = 'true';
-      mapContainerRef.current.dataset.mapCreatedTime = String(Date.now());
-    }
-
-    // Cleanup: clear markers + remove map. Only runs on theme change or unmount.
     return () => {
-      if (mapContainerRef.current) {
-        mapContainerRef.current.dataset.mapCleanup = 'true';
-        mapContainerRef.current.dataset.mapCleanupTime = String(Date.now());
-      }
+      if (ro) ro.disconnect();
       for (const m of markersRef.current) {
         try { m.remove(); } catch { /* safe */ }
       }
@@ -379,142 +507,128 @@ export function ThermalMap({
       mapRef.current = null;
       setMapReady(false);
     };
-  }, [theme]);
+  }, []);
 
   // ─────────────────────────────────────────────────────────────────────
-  // Data effect — update thermal + AOI GeoJSON sources via setData().
-  //
-  // Runs whenever mapReady transitions true, or spatialField / analysisAoi
-  // change. Does NOT recreate the Map. The `mapReady` flag already gates on
-  // map readiness (load / style.load fired).
-  //
-  // Retry mechanism: if the source's worker connection (actor/dispatcher)
-  // isn't established yet when setData is called, the data is silently
-  // dropped and no tiles are generated. We detect this by checking the
-  // source's internal `actor` property and retry via a short setTimeout.
+  // Theme effect — instantaneous toggle
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (mapContainerRef.current) {
-      mapContainerRef.current.dataset.dataEffectRan = String(
-        Number(mapContainerRef.current.dataset.dataEffectRan || 0) + 1
-      );
-      mapContainerRef.current.dataset.dataEffectMapReady = String(mapReady);
-      mapContainerRef.current.dataset.dataEffectHasField = String(!!spatialField && hasRenderableTemperatureData(spatialField));
-      mapContainerRef.current.dataset.dataEffectHasAoi = String(!!analysisAoi);
-    }
-    if (!mapReady) return;
+    applyThemeToMap(theme === 'dark');
+  }, [theme, applyThemeToMap]);
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Layer visibility effect
+  // ─────────────────────────────────────────────────────────────────────
+  useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    let cancelled = false;
+    try {
+      const showAoi = layerVisibility.aoi !== false;
+      const showThermal = layerVisibility.thermal !== false;
+      const showLabels = layerVisibility.labels !== false;
+      const isDark = theme === 'dark';
 
-    const applyData = (attempt: number) => {
-      if (cancelled) return;
-      if (attempt > 8) {
-        // Give up after ~7s of retries (8 attempts × 200ms × 4 + initial)
-        if (mapContainerRef.current) {
-          mapContainerRef.current.dataset.dataEffectGaveUp = 'true';
+      if (map.getLayer('region-mask-fill')) {
+        map.setLayoutProperty('region-mask-fill', 'visibility', showRegionBoundary ? 'visible' : 'none');
+      }
+
+      if (map.getLayer('region-boundary-fill')) {
+        map.setLayoutProperty('region-boundary-fill', 'visibility', showRegionBoundary ? 'visible' : 'none');
+        map.setLayoutProperty('region-boundary-outline', 'visibility', showRegionBoundary ? 'visible' : 'none');
+        map.setLayoutProperty('region-boundary-glow', 'visibility', showRegionBoundary ? 'visible' : 'none');
+      }
+
+      if (map.getLayer('aoi-fill')) {
+        map.setLayoutProperty('aoi-fill', 'visibility', showAoi ? 'visible' : 'none');
+        map.setLayoutProperty('aoi-outline', 'visibility', showAoi ? 'visible' : 'none');
+        map.setLayoutProperty('aoi-glow', 'visibility', showAoi ? 'visible' : 'none');
+      }
+
+      if (map.getLayer('thermal-tiles-fill')) {
+        map.setLayoutProperty('thermal-tiles-fill', 'visibility', showThermal ? 'visible' : 'none');
+        map.setLayoutProperty('thermal-tiles-outline', 'visibility', showThermal ? 'visible' : 'none');
+      }
+
+      if (map.getLayer('carto-labels-dark-layer')) {
+        map.setLayoutProperty('carto-labels-dark-layer', 'visibility', isDark && showLabels ? 'visible' : 'none');
+      }
+      if (map.getLayer('carto-labels-light-layer')) {
+        map.setLayoutProperty('carto-labels-light-layer', 'visibility', !isDark && showLabels ? 'visible' : 'none');
+      }
+      map.triggerRepaint();
+    } catch {
+      /* safe */
+    }
+  }, [mapReady, layerVisibility, showRegionBoundary, theme]);
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Data effect — reliably push GeoJSON sources into MapLibre
+  // ─────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const syncSources = () => {
+      try {
+        const maskSource = map.getSource('region-mask') as GeoJSONSource | undefined;
+        const regionSource = map.getSource('region-boundary') as GeoJSONSource | undefined;
+        const thermalSource = map.getSource('thermal-tiles') as GeoJSONSource | undefined;
+        const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
+
+        if (maskSource) {
+          const maskData = (regionMask ?? EMPTY_FC) as unknown as GeoJSONFC;
+          maskSource.setData(maskData);
         }
-        return;
-      }
 
-      // Thermal field
-      const thermalSource = map.getSource('thermal-tiles') as GeoJSONSource | undefined;
-      const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
+        if (regionSource) {
+          const regionData = (regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC;
+          regionSource.setData(regionData);
+        }
 
-      // Check if the sources have worker connections (internal `actor` property).
-      // If not, the worker hasn't connected yet — retry after a short delay.
-      const thermalActor = (thermalSource as unknown as { actor?: unknown })?.actor;
-      const aoiActor = (aoiSource as unknown as { actor?: unknown })?.actor;
-
-      if (mapContainerRef.current) {
-        mapContainerRef.current.dataset.dataEffectAttempt = String(attempt);
-        mapContainerRef.current.dataset.dataEffectThermalActor = String(!!thermalActor);
-        mapContainerRef.current.dataset.dataEffectAoiActor = String(!!aoiActor);
-      }
-
-      // Set the data regardless — setData is safe to call even if the worker
-      // isn't connected yet; MapLibre queues it. But we retry to ensure it
-      // actually gets processed.
-      if (thermalSource) {
-        const thermalData = (spatialField && hasRenderableTemperatureData(spatialField)
-          ? spatialField
-          : EMPTY_FC) as unknown as GeoJSONFC;
-        try {
+        if (thermalSource) {
+          const thermalData = (spatialField && hasRenderableTemperatureData(spatialField)
+            ? spatialField
+            : EMPTY_FC) as unknown as GeoJSONFC;
           thermalSource.setData(thermalData);
-          if (mapContainerRef.current) {
-            mapContainerRef.current.dataset.dataEffectThermalSet = 'true';
-            mapContainerRef.current.dataset.dataEffectThermalFeatures = String(
-              (spatialField && hasRenderableTemperatureData(spatialField))
-                ? spatialField!.features.length
-                : 0
-            );
-          }
-        } catch (e) {
-          if (mapContainerRef.current) {
-            mapContainerRef.current.dataset.dataEffectThermalErr = String(e);
-          }
         }
-      } else {
-        if (mapContainerRef.current) {
-          mapContainerRef.current.dataset.dataEffectThermalSourceMissing = 'true';
-        }
-      }
 
-      // Canonical AOI (the EXACT geometry sent to FortyGuard)
-      if (aoiSource) {
-        const aoiData = (analysisAoi ?? EMPTY_FC) as unknown as GeoJSONFC;
-        try {
+        if (aoiSource) {
+          const aoiData = (analysisAoi ?? EMPTY_FC) as unknown as GeoJSONFC;
           aoiSource.setData(aoiData);
-          if (mapContainerRef.current) {
-            mapContainerRef.current.dataset.dataEffectAoiSet = 'true';
-          }
-        } catch (e) {
-          if (mapContainerRef.current) {
-            mapContainerRef.current.dataset.dataEffectAoiErr = String(e);
-          }
         }
-      } else {
-        if (mapContainerRef.current) {
-          mapContainerRef.current.dataset.dataEffectAoiSourceMissing = 'true';
-        }
-      }
 
-      // If either source lacks a worker connection, retry after a delay.
-      if (!thermalActor || !aoiActor) {
-        setTimeout(() => applyData(attempt + 1), 300 * attempt);
+        map.triggerRepaint();
+      } catch {
+        /* safe */
       }
     };
 
-    applyData(0);
+    syncSources();
+    const t1 = setTimeout(syncSources, 200);
+    const t2 = setTimeout(syncSources, 600);
 
     return () => {
-      cancelled = true;
+      clearTimeout(t1);
+      clearTimeout(t2);
     };
-  }, [mapReady, spatialField, analysisAoi]);
+  }, [spatialField, analysisAoi, regionBoundary, regionMask]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // Markers effect — clear old markers + add new ones.
+  // Markers effect
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    // Debug: surface effect entry on the container so we can verify via DOM
-    if (mapContainerRef.current) {
-      mapContainerRef.current.dataset.markerEffectRan = String(
-        Number(mapContainerRef.current.dataset.markerEffectRan || 0) + 1
-      );
-      mapContainerRef.current.dataset.markerEffectMapReady = String(mapReady);
-      mapContainerRef.current.dataset.markerEffectCandidateCount = String(candidates?.length ?? 0);
-    }
-
-    if (!mapReady) return;
     const map = mapRef.current;
     if (!map) return;
 
-    // Clear previous markers
     for (const m of markersRef.current) {
       try { m.remove(); } catch { /* safe */ }
     }
     markersRef.current = [];
+
+    if (layerVisibility.candidates === false) {
+      return;
+    }
 
     const isDark = theme === 'dark';
 
@@ -528,8 +642,6 @@ export function ThermalMap({
           isWinner: c.locationId === recommendedLocationId,
         }))
       : [
-          // No candidates yet — show a neutral marker at the selected analysis center
-          // so the user sees where they are looking before generating the thermal field.
           { id: 'analysis-center', name: 'Selected Analysis Area', loc: location, isWinner: false },
         ];
 
@@ -544,7 +656,6 @@ export function ThermalMap({
       const el = document.createElement('div');
 
       if (item.isWinner) {
-        // Recommended marker — hot-pink with animated pulse ring (high contrast in both themes)
         el.style.cssText = [
           'position:relative',
           'width:40px',
@@ -566,7 +677,6 @@ export function ThermalMap({
           "></span>
         `;
       } else {
-        // Candidate marker — neutral dot with theme-aware fill + dark border
         el.style.cssText = [
           'width:22px',
           'height:22px',
@@ -608,41 +718,72 @@ export function ThermalMap({
 
       markersRef.current.push(marker);
     }
-
-    // Debug: record how many markers we attempted to add
-    if (mapContainerRef.current) {
-      mapContainerRef.current.dataset.markerEffectAdded = String(markersRef.current.length);
-    }
-  }, [mapReady, candidates, recommendedLocationId, location, theme]);
+  }, [mapReady, candidates, recommendedLocationId, location, theme, layerVisibility.candidates]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // FitBounds effect — re-fit the viewport when the analysis area changes.
+  // FitBounds effects
   // ─────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!mapReady) return;
+  const fitToLocalAoi = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-
     const bounds = computeBounds(
       analysisAoi,
       spatialField,
       (candidates ?? []).map((c) => c.location),
       location,
+      regionBoundary,
+      false,
     );
     if (bounds) {
       try {
-        map.fitBounds(bounds, { padding: 45, maxZoom: 15, duration: 600 });
-      } catch { /* safe — map may be mid-transition */ }
+        map.fitBounds(bounds, { padding: 50, maxZoom: 15, duration: 600 });
+      } catch {
+        map.flyTo({ center: [location.longitude, location.latitude], zoom: 13.5, duration: 600 });
+      }
+    } else {
+      map.flyTo({ center: [location.longitude, location.latitude], zoom: 13.5, duration: 600 });
     }
-  }, [mapReady, location, analysisAoi, spatialField, candidates]);
+  }, [analysisAoi, spatialField, candidates, location, regionBoundary]);
+
+  const fitToStateRegion = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || !regionBoundary) return;
+    const bounds = computeBounds(
+      analysisAoi,
+      spatialField,
+      (candidates ?? []).map((c) => c.location),
+      location,
+      regionBoundary,
+      true,
+    );
+    if (bounds) {
+      try {
+        map.fitBounds(bounds, { padding: 40, maxZoom: 7.5, duration: 800 });
+      } catch { /* safe */ }
+    }
+  }, [analysisAoi, spatialField, candidates, location, regionBoundary]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    fitToLocalAoi();
+  }, [mapReady, location.latitude, location.longitude, fitToLocalAoi]);
 
   const legendTicks = getThermalLegendTicks(unit);
+
+  const toggleLayer = (layer: keyof MapLayerVisibility) => {
+    if (onToggleLayer) {
+      onToggleLayer({ [layer]: !layerVisibility[layer] });
+    }
+  };
+
+  const stateDisplayName = locationState || (locationName?.includes(',') ? locationName.split(',')[1]?.trim() : '');
 
   return (
     <div
       role="region"
       aria-label="Hyperlocal thermal context map showing FortyGuard surface temperature tiles, the selected analysis area, candidate sites, and the recommended site"
-      className="relative w-full h-[420px] sm:h-[480px] lg:h-[520px] rounded-xl overflow-hidden shadow-2xl shadow-black/40 border border-border"
+      className="relative w-full h-[480px] sm:h-[520px] lg:h-[560px] rounded-xl overflow-hidden shadow-2xl shadow-black/40 border border-border group"
+      style={{ backgroundColor: theme === 'dark' ? '#060a12' : '#f1f5f9' }}
     >
       {/* Map canvas */}
       <div ref={mapContainerRef} className="w-full h-full" />
@@ -655,16 +796,250 @@ export function ThermalMap({
         }
       `}</style>
 
+      {/* ─────────────────────────────────────────────────────────────
+          TOP INTERACTIVE LAYER & REGION TOOLBAR
+          ───────────────────────────────────────────────────────────── */}
+      <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 flex-wrap pointer-events-none z-20">
+        
+        {/* Left Side: Region Boundary & Local AOI controls */}
+        <div className="pointer-events-auto flex items-center gap-1.5 flex-wrap">
+          
+          {/* Geographical State/Region Boundary (Crimson highlight matching screenshot) */}
+          <button
+            type="button"
+            onClick={() => setShowRegionBoundary((prev) => !prev)}
+            title={`Toggle ${stateDisplayName || 'State'} Regional Boundary Polygon`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md shadow-lg border transition-all cursor-pointer ${
+              showRegionBoundary
+                ? 'bg-rose-500/25 border-rose-500 text-rose-300 shadow-rose-950/40 ring-1 ring-rose-500/50'
+                : 'bg-surface-card/90 border-border text-text-muted hover:text-text-primary'
+            }`}
+          >
+            <span
+              className="inline-block flex-shrink-0 transition-all"
+              style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: '2px',
+                border: `2px solid ${showRegionBoundary ? '#f43f5e' : 'currentColor'}`,
+                backgroundColor: showRegionBoundary ? 'rgba(244,63,94,0.5)' : 'transparent',
+              }}
+            />
+            <MapIcon className="size-3.5 text-rose-400" />
+            <span>{stateDisplayName ? `${stateDisplayName} Region` : 'Territory Boundary'}</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${
+              showRegionBoundary ? 'bg-rose-500/40 text-rose-100' : 'bg-surface-elevated text-text-dimmed'
+            }`}>
+              {showRegionBoundary ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          {/* AOI Local Boundary Toggle Button */}
+          <button
+            type="button"
+            onClick={() => toggleLayer('aoi')}
+            title="Toggle Local Analysis Area AOI Boundary Polygon"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md shadow-lg border transition-all cursor-pointer ${
+              layerVisibility.aoi !== false
+                ? 'bg-rose-500/25 border-rose-500 text-rose-300 shadow-rose-950/40 ring-1 ring-rose-500/50'
+                : 'bg-surface-card/90 border-border text-text-muted hover:text-text-primary'
+            }`}
+          >
+            <span
+              className="inline-block flex-shrink-0 transition-all"
+              style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: areaShape === 'circle' ? '50%' : '2px',
+                border: `2px ${layerVisibility.aoi !== false ? 'solid #be123c' : 'dashed currentColor'}`,
+                backgroundColor: layerVisibility.aoi !== false ? 'rgba(244,63,94,0.5)' : 'transparent',
+              }}
+            />
+            <span>Red AOI Shape</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${
+              layerVisibility.aoi !== false ? 'bg-rose-500/40 text-rose-100' : 'bg-surface-elevated text-text-dimmed'
+            }`}>
+              {layerVisibility.aoi !== false ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          {/* Quick Shape Switcher */}
+          {onChangeAreaShape && (
+            <div className="flex items-center bg-surface-card/95 backdrop-blur-md rounded-lg border border-border p-0.5 shadow-md">
+              <button
+                type="button"
+                onClick={() => onChangeAreaShape('polygon')}
+                title="Square Bounding Box"
+                className={`p-1.5 rounded-md text-xs transition-all flex items-center gap-1 cursor-pointer ${
+                  areaShape === 'polygon'
+                    ? 'bg-rose-600 text-white shadow-sm font-semibold'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Box className="size-3.5" />
+                <span className="hidden sm:inline text-[11px]">Square</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeAreaShape('circle')}
+                title="Radial Circle"
+                className={`p-1.5 rounded-md text-xs transition-all flex items-center gap-1 cursor-pointer ${
+                  areaShape === 'circle'
+                    ? 'bg-rose-600 text-white shadow-sm font-semibold'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <CircleIcon className="size-3.5" />
+                <span className="hidden sm:inline text-[11px]">Circle</span>
+              </button>
+            </div>
+          )}
+
+          {/* Quick AOI Size Selector Dropdown / Pill */}
+          {onChangeAoiHalfSideMetres && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSizeMenu((prev) => !prev)}
+                title="Change Analysis Area Radius/Dimension"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-mono font-medium bg-surface-card/95 backdrop-blur-md border border-border shadow-md text-text-primary hover:border-rose-500/60 transition-all cursor-pointer"
+              >
+                <span className="text-text-dimmed">Span:</span>
+                <span className="text-rose-400 font-bold">
+                  {areaShape === 'circle' ? `r=${aoiHalfSideMetres}m` : `±${aoiHalfSideMetres}m`}
+                </span>
+                <span className="text-[10px] text-text-dimmed">▾</span>
+              </button>
+
+              {showSizeMenu && (
+                <div className="absolute top-full left-0 mt-1 bg-surface-card/95 backdrop-blur-md rounded-xl border border-border shadow-xl py-1 z-30 min-w-[130px]">
+                  <div className="px-2.5 py-1 text-[10px] font-bold text-text-dimmed uppercase tracking-wider border-b border-border mb-1">
+                    {areaShape === 'circle' ? 'Radius' : 'Half-side span'}
+                  </div>
+                  {AOI_HALF_SIDE_PRESETS.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        onChangeAoiHalfSideMetres(m);
+                        setShowSizeMenu(false);
+                      }}
+                      className={`w-full px-2.5 py-1.5 text-xs text-left font-mono flex items-center justify-between transition-all cursor-pointer ${
+                        aoiHalfSideMetres === m
+                          ? 'bg-rose-500/15 text-rose-400 font-bold'
+                          : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+                      }`}
+                    >
+                      <span>{m >= 1000 ? `${m / 1000} km` : `${m} m`}</span>
+                      {aoiHalfSideMetres === m && <Check className="size-3 text-rose-400" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Right Side: Quick Layer Toggles & View Fits & Theme Switcher */}
+        <div className="pointer-events-auto flex items-center gap-1.5 bg-surface-card/95 backdrop-blur-md p-1 rounded-xl border border-border shadow-lg">
+          {/* Thermal Heatmap layer toggle */}
+          <button
+            type="button"
+            onClick={() => toggleLayer('thermal')}
+            title="Toggle Thermal Heatmap Layer"
+            className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+              layerVisibility.thermal !== false
+                ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50'
+                : 'text-text-muted hover:text-text-primary opacity-60'
+            }`}
+          >
+            <Flame className="size-3.5 text-amber-400" />
+            <span className="hidden md:inline text-[11px]">Heatmap</span>
+          </button>
+
+          {/* Sites / Candidates layer toggle */}
+          <button
+            type="button"
+            onClick={() => toggleLayer('candidates')}
+            title="Toggle Candidate & Recommended Markers"
+            className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+              layerVisibility.candidates !== false
+                ? 'bg-pink-500/25 text-pink-300 border border-pink-500/50'
+                : 'text-text-muted hover:text-text-primary opacity-60'
+            }`}
+          >
+            <MapPin className="size-3.5 text-pink-400" />
+            <span className="hidden md:inline text-[11px]">Sites</span>
+          </button>
+
+          {/* Labels layer toggle */}
+          <button
+            type="button"
+            onClick={() => toggleLayer('labels')}
+            title="Toggle Map Street & City Labels"
+            className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+              layerVisibility.labels !== false
+                ? 'bg-slate-500/25 text-text-primary border border-border'
+                : 'text-text-muted hover:text-text-primary opacity-60'
+            }`}
+          >
+            <Tag className="size-3.5" />
+            <span className="hidden md:inline text-[11px]">Labels</span>
+          </button>
+
+          <div className="w-[1px] h-4 bg-border my-auto mx-0.5" />
+
+          {/* Light / Dark Theme toggle directly on map */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch map to Light Mode' : 'Switch map to Dark Mode'}
+            className="p-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-all flex items-center cursor-pointer"
+          >
+            {theme === 'dark' ? <Sun className="size-3.5 text-amber-400" /> : <Moon className="size-3.5 text-indigo-400" />}
+          </button>
+
+          {/* Zoom to Region View Button */}
+          {regionBoundary && (
+            <button
+              type="button"
+              onClick={fitToStateRegion}
+              title={`Zoom to Entire ${stateDisplayName || 'State'} Region Boundary`}
+              className="px-2 py-1 rounded-lg text-xs text-rose-300 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 transition-all flex items-center gap-1 cursor-pointer font-semibold"
+            >
+              <ZoomIn className="size-3.5 text-rose-400" />
+              <span className="hidden sm:inline text-[10px]">State View</span>
+            </button>
+          )}
+
+          {/* Fit / Center Local AOI View Button */}
+          <button
+            type="button"
+            onClick={fitToLocalAoi}
+            title="Zoom to Local Analysis AOI"
+            className="p-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-all flex items-center cursor-pointer"
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+        </div>
+
+      </div>
+
       {/* Thermal legend — bottom-left overlay */}
       <div
-        className="absolute bottom-3 left-3 bg-surface-card/95 backdrop-blur-md px-3.5 py-2.5 rounded-xl shadow-xl border border-border"
+        className="absolute bottom-3 left-3 bg-surface-card/95 backdrop-blur-md px-3.5 py-2.5 rounded-xl shadow-xl border border-border z-10"
         data-testid="map-legend-ticks"
       >
         <div
-          className="text-[10px] font-bold text-text-dimmed uppercase tracking-wider mb-1.5"
+          className="text-[10px] font-bold text-text-dimmed uppercase tracking-wider mb-1.5 flex items-center justify-between gap-2"
           data-testid="map-legend-header"
         >
-          Thermal Scale ({tempUnitSuffix(unit)})
+          <span>Thermal Scale ({tempUnitSuffix(unit)})</span>
+          {selectedTileId && (
+            <span className="text-[9px] text-accent-cyan font-mono font-normal">
+              Tile: {selectedTileId}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {legendTicks.map(({ color, label }) => (
@@ -681,35 +1056,9 @@ export function ThermalMap({
         </div>
       </div>
 
-      {/* Selected Analysis Area indicator — top-left badge (replaces "FortyGuard Operational AOI") */}
-      <div className="absolute top-3 left-3 bg-surface-card/95 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-lg border border-border flex items-center gap-2">
-        <span
-          className="inline-block flex-shrink-0"
-          style={{
-            width: '10px',
-            height: '10px',
-            borderRadius: '2px',
-            border: `2px dashed ${theme === 'dark' ? '#ffffff' : '#0f172a'}`,
-            backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.12)',
-          }}
-        />
-        <span className="text-[10px] font-bold text-text-primary uppercase tracking-wide">
-          Selected Analysis Area
-        </span>
-      </div>
-
-      {/* Selected tile badge — top-right */}
-      {selectedTileId && (
-        <div className="absolute top-3 right-3 bg-surface-card/95 backdrop-blur-md px-3 py-1.5 rounded-lg shadow-lg border border-accent-cyan/30">
-          <span className="text-[10px] text-text-muted">Active Tile: </span>
-          <span className="text-xs font-mono font-bold text-accent-cyan">
-            {selectedTileId}
-          </span>
-        </div>
-      )}
-
-      {/* Source attribution */}
-      <div className="absolute bottom-3 right-3 bg-surface-card/85 backdrop-blur-sm px-2.5 py-1 rounded-md border border-border">
+      {/* Source attribution — bottom-right */}
+      <div className="absolute bottom-3 right-3 bg-surface-card/85 backdrop-blur-sm px-2.5 py-1 rounded-md border border-border z-10 flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse" />
         <span className="text-[9px] text-text-dimmed font-mono uppercase tracking-wide">
           FortyGuard Hyperlocal Thermal
         </span>
@@ -717,7 +1066,7 @@ export function ThermalMap({
 
       {/* Empty state overlay (shown only when no spatialField AND no AOI) */}
       {!spatialField && !analysisAoi && !location && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
           <div className="bg-surface-card/95 backdrop-blur-md px-5 py-3 rounded-xl text-center border border-border shadow-lg">
             <p className="text-text-muted text-sm">
               Select a location to render the thermal field

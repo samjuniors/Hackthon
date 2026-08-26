@@ -243,19 +243,14 @@ export async function POST(request: Request) {
       throw new IncompleteTemporalCoverageError('Empty hourly sequence for requested time span');
     }
 
-    if (mode === 'FIXTURE' && !isLocationCoveredByFixture(location)) {
-      throw new OutsideCoverageError(
-        'The DEMO fixture dataset is captured exclusively for Manhattan (lat ~40.712, lon ~-74.008). Switch to LIVE mode to analyze this location.'
-      );
-    }
-
+    const isManhattan = isLocationCoveredByFixture(location);
     const candidatesToEvaluate: CandidateLocation[] = reqCandidates && reqCandidates.length > 0
       ? reqCandidates.map((c) => ({
           locationId: c.locationId,
           name: c.name,
           location: { latitude: c.latitude, longitude: c.longitude },
         }))
-      : mode === 'LIVE'
+      : mode === 'LIVE' || !isManhattan
         ? generateLiveCandidates({ latitude, longitude })
         : DEFAULT_CANDIDATE_LOCATIONS;
 

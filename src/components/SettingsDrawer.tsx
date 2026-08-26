@@ -278,6 +278,25 @@ export function SettingsDrawer({ open, onOpenChange, capability }: SettingsDrawe
                       </span>
                     </span>
                   </div>
+                  {/* Last successful heatmap — server runtime provenance */}
+                  {capability.lastSuccessfulHeatmapAt && (
+                    <div className="space-y-1 pt-1 border-t border-border">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-text-dimmed">Last successful heatmap</span>
+                        <span className="text-text-primary text-right text-[10px]">
+                          {new Date(capability.lastSuccessfulHeatmapAt).toLocaleString()}
+                        </span>
+                      </div>
+                      {capability.lastHeatmapActivityId && (
+                        <div className="flex justify-between gap-2">
+                          <span className="text-text-dimmed">Last activity</span>
+                          <span className="text-text-primary text-right text-[10px] truncate max-w-[180px]" title={capability.lastHeatmapActivityId}>
+                            {capability.lastHeatmapActivityId}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {/* Connectivity */}
                   <div className="flex justify-between gap-2">
                     <span className="text-text-dimmed">Connectivity</span>

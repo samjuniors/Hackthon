@@ -57,6 +57,10 @@ export interface ProviderCapability {
   connectivity: 'connected' | 'exhausted' | 'auth-error' | 'unconfigured' | 'unknown';
   /** ISO timestamp of the last capability probe. */
   checkedAt: string;
+  /** ISO timestamp of the last SUCCESSFUL FortyGuard heatmap completion (server runtime). */
+  lastSuccessfulHeatmapAt?: string;
+  /** FortyGuard activity_id of the last successful heatmap (server runtime). */
+  lastHeatmapActivityId?: string;
   /** Honest, human-readable note about any uncertainty. */
   note?: string;
 }

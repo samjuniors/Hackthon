@@ -69,6 +69,21 @@ export const METROPOLITAN_LOCATIONS: NamedLocation[] = [
     description: 'Downtown Los Angeles urban core',
   },
   {
+    id: 'US-SFO',
+    name: 'San Francisco, CA',
+    displayName: 'San Francisco, CA (Financial District / Embarcadero)',
+    category: 'Metropolitan Area',
+    latitude: 37.7749,
+    longitude: -122.4194,
+    city: 'San Francisco',
+    state: 'CA',
+    country: 'USA',
+    zipCode: '94103',
+    timezone: 'America/Los_Angeles',
+    isDemoOnly: false,
+    description: 'San Francisco urban peninsula microclimate',
+  },
+  {
     id: 'US-NYC',
     name: 'New York, NY',
     displayName: 'New York, NY (Midtown Manhattan)',
@@ -97,6 +112,36 @@ export const METROPOLITAN_LOCATIONS: NamedLocation[] = [
     timezone: 'America/Chicago',
     isDemoOnly: false,
     description: 'Chicago central business district',
+  },
+  {
+    id: 'US-AUS',
+    name: 'Austin, TX',
+    displayName: 'Austin, TX (Downtown / Congress Ave)',
+    category: 'Metropolitan Area',
+    latitude: 30.2672,
+    longitude: -97.7431,
+    city: 'Austin',
+    state: 'TX',
+    country: 'USA',
+    zipCode: '78701',
+    timezone: 'America/Chicago',
+    isDemoOnly: false,
+    description: 'Austin downtown heat corridor',
+  },
+  {
+    id: 'US-MIA',
+    name: 'Miami, FL',
+    displayName: 'Miami, FL (Brickell / Downtown)',
+    category: 'Metropolitan Area',
+    latitude: 25.7617,
+    longitude: -80.1918,
+    city: 'Miami',
+    state: 'FL',
+    country: 'USA',
+    zipCode: '33131',
+    timezone: 'America/New_York',
+    isDemoOnly: false,
+    description: 'Miami coastal subtropical urban core',
   },
   {
     id: 'US-HOU',
@@ -157,51 +202,6 @@ export const METROPOLITAN_LOCATIONS: NamedLocation[] = [
     timezone: 'America/Chicago',
     isDemoOnly: false,
     description: 'North Texas urban center',
-  },
-  {
-    id: 'US-AUS',
-    name: 'Austin, TX',
-    displayName: 'Austin, TX (Congress Ave Corridor)',
-    category: 'Metropolitan Area',
-    latitude: 30.2672,
-    longitude: -97.7431,
-    city: 'Austin',
-    state: 'TX',
-    country: 'USA',
-    zipCode: '78701',
-    timezone: 'America/Chicago',
-    isDemoOnly: false,
-    description: 'Central Austin urban tech & logistics hub',
-  },
-  {
-    id: 'US-MIA',
-    name: 'Miami, FL',
-    displayName: 'Miami, FL (Brickell / Financial District)',
-    category: 'Metropolitan Area',
-    latitude: 25.7617,
-    longitude: -80.1918,
-    city: 'Miami',
-    state: 'FL',
-    country: 'USA',
-    zipCode: '33131',
-    timezone: 'America/New_York',
-    isDemoOnly: false,
-    description: 'Subtropical urban coastal microclimate',
-  },
-  {
-    id: 'US-SFO',
-    name: 'San Francisco, CA',
-    displayName: 'San Francisco, CA (Financial District)',
-    category: 'Metropolitan Area',
-    latitude: 37.7749,
-    longitude: -122.4194,
-    city: 'San Francisco',
-    state: 'CA',
-    country: 'USA',
-    zipCode: '94103',
-    timezone: 'America/Los_Angeles',
-    isDemoOnly: false,
-    description: 'Bay Area maritime-urban microclimate',
   },
   {
     id: 'US-SEA',
@@ -444,11 +444,8 @@ export function searchLocations(query: string, maxResults = 8): NamedLocation[] 
 /**
  * Returns preset location options for quick selection in the UI.
  */
-export function getPresetLocations(isFixtureMode: boolean): NamedLocation[] {
-  if (isFixtureMode) {
-    return METROPOLITAN_LOCATIONS.filter((loc) => loc.isDemoOnly);
-  }
-  return METROPOLITAN_LOCATIONS.filter((loc) => !loc.isDemoOnly).slice(0, 6);
+export function getPresetLocations(_isFixtureMode?: boolean): NamedLocation[] {
+  return METROPOLITAN_LOCATIONS.slice(0, 8);
 }
 
 /**

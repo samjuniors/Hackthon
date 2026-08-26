@@ -75,12 +75,11 @@ export function localToUtcIso(
   //   wallClockUtc - (tzOffsetMs)
   // where tzOffsetMs = wallClockUtc - instantRepresentingTzWallClock.
   const tzWall = Date.UTC(tzYear, tzMonth - 1, tzDay, tzHour, tzMinute, tzSecond);
-  // offset = gap between "desired local time interpreted as UTC" and
-  // "that same instant displayed in the target tz, re-interpreted as UTC".
-  // For NY (EDT=UTC-4): 04:00Z shows as 00:00 EDT → offset = +4h → we ADD
-  // to shift the candidate instant forward to the correct UTC instant.
-  // For Tokyo (JST=UTC+9): 04:00Z shows as 13:00 JST → offset = -9h → we ADD
-  // (i.e. subtract) to shift backward to the correct UTC instant.
+  // Double-iteration offset: the difference between "desired wall-clock read
+  // as UTC" and "the same instant re-read as UTC after one tz round-trip".
+  // For New York (EDT = UTC-4): desired local 04:00 → wallClockUtc = 04:00Z,
+  // displayed back as 00:00 EDT → tzWall = 00:00Z → offset = +4h →
+  // instant = 08:00Z, which is exactly 04:00 EDT.
   const offsetMs = wallClockUtc - tzWall;
   const instant = wallClockUtc + offsetMs;
   return new Date(instant).toISOString();

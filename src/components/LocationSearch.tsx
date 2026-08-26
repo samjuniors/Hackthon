@@ -396,10 +396,10 @@ export function LocationSearch({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <label className="text-[11px] font-bold uppercase tracking-wider text-text-dimmed">
-            {isFixture ? 'Captured Demo Sites (Manhattan)' : 'Metropolitan Operational Hubs'}
+            {isFixture ? 'Demo Candidate Locations (Manhattan)' : 'Metropolitan Operational Hubs'}
           </label>
           <span className="text-[10px] text-accent-cyan font-mono font-medium">
-            {isFixture ? 'Offline Verified' : 'Live Queries'}
+            {isFixture ? 'Application-Defined' : 'Live Queries'}
           </span>
         </div>
         <div className="flex flex-wrap gap-1.5">

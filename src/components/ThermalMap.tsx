@@ -344,7 +344,7 @@ export function ThermalMap({
             source: 'region-boundary',
             paint: {
               'fill-color': isDark ? '#f43f5e' : '#be123c',
-              'fill-opacity': isDark ? 0.16 : 0.10,
+              'fill-opacity': isDark ? 0.18 : 0.12,
             },
           },
           {
@@ -353,8 +353,8 @@ export function ThermalMap({
             source: 'region-boundary',
             paint: {
               'line-color': isDark ? '#fb7185' : '#e11d48',
-              'line-width': 8,
-              'line-opacity': 0.6,
+              'line-width': 10,
+              'line-opacity': 0.7,
               'line-blur': 4,
             },
           },
@@ -363,9 +363,10 @@ export function ThermalMap({
             type: 'line',
             source: 'region-boundary',
             paint: {
-              'line-color': isDark ? '#fb7185' : '#be123c',
-              'line-width': 3.5,
+              'line-color': isDark ? '#fb7185' : '#e11d48',
+              'line-width': 4,
               'line-opacity': 1.0,
+              'line-dasharray': [3, 2],
             },
           },
           // 4. Local AOI interior tint
@@ -803,7 +804,15 @@ export function ThermalMap({
           {/* Geographical State/Region Context Toggle */}
           <button
             type="button"
-            onClick={() => setShowRegionBoundary((prev) => !prev)}
+            onClick={() => {
+              setShowRegionBoundary((prev) => {
+                const next = !prev;
+                if (next) {
+                  fitToStateRegion();
+                }
+                return next;
+              });
+            }}
             title={`Toggle ${stateDisplayName || 'State'} Regional Context Boundary`}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md shadow-lg border transition-all cursor-pointer ${
               showRegionBoundary

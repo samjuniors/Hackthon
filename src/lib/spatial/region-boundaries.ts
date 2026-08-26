@@ -1,6 +1,6 @@
 /**
- * Accurate GeoJSON boundary geometries for US States & Metropolitan Regional Territories.
- * Used to render the geographical boundary polygon when a state/city (e.g. California, New York, Texas) is selected.
+ * Accurate GeoJSON boundary geometries for States & Metropolitan Regional Territories.
+ * Used to render the geographical boundary polygon when a state/city (e.g. California, New York, Texas, UK, UAE) is selected.
  */
 import type { PolygonAOI } from '@/types/domain';
 
@@ -183,23 +183,101 @@ export const MASSACHUSETTS_STATE_BOUNDARY: [number, number][] = [
   [-73.501859, 42.751859],
 ];
 
-// Map of state code to boundary coordinates
+// Nevada State boundary geometry
+export const NEVADA_STATE_BOUNDARY: [number, number][] = [
+  [-120.005746, 42.002207],
+  [-114.041859, 42.002207],
+  [-114.041859, 37.001859],
+  [-114.633058, 35.001857],
+  [-114.536098, 35.001857],
+  [-120.005746, 39.000000],
+  [-120.005746, 42.002207],
+];
+
+// United Kingdom (Great Britain) Regional Territory Boundary
+export const UNITED_KINGDOM_BOUNDARY: [number, number][] = [
+  [-5.718, 50.065],
+  [-3.535, 50.218],
+  [1.446, 51.151],
+  [1.758, 52.482],
+  [0.178, 53.565],
+  [-0.108, 54.673],
+  [-1.984, 55.813],
+  [-3.064, 58.643],
+  [-5.012, 58.601],
+  [-6.208, 56.782],
+  [-4.845, 54.882],
+  [-3.078, 53.412],
+  [-5.312, 51.723],
+  [-5.718, 50.065],
+];
+
+// United Arab Emirates (UAE) Regional Boundary
+export const UAE_BOUNDARY: [number, number][] = [
+  [51.583, 24.167],
+  [52.551, 24.312],
+  [54.218, 24.482],
+  [55.271, 25.205],
+  [56.371, 25.682],
+  [56.321, 24.812],
+  [55.912, 24.112],
+  [55.212, 23.012],
+  [52.012, 23.012],
+  [51.583, 24.167],
+];
+
+// Japan (Greater Tokyo / Kanto & Central Honshu) Regional Boundary
+export const JAPAN_REGION_BOUNDARY: [number, number][] = [
+  [138.50, 34.50],
+  [140.00, 34.80],
+  [140.85, 35.70],
+  [140.75, 36.80],
+  [139.80, 37.20],
+  [138.60, 36.80],
+  [138.00, 35.50],
+  [138.50, 34.50],
+];
+
+// Map of region/state code to boundary coordinates
 const STATE_BOUNDARIES: Record<string, [number, number][]> = {
   CA: CALIFORNIA_STATE_BOUNDARY,
+  CALIFORNIA: CALIFORNIA_STATE_BOUNDARY,
   NY: NEW_YORK_STATE_BOUNDARY,
+  'NEW YORK': NEW_YORK_STATE_BOUNDARY,
   TX: TEXAS_STATE_BOUNDARY,
+  TEXAS: TEXAS_STATE_BOUNDARY,
   IL: ILLINOIS_STATE_BOUNDARY,
+  ILLINOIS: ILLINOIS_STATE_BOUNDARY,
   FL: FLORIDA_STATE_BOUNDARY,
+  FLORIDA: FLORIDA_STATE_BOUNDARY,
   AZ: ARIZONA_STATE_BOUNDARY,
+  ARIZONA: ARIZONA_STATE_BOUNDARY,
   WA: WASHINGTON_STATE_BOUNDARY,
+  WASHINGTON: WASHINGTON_STATE_BOUNDARY,
   CO: COLORADO_STATE_BOUNDARY,
+  COLORADO: COLORADO_STATE_BOUNDARY,
   GA: GEORGIA_STATE_BOUNDARY,
+  GEORGIA: GEORGIA_STATE_BOUNDARY,
   MA: MASSACHUSETTS_STATE_BOUNDARY,
+  MASSACHUSETTS: MASSACHUSETTS_STATE_BOUNDARY,
+  NV: NEVADA_STATE_BOUNDARY,
+  NEVADA: NEVADA_STATE_BOUNDARY,
+  UK: UNITED_KINGDOM_BOUNDARY,
+  GB: UNITED_KINGDOM_BOUNDARY,
+  'UNITED KINGDOM': UNITED_KINGDOM_BOUNDARY,
+  LONDON: UNITED_KINGDOM_BOUNDARY,
+  UAE: UAE_BOUNDARY,
+  'UNITED ARAB EMIRATES': UAE_BOUNDARY,
+  DUBAI: UAE_BOUNDARY,
+  'ABU DHABI': UAE_BOUNDARY,
+  JP: JAPAN_REGION_BOUNDARY,
+  JAPAN: JAPAN_REGION_BOUNDARY,
+  TOKYO: JAPAN_REGION_BOUNDARY,
 };
 
 /**
  * Get GeoJSON FeatureCollection representing the geographical/state boundary polygon
- * for the selected location (e.g. California, New York, Texas).
+ * for the selected location (e.g. California, New York, Texas, UK, UAE).
  */
 export function getRegionBoundaryPolygon(
   stateOrCode?: string,
@@ -207,8 +285,15 @@ export function getRegionBoundaryPolygon(
   centerLat?: number,
   centerLon?: number,
 ): PolygonAOI | null {
-  const code = (stateOrCode || '').toUpperCase().trim();
-  const rawCoords = STATE_BOUNDARIES[code];
+  const normState = (stateOrCode || '').toUpperCase().trim();
+  const normCity = (cityName || '').toUpperCase().trim();
+
+  const rawCoords =
+    STATE_BOUNDARIES[normState] ||
+    STATE_BOUNDARIES[normCity] ||
+    (normCity.includes('LONDON') ? UNITED_KINGDOM_BOUNDARY : null) ||
+    (normCity.includes('DUBAI') || normCity.includes('ABU DHABI') ? UAE_BOUNDARY : null) ||
+    (normCity.includes('TOKYO') ? JAPAN_REGION_BOUNDARY : null);
 
   if (rawCoords && rawCoords.length > 0) {
     return {
@@ -217,14 +302,46 @@ export function getRegionBoundaryPolygon(
         {
           type: 'Feature',
           properties: {
-            name: `${code} Regional Boundary`,
-            state: code,
+            name: `${stateOrCode || cityName || 'Regional'} Territory Boundary`,
+            state: stateOrCode,
             city: cityName,
             isRegionBoundary: true,
           },
           geometry: {
             type: 'Polygon',
             coordinates: [rawCoords],
+          },
+        },
+      ],
+    };
+  }
+
+  // Fallback: Generate a clean 100km administrative regional boundary box around the coordinates
+  if (Number.isFinite(centerLat) && Number.isFinite(centerLon)) {
+    const lat = centerLat as number;
+    const lon = centerLon as number;
+    const spanLat = 0.45;
+    const spanLon = 0.55;
+    return {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {
+            name: `${cityName || stateOrCode || 'Regional'} Territory Context`,
+            isRegionBoundary: true,
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [lon - spanLon, lat - spanLat],
+                [lon + spanLon, lat - spanLat],
+                [lon + spanLon, lat + spanLat],
+                [lon - spanLon, lat + spanLat],
+                [lon - spanLon, lat - spanLat],
+              ],
+            ],
           },
         },
       ],

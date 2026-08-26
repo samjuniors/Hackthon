@@ -1,0 +1,676 @@
+     1→'use client';
+     2→
+     3→import { motion } from 'framer-motion';
+     4→import { useState } from 'react';
+     5→import { LocationSearch } from '@/components/LocationSearch';
+     6→import { SystemStatus } from '@/components/dashboard/SystemStatus';
+     7→import type { NamedLocation, ProviderStatus, FortyGuardHealthResponse, AIHealthResponse } from '@/types/provider';
+     8→import type { DataSourceMode } from '@/types/provenance';
+     9→import type { LocationPoint } from '@/types/domain';
+    10→import type { CandidateSite } from '@/hooks/use-candidate-sites';
+    11→import { useUserPreferences, AOI_SPAN_PRESETS_LOCAL } from '@/lib/user-preferences';
+    12→import { aoiSpanLabel } from '@/lib/spatial/aoi';
+    13→import { isLocationCoveredByFixture } from '@/lib/location/search';
+    14→import {
+    15→  type AnalysisTemporalInput,
+    16→  type AnalysisTimeMode,
+    17→  TIME_MODE_OPTIONS,
+    18→  deriveDurationHours,
+    19→  effectiveTimeBounds,
+    20→  formatTemporalForHeader,
+    21→  FIXTURE_TEMPORAL_METADATA,
+    22→  isValidDateStr,
+    23→  isValidTimeStr,
+    24→  todayLocalDate,
+    25→} from '@/lib/temporal/analysis-window';
+    26→
+    27→interface ControlRailProps {
+    28→  mode: DataSourceMode;
+    29→  selectedLocation: NamedLocation;
+    30→  /** Current AOI center (tracks drag movements — Section 4). */
+    31→  analysisCenter?: LocationPoint;
+    32→  /** Non-null when a state/region was selected as CONTEXT (Section 13). */
+    33→  stateLevelSelection?: NamedLocation | null;
+    34→  /** Explicit WHEN inputs — date + start + end + time mode. */
+    35→  temporalInput: AnalysisTemporalInput;
+    36→  onTemporalChange: (next: AnalysisTemporalInput) => void;
+    37→  onGenerate: () => void;
+    38→  loading: boolean;
+    39→  onSelectLocation: (loc: NamedLocation) => void;
+    40→  onSwitchToLive: () => void;
+    41→  // System status
+    42→  fortyGuardStatus: ProviderStatus;
+    43→  fortyGuardHealth: FortyGuardHealthResponse | null;
+    44→  aiStatus: ProviderStatus;
+    45→  aiHealth: AIHealthResponse | null;
+    46→  fieldReady: boolean;
+    47→  onTestFortyGuard: () => void;
+    48→  onTestAI: () => void;
+    49→  // Candidate sites (REAL user-placed sites — Section 8)
+    50→  candidateSites: CandidateSite[];
+    51→  onRemoveSite: (locationId: string) => void;
+    52→  onRenameSite: (locationId: string, name: string) => void;
+    53→  onToggleAddSiteMode: () => void;
+    54→  addSiteMode: boolean;
+    55→  onAddSiteFromSearch: (loc: NamedLocation) => void;
+    56→  /** Granularity the captured fixture was ACTUALLY recorded at (DEMO display). */
+    57→  fixtureGranularity?: number;
+    58→}
+    59→
+    60→/** Format a metres value as a compact label (1000 → "1km"). */
+    61→function metresLabel(m: number): string {
+    62→  return m >= 1000 ? `${m / 1000}km` : `${m}m`;
+    63→}
+    64→
+    65→/**
+    66→ * Left control rail — the operational input workspace.
+    67→ * Location → Analysis Area (span) → Thermal Cell → Candidate Sites → WHEN → Generate.
+    68→ * System status sits compactly at the bottom (advanced diagnostics live in Settings).
+    69→ */
+    70→export function ControlRail({
+    71→  mode,
+    72→  selectedLocation,
+    73→  analysisCenter,
+    74→  stateLevelSelection,
+    75→  temporalInput,
+    76→  onTemporalChange,
+    77→  onGenerate,
+    78→  loading,
+    79→  onSelectLocation,
+    80→  onSwitchToLive,
+    81→  fortyGuardStatus,
+    82→  fortyGuardHealth,
+    83→  aiStatus,
+    84→  aiHealth,
+    85→  fieldReady,
+    86→  onTestFortyGuard,
+    87→  onTestAI,
+    88→  candidateSites,
+    89→  onRemoveSite,
+    90→  onRenameSite,
+    91→  onToggleAddSiteMode,
+    92→  addSiteMode,
+    93→  onAddSiteFromSearch,
+    94→  fixtureGranularity,
+    95→}: ControlRailProps) {
+    96→  const [prefs, setters] = useUserPreferences();
+    97→  const [renamingId, setRenamingId] = useState<string | null>(null);
+    98→  const [renameValue, setRenameValue] = useState('');
+    99→  const [showSiteSearch, setShowSiteSearch] = useState(false);
+   100→  const isFixtureMismatch = mode === 'FIXTURE' && !isLocationCoveredByFixture(selectedLocation);
+   101→  const aiProvider = aiHealth?.provider;
+   102→  const tz = selectedLocation.timezone;
+   103→  const derivedDuration = deriveDurationHours(temporalInput);
+   104→  const isFixtureAnchored = mode === 'FIXTURE';
+   105→  const centerCoords = analysisCenter ?? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude };
+   106→
+   107→  // Helper to update a single field of the temporal input.
+   108→  const update = (patch: Partial<AnalysisTemporalInput>) =>
+   109→    onTemporalChange({ ...temporalInput, ...patch });
+   110→
+   111→  const handleTimeModeChange = (m: AnalysisTimeMode) => {
+   112→    setters.setAnalysisTimeMode(m);
+   113→    update({ timeMode: m });
+   114→  };
+   115→  const handleDayWindowChange = (h: 2 | 3 | 4) => {
+   116→    setters.setAnalysisDayWindowHours(h);
+   117→    update({ dayWindowHours: h });
+   118→  };
+   119→
+   120→  // For Single Hour, End is derived (Start + 1h) and shown read-only.
+   121→  const isSingleHour = temporalInput.timeMode === 'single-hour';
+   122→  const isSingleDay = temporalInput.timeMode === 'single-day';
+   123→  const bounds = effectiveTimeBounds(temporalInput);
+   124→
+   125→  // Validation flags — surface inline so the user fixes before Generate.
+   126→  const dateValid = isValidDateStr(temporalInput.date);
+   127→  const startValid = isValidTimeStr(temporalInput.startTime);
+   128→  const endValid = isValidTimeStr(temporalInput.endTime);
+   129→  const rangeValid =
+   130→    temporalInput.timeMode !== 'range-of-hours' ||
+   131→    (startValid && endValid && bounds.end > bounds.start);
+   132→  const allValid = dateValid && startValid && endValid && rangeValid;
+   133→
+   134→  // Honest forecast note (no invented provider boundaries).
+   135→  const isFutureDate = dateValid && tz ? temporalInput.date > todayLocalDate(tz) : false;
+   136→
+   137→  const outsideSiteCount = candidateSites.filter((s) => s.outsideAoi).length;
+   138→
+   139→  return (
+   140→    <div className="space-y-4">
+   141→      {/* ── DEMO notice ── */}
+   142→      {mode === 'FIXTURE' && (
+   143→        <div className="rounded-xl p-3.5 border border-border bg-accent-amber-bg">
+   144→          <div className="flex items-center gap-2 mb-1">
+   145→            <span className="text-sm" style={{ color: 'var(--accent-amber)' }}>⬡</span>
+   146→            <span className="text-sm font-bold" style={{ color: 'var(--accent-amber)' }}>
+   147→              DEMO · Captured FortyGuard
+   148→            </span>
+   149→          </div>
+   150→          <p className="text-xs leading-relaxed" style={{ color: 'var(--accent-amber-text)', opacity: 0.85 }}>
+   151→            Offline demonstration using a 12-hour Manhattan thermal-field capture ({fixtureGranularity ?? 60}m cells).
+   152→            Switch to LIVE in Settings to analyse any location in real time.
+   153→          </p>
+   154→        </div>
+   155→      )}
+   156→
+   157→      {/* ── ANALYSIS ── */}
+   158→      <div className="rounded-xl border border-border bg-surface-card p-4 space-y-4">
+   159→        <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">Analysis</div>
+   160→
+   161→        <LocationSearch
+   162→          selectedLocation={selectedLocation}
+   163→          mode={mode}
+   164→          onSelectLocation={onSelectLocation}
+   165→          onSwitchToLive={onSwitchToLive}
+   166→        />
+   167→
+   168→        {/* ── State-level selection context (Section 13) ── */}
+   169→        {stateLevelSelection && (
+   170→          <div
+   171→            className="rounded-lg p-3 border"
+   172→            style={{ background: 'rgba(225,29,72,0.06)', borderColor: 'rgba(225,29,72,0.35)' }}
+   173→            data-testid="state-level-selection-indicator"
+   174→          >
+   175→            <div className="flex items-center justify-between mb-1">
+   176→              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#e11d48' }}>
+   177→                Geographic Region Selected
+   178→              </span>
+   179→              <span className="text-[9px] font-mono text-text-dimmed">context only</span>
+   180→            </div>
+   181→            <div className="text-xs font-bold text-text-primary">{stateLevelSelection.name}</div>
+   182→            <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
+   183→              Region boundary shown for context. The analysis point did NOT move — now search a city, street, or address
+   184→              inside {stateLevelSelection.name} to place the analysis area.
+   185→            </p>
+   186→          </div>
+   187→        )}
+   188→
+   189→        <div className="border-t border-border" />
+   190→
+   191→        {/* ── Analysis Area (SPAN semantics — Section 3) ── */}
+   192→        <div>
+   193→          <div className="flex items-center justify-between mb-2">
+   194→            <span className="text-sm font-medium text-text-secondary">Analysis Area</span>
+   195→            <span className="text-[10px] font-mono text-text-dimmed">
+   196→              {prefs.analysisAreaShape === 'circle' ? 'diameter' : 'square span'} · draggable
+   197→            </span>
+   198→          </div>
+   199→          {/* Shape toggle */}
+   200→          <div className="grid grid-cols-2 gap-2 mb-2">
+   201→            {(['polygon', 'circle'] as const).map((shape) => (
+   202→              <button
+   203→                key={shape}
+   204→                data-testid={`aoi-shape-${shape}`}
+   205→                onClick={() => setters.setAnalysisAreaShape(shape)}
+   206→                className={`min-h-[40px] rounded-lg text-xs font-semibold capitalize transition-all border ${
+   207→                  prefs.analysisAreaShape === shape
+   208→                    ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   209→                    : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   210→                }`}
+   211→              >
+   212→                {shape === 'polygon' ? 'Square' : 'Circle'}
+   213→              </button>
+   214→            ))}
+   215→          </div>
+   216→          {/* AOI span presets — the number IS the visible size:
+   217→              polygon → side length ("400m × 400m"), circle → diameter. */}
+   218→          <div className="grid grid-cols-5 gap-1.5" data-testid="aoi-size-presets">
+   219→            {AOI_SPAN_PRESETS_LOCAL.map((size) => {
+   220→              const active = prefs.analysisAoiSpanMetres === size;
+   221→              return (
+   222→                <button
+   223→                  key={size}
+   224→                  data-testid={`aoi-size-${size}`}
+   225→                  onClick={() => setters.setAnalysisAoiSpanMetres(size)}
+   226→                  className={`min-h-[36px] rounded-md text-[10px] font-mono font-bold transition-all border ${
+   227→                    active
+   228→                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   229→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   230→                  }`}
+   231→                  aria-pressed={active}
+   232→                >
+   233→                  {metresLabel(size)}
+   234→                </button>
+   235→              );
+   236→            })}
+   237→          </div>
+   238→          <div className="mt-1.5 px-2 py-1 rounded bg-surface-deep/60 border border-border/50 text-[10px] font-mono text-text-muted flex items-center justify-between">
+   239→            <span>Size:</span>
+   240→            <span className="text-accent-cyan font-bold" data-testid="aoi-span-label">
+   241→              {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
+   242→            </span>
+   243→          </div>
+   244→          <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
+   245→            Drag the ⌖ handle on the map to move the area — the moved geometry is exactly what FortyGuard receives.
+   246→          </p>
+   247→        </div>
+   248→
+   249→        {/* ── Thermal Cell resolution (Section 2 — granularity, NOT zoom) ── */}
+   250→        <div>
+   251→          <div className="flex items-center justify-between mb-2">
+   252→            <span className="text-sm font-medium text-text-secondary">Thermal Cell</span>
+   253→            <span className="text-[10px] font-mono text-text-dimmed">
+   254→              {mode === 'LIVE' ? 'FortyGuard granularity' : `fixture captured at ${fixtureGranularity ?? 60}m`}
+   255→            </span>
+   256→          </div>
+   257→          <div className="grid grid-cols-3 gap-2" data-testid="resolution-options">
+   258→            {([60, 80, 100] as const).map((r) => {
+   259→              const active = prefs.analysisResolution === r;
+   260→              const fixtureMismatch = mode === 'FIXTURE' && fixtureGranularity !== r;
+   261→              return (
+   262→                <button
+   263→                  key={r}
+   264→                  data-testid={`resolution-${r}`}
+   265→                  onClick={() => setters.setAnalysisResolution(r)}
+   266→                  title={`FortyGuard thermal-cell granularity ${r}m × ${r}m (does not change map zoom)`}
+   267→                  className={`min-h-[40px] rounded-lg text-xs font-semibold transition-all border leading-tight ${
+   268→                    active
+   269→                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   270→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   271→                  }`}
+   272→                >
+   273→                  {r}m × {r}m
+   274→                </button>
+   275→              );
+   276→            })}
+   277→          </div>
+   278→          {mode === 'FIXTURE' && fixtureGranularity !== prefs.analysisResolution && (
+   279→            <p className="text-[9px] mt-1" style={{ color: 'var(--accent-amber)' }}>
+   280→              DEMO displays the fixture&apos;s actual {fixtureGranularity ?? 60}m cells — the {prefs.analysisResolution}m
+   281→              selection only affects LIVE queries.
+   282→            </p>
+   283→          )}
+   284→        </div>
+   285→
+   286→        {/* ── Candidate Sites (REAL sites only — Section 8) ── */}
+   287→        <div className="border-t border-border" />
+   288→        <div data-testid="candidate-sites-section">
+   289→          <div className="flex items-center justify-between mb-2">
+   290→            <span className="text-sm font-medium text-text-secondary">Candidate Sites</span>
+   291→            <span className="text-[10px] font-mono text-text-dimmed">
+   292→              {mode === 'FIXTURE' ? 'captured demo sites' : 'user-placed'}
+   293→            </span>
+   294→          </div>
+   295→
+   296→          {mode === 'FIXTURE' ? (
+   297→            <div className="space-y-1.5">
+   298→              <p className="text-[10px] text-text-muted leading-relaxed">
+   299→                The three sites actually captured in the Manhattan fixture (read-only). LIVE lets you place your own sites.
+   300→              </p>
+   301→              {['Battery Park Greenway', 'City Hall Civic Center', 'Chinatown / Bowery'].map((n) => (
+   302→                <div key={n} className="flex items-center gap-2 rounded-md bg-surface-deep border border-border px-2.5 py-1.5">
+   303→                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--text-secondary)' }} />
+   304→                  <span className="text-xs text-text-secondary">{n}</span>
+   305→                  <span className="ml-auto text-[8px] font-mono uppercase text-text-dimmed">captured</span>
+   306→                </div>
+   307→              ))}
+   308→            </div>
+   309→          ) : (
+   310→            <div className="space-y-2">
+   311→              {/* Add-site actions */}
+   312→              <div className="grid grid-cols-2 gap-2">
+   313→                <button
+   314→                  type="button"
+   315→                  data-testid="add-site-map-btn"
+   316→                  onClick={onToggleAddSiteMode}
+   317→                  className={`min-h-[38px] rounded-lg text-[11px] font-bold transition-all border flex items-center justify-center gap-1.5 ${
+   318→                    addSiteMode
+   319→                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+   320→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   321→                  }`}
+   322→                >
+   323→                  {addSiteMode ? '✓ Click the map…' : '+ Add on map'}
+   324→                </button>
+   325→                <button
+   326→                  type="button"
+   327→                  data-testid="add-site-search-btn"
+   328→                  onClick={() => setShowSiteSearch((v) => !v)}
+   329→                  className={`min-h-[38px] rounded-lg text-[11px] font-bold transition-all border flex items-center justify-center gap-1.5 ${
+   330→                    showSiteSearch
+   331→                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   332→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   333→                  }`}
+   334→                >
+   335→                  🔍 From search
+   336→                </button>
+   337→              </div>
+   338→
+   339→              {/* Site search inline */}
+   340→              {showSiteSearch && (
+   341→                <div className="rounded-lg border border-border bg-surface-deep p-2">
+   342→                  <LocationSearch
+   343→                    selectedLocation={selectedLocation}
+   344→                    mode={mode}
+   345→                    onSelectLocation={(loc) => {
+   346→                      onAddSiteFromSearch(loc);
+   347→                      setShowSiteSearch(false);
+   348→                    }}
+   349→                    onSwitchToLive={undefined}
+   350→                    compact
+   351→                  />
+   352→                  <p className="text-[9px] text-text-dimmed mt-1">
+   353→                    Only sites inside the analysis area can be added.
+   354→                  </p>
+   355→                </div>
+   356→              )}
+   357→
+   358→              {/* Site list */}
+   359→              {candidateSites.length === 0 ? (
+   360→                <p className="text-[10px] text-text-muted leading-relaxed" data-testid="no-candidate-sites">
+   361→                  No candidate sites yet. LIVE never fabricates sites — add one on the map or from search, then Generate.
+   362→                </p>
+   363→              ) : (
+   364→                <ul className="space-y-1.5 max-h-40 overflow-y-auto" data-testid="candidate-sites-list">
+   365→                  {candidateSites.map((site, idx) => (
+   366→                    <li
+   367→                      key={site.locationId}
+   368→                      className={`rounded-md border px-2.5 py-1.5 ${
+   369→                        site.outsideAoi
+   370→                          ? 'border-red-400/60 bg-red-400/5'
+   371→                          : 'border-border bg-surface-deep'
+   372→                      }`}
+   373→                    >
+   374→                      <div className="flex items-center gap-2">
+   375→                        <span className="text-[9px] font-mono font-bold text-text-dimmed flex-shrink-0">{idx + 1}.</span>
+   376→                        {renamingId === site.locationId ? (
+   377→                          <input
+   378→                            autoFocus
+   379→                            value={renameValue}
+   380→                            onChange={(e) => setRenameValue(e.target.value)}
+   381→                            onBlur={() => {
+   382→                              if (renameValue.trim()) onRenameSite(site.locationId, renameValue.trim());
+   383→                              setRenamingId(null);
+   384→                            }}
+   385→                            onKeyDown={(e) => {
+   386→                              if (e.key === 'Enter') {
+   387→                                if (renameValue.trim()) onRenameSite(site.locationId, renameValue.trim());
+   388→                                setRenamingId(null);
+   389→                              }
+   390→                            }}
+   391→                            className="flex-1 min-w-0 bg-surface-elevated border border-accent-cyan/50 rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none"
+   392→                          />
+   393→                        ) : (
+   394→                          <button
+   395→                            type="button"
+   396→                            onClick={() => {
+   397→                              setRenamingId(site.locationId);
+   398→                              setRenameValue(site.name);
+   399→                            }}
+   400→                            className="flex-1 min-w-0 text-left text-xs text-text-secondary hover:text-text-primary transition-colors truncate"
+   401→                            title="Click to rename"
+   402→                          >
+   403→                            {site.name}
+   404→                          </button>
+   405→                        )}
+   406→                        <span
+   407→                          className="text-[8px] font-mono uppercase text-text-dimmed flex-shrink-0"
+   408→                          title={`Added via ${site.origin}`}
+   409→                        >
+   410→                          {site.origin === 'map-click' ? 'map' : site.origin}
+   411→                        </span>
+   412→                        <button
+   413→                          type="button"
+   414→                          onClick={() => onRemoveSite(site.locationId)}
+   415→                          className="text-text-dimmed hover:text-red-400 transition-colors text-xs flex-shrink-0"
+   416→                          title="Remove site"
+   417→                        >
+   418→                          ✕
+   419→                        </button>
+   420→                      </div>
+   421→                      {site.outsideAoi && (
+   422→                        <div className="text-[9px] text-red-400 mt-0.5">
+   423→                          Outside the analysis area — move it inside or drag the AOI to cover it.
+   424→                        </div>
+   425→                      )}
+   426→                    </li>
+   427→                  ))}
+   428→                </ul>
+   429→              )}
+   430→              {outsideSiteCount > 0 && (
+   431→                <p className="text-[9px] text-red-400" data-testid="outside-sites-warning">
+   432→                  {outsideSiteCount} site{outsideSiteCount > 1 ? 's' : ''} outside the analysis area — fix before Generate.
+   433→                </p>
+   434→              )}
+   435→            </div>
+   436→          )}
+   437→        </div>
+   438→
+   439→        <div className="border-t border-border" />
+   440→
+   441→        {/* ── WHEN — explicit date + time window (Section 14) ── */}
+   442→        <div data-testid="when-section">
+   443→          <div className="flex items-center justify-between mb-2">
+   444→            <span className="text-sm font-medium text-text-secondary">WHEN</span>
+   445→            {isFixtureAnchored ? (
+   446→              <span
+   447→                className="px-2 py-0.5 rounded text-[9px] font-mono font-bold border"
+   448→                style={{
+   449→                  background: 'var(--accent-amber-bg)',
+   450→                  color: 'var(--accent-amber)',
+   451→                  borderColor: 'var(--accent-amber)',
+   452→                }}
+   453→                title={FIXTURE_TEMPORAL_METADATA.captureLabel}
+   454→              >
+   455→                Fixture capture
+   456→              </span>
+   457→            ) : (
+   458→              <span className="text-[10px] font-mono text-text-dimmed">{tz || 'UTC'}</span>
+   459→            )}
+   460→          </div>
+   461→
+   462→          {/* Time Mode selector */}
+   463→          <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+   464→            {TIME_MODE_OPTIONS.map((opt) => {
+   465→              const active = temporalInput.timeMode === opt.value;
+   466→              return (
+   467→                <button
+   468→                  key={opt.value}
+   469→                  onClick={() => handleTimeModeChange(opt.value)}
+   470→                  className={`min-h-[36px] rounded-md text-[10px] font-bold transition-all border leading-tight px-1 ${
+   471→                    active
+   472→                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   473→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   474→                  }`}
+   475→                  aria-pressed={active}
+   476→                  title={opt.description}
+   477→                >
+   478→                  {opt.label}
+   479→                </button>
+   480→              );
+   481→            })}
+   482→          </div>
+   483→
+   484→          {/* Date input (always visible) */}
+   485→          <label className="block mb-2">
+   486→            <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">Date</span>
+   487→            <input
+   488→              type="date"
+   489→              value={temporalInput.date}
+   490→              onChange={(e) => update({ date: e.target.value })}
+   491→              disabled={isFixtureAnchored}
+   492→              className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
+   493→                dateValid ? 'border-border' : 'border-red-400'
+   494→              } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
+   495→              aria-label="Analysis date"
+   496→            />
+   497→          </label>
+   498→
+   499→          {/* Start / End time inputs */}
+   500→          <div className={`grid ${isSingleHour ? 'grid-cols-1' : 'grid-cols-2'} gap-2 mb-2`}>
+   501→            <label className="block">
+   502→              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+   503→                {isSingleHour ? 'Hour' : 'Start'}
+   504→              </span>
+   505→              <input
+   506→                type="time"
+   507→                value={temporalInput.startTime}
+   508→                onChange={(e) => update({ startTime: e.target.value })}
+   509→                disabled={isFixtureAnchored || isSingleDay}
+   510→                className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
+   511→                  startValid ? 'border-border' : 'border-red-400'
+   512→                } ${isFixtureAnchored || isSingleDay ? 'opacity-70 cursor-not-allowed' : ''}`}
+   513→                aria-label="Analysis start time"
+   514→              />
+   515→            </label>
+   516→            {!isSingleHour && (
+   517→              <label className="block">
+   518→                <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">End</span>
+   519→                <input
+   520→                  type="time"
+   521→                  value={temporalInput.endTime}
+   522→                  onChange={(e) => update({ endTime: e.target.value })}
+   523→                  disabled={isFixtureAnchored || isSingleDay}
+   524→                  className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
+   525→                    endValid ? 'border-border' : 'border-red-400'
+   526→                  } ${isFixtureAnchored || isSingleDay ? 'opacity-70 cursor-not-allowed' : ''}`}
+   527→                  aria-label="Analysis end time"
+   528→                />
+   529→              </label>
+   530→            )}
+   531→          </div>
+   532→
+   533→          {/* Single Day: window-length selector */}
+   534→          {isSingleDay && (
+   535→            <div className="mb-2">
+   536→              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+   537→                Window length to find
+   538→              </span>
+   539→              <div className="grid grid-cols-3 gap-1.5 mt-1">
+   540→                {([2, 3, 4] as const).map((h) => {
+   541→                  const active = (temporalInput.dayWindowHours ?? 3) === h;
+   542→                  return (
+   543→                    <button
+   544→                      key={h}
+   545→                      onClick={() => handleDayWindowChange(h)}
+   546→                      className={`min-h-[34px] rounded-md text-[11px] font-bold font-mono transition-all border ${
+   547→                        active
+   548→                          ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   549→                          : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   550→                      }`}
+   551→                      aria-pressed={active}
+   552→                    >
+   553→                      {h}h
+   554→                    </button>
+   555→                  );
+   556→                })}
+   557→              </div>
+   558→            </div>
+   559→          )}
+   560→
+   561→          {/* Derived duration (read-only) */}
+   562→          <div className="flex items-center justify-between rounded-lg bg-surface-deep px-3 py-2 border border-border">
+   563→            <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+   564→              Duration
+   565→            </span>
+   566→            <span
+   567→              className="text-base font-black font-mono"
+   568→              style={{ color: 'var(--accent-cyan)' }}
+   569→              data-testid="duration-display"
+   570→            >
+   571→              {derivedDuration}h
+   572→            </span>
+   573→          </div>
+   574→
+   575→          {/* Inline validation hint */}
+   576→          {!allValid && (
+   577→            <p className="text-[10px] text-red-400 mt-1.5">
+   578→              {!dateValid && 'Enter a valid date (YYYY-MM-DD). '}
+   579→              {!rangeValid && 'End time must be after start time.'}
+   580→            </p>
+   581→          )}
+   582→
+   583→          {/* Honest future-date note */}
+   584→          {mode === 'LIVE' && isFutureDate && (
+   585→            <p className="text-[10px] mt-1.5" style={{ color: 'var(--accent-amber)' }}>
+   586→              Future date selected — subject to FortyGuard forecast availability. The provider reports any unsupported window verbatim.
+   587→            </p>
+   588→          )}
+   589→
+   590→          {/* Human-readable window preview */}
+   591→          {allValid && (
+   592→            <p className="text-[10px] font-mono text-text-muted mt-2 leading-relaxed">
+   593→              {formatTemporalForHeader(temporalInput, tz)}
+   594→            </p>
+   595→          )}
+   596→        </div>
+   597→
+   598→        {/* Selected Analysis Area indicator — coordinates track AOI drag */}
+   599→        <div
+   600→          className="rounded-lg p-3 bg-surface-deep border border-border space-y-1"
+   601→          data-testid="active-analysis-location-indicator"
+   602→        >
+   603→          <div className="flex items-center justify-between">
+   604→            <span className="text-[9px] font-bold uppercase tracking-widest text-text-dimmed">Selected Analysis Area</span>
+   605→            <span
+   606→              className="px-2 py-0.5 rounded text-[10px] font-bold border"
+   607→              style={mode === 'LIVE'
+   608→                ? { background: 'var(--accent-cyan-bg)', color: 'var(--accent-cyan)', borderColor: 'var(--accent-cyan)' }
+   609→                : { background: 'var(--accent-amber-bg)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)' }
+   610→              }
+   611→              data-testid="analysis-mode-badge"
+   612→            >
+   613→              {mode === 'LIVE' ? 'LIVE · FortyGuard' : 'DEMO · Captured FortyGuard'}
+   614→            </span>
+   615→          </div>
+   616→          <div className="text-sm font-bold text-text-primary leading-tight" data-testid="active-analysis-location-name">
+   617→            {selectedLocation.name}
+   618→          </div>
+   619→          <div className="text-[11px] font-mono flex items-center justify-between" style={{ color: 'var(--accent-cyan)' }} data-testid="active-analysis-location-coords">
+   620→            <span>{centerCoords.latitude.toFixed(4)}°, {centerCoords.longitude.toFixed(4)}°</span>
+   621→            <span className="text-text-muted font-sans text-[10px]">
+   622→              {selectedLocation.city ? `${selectedLocation.city}, ${selectedLocation.state || selectedLocation.country}` : selectedLocation.state || ''}
+   623→            </span>
+   624→          </div>
+   625→        </div>
+   626→
+   627→        {/* Generate button */}
+   628→        <motion.button
+   629→          whileTap={{ scale: 0.99 }}
+   630→          disabled={loading}
+   631→          onClick={onGenerate}
+   632→          data-testid="recalculate-decision-btn"
+   633→          className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+   634→            loading ? 'bg-surface-elevated text-text-dimmed cursor-not-allowed' : 'text-white hover:scale-[1.01] active:scale-[0.99]'
+   635→          }`}
+   636→          style={loading ? {} : {
+   637→            background: mode === 'LIVE'
+   638→              ? 'linear-gradient(135deg, var(--accent-emerald), #0d9488)'
+   639→              : 'linear-gradient(135deg, var(--accent-cyan), #0284c7)',
+   640→            boxShadow: mode === 'LIVE'
+   641→              ? '0 4px 16px rgba(5,150,105,0.3)'
+   642→              : '0 4px 16px rgba(14,165,233,0.3)',
+   643→          }}
+   644→        >
+   645→          {loading ? (
+   646→            <span className="flex items-center gap-2">
+   647→              <span className="w-4 h-4 border-2 border-text-dimmed rounded-full animate-spin" style={{ borderTopColor: 'var(--accent-cyan)' }} />
+   648→              Generating thermal field…
+   649→            </span>
+   650→          ) : (
+   651→            `⚡ Generate Thermal Field (${mode === 'LIVE' ? 'LIVE' : 'DEMO'})`
+   652→          )}
+   653→        </motion.button>
+   654→      </div>
+   655→
+   656→      {/* ── SYSTEM STATUS ── */}
+   657→      <SystemStatus
+   658→        mode={mode}
+   659→        fortyGuardStatus={fortyGuardStatus}
+   660→        aiStatus={aiStatus}
+   661→        aiProvider={aiProvider}
+   662→        fieldReady={fieldReady}
+   663→        loading={loading}
+   664→        onTestFortyGuard={onTestFortyGuard}
+   665→        onTestAI={onTestAI}
+   666→      />
+   667→
+   668→      <div className="text-[10px] text-text-dimmed font-mono text-center">
+   669→        FortyGuard Hackathon&apos;26
+   670→      </div>
+   671→    </div>
+   672→  );
+   673→}
+   674→
+   675→export default ControlRail;
+   676→

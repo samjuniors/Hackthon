@@ -201,3 +201,26 @@ Stage Summary:
 - Screenshots captured in screenshots/: A-california-state, B-oakland-city, C/D2 polygon sizes (307px vs 767px), E circle, F moved AOI, G1 live add-site, G2 live 402 honest error, G3 demo captured cells.
 - What is genuinely provider-derived: LIVE heatmap request/response path (real key a574…9be3, currently HTTP 402 insufficient credits — surfaced verbatim); DEMO = genuinely captured Manhattan fixture (3 cells × 12 hours, 60m granularity, 2026-08-21T08:00Z–19:00Z).
 - UNKNOWN/unverifiable without provider credits: actual LIVE cell density/appearance beyond the mock test; real coverage rejection behavior for non-US AOIs (credit gate precedes geographic validation); any provider-side state/city coverage semantics — NOT claimed anywhere in the UI.
+
+---
+Task ID: 6 (fortyguard-contract-audit)
+Agent: orchestrator (main)
+Task: AUDIT ONLY — trace every user-facing control from UI state to the FortyGuard request against the non-negotiable provider-contract rule. No broad implementation changes.
+
+Work Log:
+- Read FORTYGUARD.md (verified endpoint matrix: /v1/heatmap filter_type 1/2/3, granularity 60/80/100, +12h forecast, 2000 credits/call; /v1/env_params requires analysis array; average_temperature semantics UNKNOWN-VERIFY), ARCHITECTURE.md, WORKLOG.md, worklog.md.
+- Traced the full pipeline: page.tsx → /api/decision → FortyGuardAdapter.getHourlyHeatmapSnapshots → per-hour /v1/heatmap (filter_type:1, UTC date/hour, polygon_aoi=canonical AOI, granularity) → submitAndPoll → findFeatureCollection → normalizePointObservation (findTileForPoint → average_temperature) → evaluator → map/AI.
+- Audited all controls: search (geocode.ts: Photon→Nominatim→catalog, never FortyGuard), region (context-only), AOI (createAoiFromSpan → rendered == sent), sizes (250/400/1000/2000/5000 span), shape (square/32-gon circle, pure-translation drag), resolution (60/80/100 → request granularity verbatim, mock contract test exists), date/time (localToUtcIso at adapter boundary), time mode (TIME_MODE_FILTER_TYPE 1/2/3 — ECHO ONLY, never sent), candidates (DEMO=3 Manhattan sites; LIVE=user-placed; containment enforced).
+- Forensically examined tests/fixtures/heatmap_hourly_fixture.json vs all raw captured responses: fixture tiles are ~675m×668m (not 60m), string tile-ids "tile-11/12/13" vs provider integer ids, perfectly smooth hand-authored diurnal curve, zero capture metadata (the capture script's real output format includes activityId/requestBody/polls and writes heatmap_hourly_captured.json — which does not exist), M5 commit f1d143e literally hand-inserted tile-13 into every snapshot, and ALL raw captures on the fixture's date (2026-08-21) returned n_cells=0. Only 2 raw captures ever returned cells: heatmap_probe_candidate_aoi.json (425 cells, 2026-08-14, g100) and heatmap_probe_candidate_rect.json (158 cells).
+- Verified evaluator determinism (mean-temperature scoring, 3-tier tie-breaking, +12h window checks), AI no-decision-authority (explain route takes jointDecision; grounding validator allow-lists), LIVE honesty (402 surfaced verbatim, no fixture fallback, test-enforced).
+- Ran the suite: 211/216 pass; 5 failures are pre-existing live-AI-network tests (gemini_provider ×4 + explanation ×1), untouched. Working tree clean at 3be5a13. No code modified (audit only).
+
+Stage Summary — KEY FINDINGS:
+- P0: The DEMO fixture (heatmap_hourly_fixture.json) is fabricated data mislabeled "Captured FortyGuard" — its "DEMO · Captured FortyGuard" provenance claim is false. Real captures exist (425-cell + 158-cell responses on 2026-08-14) and can seed an honest fixture.
+- P0: "fixture captured at 60m" labels are contradicted by the fixture's own ~670m tiles.
+- P1: UI Time Mode (Single Hour/Range/Single Day → filter_type 1/2/3) is NEVER sent to FortyGuard — LIVE always issues per-hour filter_type:1 requests; temporalProvenance.fortyGuardDateTime echoes a request that was never made.
+- P1: Single Day mode is functionally broken (evaluateJointDecision throws when any window end > base+12h; 06:00–20:00 day span = 14h > 12h).
+- P1: LIVE default date = today, but verified provider behavior returns 0 cells for the most recent ~12–24h — the default LIVE flow reliably yields EMPTY_THERMAL_FIELD after spending credits; no date guidance.
+- P2: server-conversion.ts buildFortyGuardDateTime comments claim local-wall-clock request semantics; actual LIVE requests send UTC (matching the capture probes). Dead code w/ misleading doc.
+- P2: No contract test asserts canonical AOI == submitted polygon_aoi on the wire; granularity contract test exists.
+- Architecture (USER → exact request → response → deterministic engine → AI) is otherwise sound and honestly guarded.

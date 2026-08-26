@@ -52,3 +52,8 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Sandbox/dev artifacts (not part of the product)
+/tool-results/
+/start-dev.sh
+/upload/
+/dev.log

@@ -5,11 +5,17 @@ import type { JointDecisionResult } from '@/types/domain';
 import type { TempUnit } from '@/lib/temperature';
 import { fmtTemp, fmtTempDelta, tempUnitSuffix } from '@/lib/temperature';
 import { fmtTimeWindow, shortLocationName } from '@/lib/dashboard-format';
+import type { AnalysisTemporalInput } from '@/lib/temporal/analysis-window';
+import { formatTemporalForHeader } from '@/lib/temporal/analysis-window';
 
 interface RecommendedOperationProps {
   jointDecision: JointDecisionResult;
   unit: TempUnit;
   timezone?: string;
+  /** Data source mode for the SOURCE row (Section 9). */
+  mode?: 'LIVE' | 'FIXTURE';
+  /** Explicit WHEN inputs (Section 9) — full date + tz in the WHEN block. */
+  temporalInput?: AnalysisTemporalInput;
 }
 
 /**
@@ -17,9 +23,11 @@ interface RecommendedOperationProps {
  * Renders WHERE / WHEN / MODELED TEMPERATURE / ADVANTAGE.
  * Visual hierarchy: this is the SECOND-highest priority after the thermal map.
  */
-export function RecommendedOperation({ jointDecision, unit, timezone }: RecommendedOperationProps) {
+export function RecommendedOperation({ jointDecision, unit, timezone, mode, temporalInput }: RecommendedOperationProps) {
   const rec = jointDecision.recommendedPlan;
   const worst = jointDecision.rankedPlans[jointDecision.rankedPlans.length - 1];
+  const sourceLabel = mode === 'LIVE' ? 'FortyGuard LIVE' : mode === 'FIXTURE' ? 'FortyGuard DEMO' : jointDecision.dataSource;
+  const temporalLabel = temporalInput ? formatTemporalForHeader(temporalInput, timezone) : fmtTimeWindow(rec.window.startTime, rec.window.endTime, timezone);
 
   return (
     <motion.section
@@ -45,8 +53,8 @@ export function RecommendedOperation({ jointDecision, unit, timezone }: Recommen
           </span>
         </div>
 
-        {/* WHERE / WHEN / TEMP grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        {/* WHERE / WHEN / TEMP / SOURCE grid (Section 9) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* WHERE */}
           <div className="space-y-1">
             <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">📍 WHERE</div>
@@ -62,7 +70,7 @@ export function RecommendedOperation({ jointDecision, unit, timezone }: Recommen
           <div className="space-y-1">
             <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">⏱ WHEN</div>
             <div className="text-xl font-black text-text-primary font-mono leading-tight">
-              {fmtTimeWindow(rec.window.startTime, rec.window.endTime, timezone)}
+              {temporalLabel}
             </div>
             <div className="text-[11px] text-text-muted">
               <span data-testid="recommended-duration">{rec.window.durationHours}h duration</span>
@@ -85,6 +93,19 @@ export function RecommendedOperation({ jointDecision, unit, timezone }: Recommen
               {fmtTemp(rec.exposureScore, unit)}
             </motion.div>
             <div className="text-[11px] text-text-muted">Mean across window</div>
+          </div>
+
+          {/* SOURCE (Section 9) */}
+          <div className="space-y-1">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">🔌 SOURCE</div>
+            <div
+              className="text-sm font-black font-mono leading-tight"
+              style={{ color: mode === 'LIVE' ? 'var(--accent-cyan)' : 'var(--accent-amber)' }}
+              data-testid="recommended-source"
+            >
+              {sourceLabel}
+            </div>
+            <div className="text-[11px] text-text-muted">{timezone || 'UTC'}</div>
           </div>
         </div>
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { testFortyGuardConnection } from '@/lib/fortyguard/health';
+import { probeProviderCapability } from '@/lib/fortyguard/capability';
 import type { DataSourceMode } from '@/types/provenance';
 import { z } from 'zod';
 
@@ -14,9 +15,18 @@ export async function GET(req: Request) {
     modeParam === 'LIVE' || modeParam === 'FIXTURE' ? modeParam : undefined;
 
   const result = await testFortyGuardConnection({ mode });
+
+  // For LIVE mode, also probe the provider capability (plan, credits, billing).
+  // This surfaces honest access metadata — never fabricates a coverage region.
+  const capability =
+    mode === 'LIVE' || (!mode && process.env.FORTYGUARD_DATA_SOURCE === 'LIVE')
+      ? await probeProviderCapability()
+      : null;
+
   return NextResponse.json({
     success: true,
     health: result,
+    capability,
   });
 }
 
@@ -27,9 +37,18 @@ export async function POST(req: Request) {
     const mode = parseResult.success ? parseResult.data.mode : undefined;
 
     const result = await testFortyGuardConnection({ mode });
+
+    // For LIVE mode, also probe the provider capability (plan, credits, billing).
+  // This surfaces honest access metadata — never fabricates a coverage region.
+  const capability =
+    mode === 'LIVE' || (!mode && process.env.FORTYGUARD_DATA_SOURCE === 'LIVE')
+      ? await probeProviderCapability()
+      : null;
+
     return NextResponse.json({
       success: true,
       health: result,
+      capability,
     });
   } catch (error) {
     return NextResponse.json(

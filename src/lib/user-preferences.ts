@@ -2,6 +2,11 @@
 
 import { useSyncExternalStore, useCallback } from 'react';
 import type { PreferredAIProvider } from '@/types/provider';
+import {
+  type AnalysisTimeMode,
+  DEFAULT_TIME_MODE,
+  DEFAULT_DAY_WINDOW_HOURS,
+} from '@/lib/temporal/analysis-window';
 
 /**
  * User Preferences Store — Thermal Decision Engine
@@ -25,6 +30,25 @@ import type { PreferredAIProvider } from '@/types/provider';
 
 export type AnalysisResolution = 60 | 80 | 100;
 export type AnalysisAreaShape = 'polygon' | 'circle';
+export type { AnalysisTimeMode } from '@/lib/temporal/analysis-window';
+
+/**
+ * Preset AOI half-side sizes (in metres). The user picks one to define the
+ * size of the canonical analysis area. Half-side is:
+ *   - For 'polygon' shape: half the side length of the square AOI.
+ *   - For 'circle' shape: the radius of the circle.
+ *
+ * All presets are well within the FortyGuard 150 mi² AOI limit (largest
+ * preset 5000m polygon = ~38.6 mi², 5000m circle = ~30 mi²). The 150 mi²
+ * limit is still validated client-side in page.tsx via isAoiWithinLimit()
+ * so a future custom-draw feature cannot silently send an oversized AOI.
+ */
+export const AOI_HALF_SIDE_PRESETS = [250, 400, 1000, 2000, 5000] as const;
+export type AoiHalfSideMetres = (typeof AOI_HALF_SIDE_PRESETS)[number];
+
+export function isValidAoiHalfSide(v: unknown): v is AoiHalfSideMetres {
+  return typeof v === 'number' && (AOI_HALF_SIDE_PRESETS as readonly number[]).includes(v);
+}
 
 export interface MapLayerVisibility {
   thermal: boolean;
@@ -38,6 +62,11 @@ export interface UserPreferences {
   preferredAIProvider: PreferredAIProvider;
   analysisResolution: AnalysisResolution;
   analysisAreaShape: AnalysisAreaShape;
+  analysisAoiHalfSideMetres: AoiHalfSideMetres;
+  /** Time mode persisted per Section 5 (Single Hour / Range of Hours / Single Day). */
+  analysisTimeMode: AnalysisTimeMode;
+  /** For Single Day mode — the operating-window length the engine finds (2h/3h/4h). */
+  analysisDayWindowHours: 2 | 3 | 4;
   mapLayerVisibility: MapLayerVisibility;
 }
 
@@ -46,6 +75,9 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   preferredAIProvider: 'auto',
   analysisResolution: 60,
   analysisAreaShape: 'polygon',
+  analysisAoiHalfSideMetres: 400,
+  analysisTimeMode: DEFAULT_TIME_MODE,
+  analysisDayWindowHours: DEFAULT_DAY_WINDOW_HOURS,
   mapLayerVisibility: {
     thermal: true,
     candidates: true,
@@ -77,6 +109,14 @@ function isValidResolution(v: unknown): v is AnalysisResolution {
 
 function isValidAreaShape(v: unknown): v is AnalysisAreaShape {
   return v === 'polygon' || v === 'circle';
+}
+
+function isValidTimeMode(v: unknown): v is AnalysisTimeMode {
+  return v === 'single-hour' || v === 'range-of-hours' || v === 'single-day';
+}
+
+function isValidDayWindowHours(v: unknown): v is 2 | 3 | 4 {
+  return v === 2 || v === 3 || v === 4;
 }
 
 /**
@@ -147,6 +187,15 @@ export function loadUserPreferences(): UserPreferences {
       analysisAreaShape: isValidAreaShape(p.analysisAreaShape)
         ? p.analysisAreaShape
         : DEFAULT_USER_PREFERENCES.analysisAreaShape,
+      analysisAoiHalfSideMetres: isValidAoiHalfSide(p.analysisAoiHalfSideMetres)
+        ? p.analysisAoiHalfSideMetres
+        : DEFAULT_USER_PREFERENCES.analysisAoiHalfSideMetres,
+      analysisTimeMode: isValidTimeMode(p.analysisTimeMode)
+        ? p.analysisTimeMode
+        : DEFAULT_USER_PREFERENCES.analysisTimeMode,
+      analysisDayWindowHours: isValidDayWindowHours(p.analysisDayWindowHours)
+        ? p.analysisDayWindowHours
+        : DEFAULT_USER_PREFERENCES.analysisDayWindowHours,
       mapLayerVisibility: mergedLayers,
     };
     return cachedPrefs;
@@ -210,6 +259,9 @@ export interface UserPreferencesSetters {
   setPreferredAIProvider: (p: PreferredAIProvider) => void;
   setAnalysisResolution: (r: AnalysisResolution) => void;
   setAnalysisAreaShape: (s: AnalysisAreaShape) => void;
+  setAnalysisAoiHalfSideMetres: (m: AoiHalfSideMetres) => void;
+  setAnalysisTimeMode: (m: AnalysisTimeMode) => void;
+  setAnalysisDayWindowHours: (h: 2 | 3 | 4) => void;
   setMapLayerVisibility: (v: Partial<MapLayerVisibility>) => void;
   reset: () => void;
 }
@@ -242,6 +294,18 @@ export function useUserPreferences(): [UserPreferences, UserPreferencesSetters] 
     commit({ ...getSnapshot(), analysisAreaShape: s });
   }, []);
 
+  const setAnalysisAoiHalfSideMetres = useCallback((m: AoiHalfSideMetres) => {
+    commit({ ...getSnapshot(), analysisAoiHalfSideMetres: m });
+  }, []);
+
+  const setAnalysisTimeMode = useCallback((m: AnalysisTimeMode) => {
+    commit({ ...getSnapshot(), analysisTimeMode: m });
+  }, []);
+
+  const setAnalysisDayWindowHours = useCallback((h: 2 | 3 | 4) => {
+    commit({ ...getSnapshot(), analysisDayWindowHours: h });
+  }, []);
+
   const setMapLayerVisibility = useCallback((v: Partial<MapLayerVisibility>) => {
     const current = getSnapshot();
     commit({
@@ -261,6 +325,9 @@ export function useUserPreferences(): [UserPreferences, UserPreferencesSetters] 
       setPreferredAIProvider,
       setAnalysisResolution,
       setAnalysisAreaShape,
+      setAnalysisAoiHalfSideMetres,
+      setAnalysisTimeMode,
+      setAnalysisDayWindowHours,
       setMapLayerVisibility,
       reset,
     },

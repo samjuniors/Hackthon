@@ -5,14 +5,26 @@ import { LocationSearch } from '@/components/LocationSearch';
 import { SystemStatus } from '@/components/dashboard/SystemStatus';
 import type { NamedLocation, ProviderStatus, FortyGuardHealthResponse, AIHealthResponse } from '@/types/provider';
 import type { DataSourceMode } from '@/types/provenance';
-import { useUserPreferences } from '@/lib/user-preferences';
+import { useUserPreferences, AOI_HALF_SIDE_PRESETS } from '@/lib/user-preferences';
 import { isLocationCoveredByFixture } from '@/lib/location/search';
+import {
+  type AnalysisTemporalInput,
+  type AnalysisTimeMode,
+  TIME_MODE_OPTIONS,
+  deriveDurationHours,
+  effectiveTimeBounds,
+  formatTemporalForHeader,
+  FIXTURE_TEMPORAL_METADATA,
+  isValidDateStr,
+  isValidTimeStr,
+} from '@/lib/temporal/analysis-window';
 
 interface ControlRailProps {
   mode: DataSourceMode;
   selectedLocation: NamedLocation;
-  duration: number;
-  onDurationChange: (d: number) => void;
+  /** Explicit WHEN inputs (Section 4) — date + start + end + time mode. */
+  temporalInput: AnalysisTemporalInput;
+  onTemporalChange: (next: AnalysisTemporalInput) => void;
   onGenerate: () => void;
   loading: boolean;
   onSelectLocation: (loc: NamedLocation) => void;
@@ -29,14 +41,14 @@ interface ControlRailProps {
 
 /**
  * Left control rail — the operational input workspace.
- * Location → Analysis Area → Resolution → Operating Window → Generate.
+ * Location → Analysis Area → Resolution → WHEN (date/time) → Generate.
  * System status sits compactly at the bottom (advanced diagnostics live in Settings).
  */
 export function ControlRail({
   mode,
   selectedLocation,
-  duration,
-  onDurationChange,
+  temporalInput,
+  onTemporalChange,
   onGenerate,
   loading,
   onSelectLocation,
@@ -52,6 +64,36 @@ export function ControlRail({
   const [prefs, setters] = useUserPreferences();
   const isFixtureMismatch = mode === 'FIXTURE' && !isLocationCoveredByFixture(selectedLocation);
   const aiProvider = aiHealth?.provider;
+  const tz = selectedLocation.timezone;
+  const derivedDuration = deriveDurationHours(temporalInput);
+  const isFixtureAnchored = mode === 'FIXTURE';
+
+  // Helper to update a single field of the temporal input.
+  const update = (patch: Partial<AnalysisTemporalInput>) =>
+    onTemporalChange({ ...temporalInput, ...patch });
+
+  const handleTimeModeChange = (m: AnalysisTimeMode) => {
+    setters.setAnalysisTimeMode(m);
+    update({ timeMode: m });
+  };
+  const handleDayWindowChange = (h: 2 | 3 | 4) => {
+    setters.setAnalysisDayWindowHours(h);
+    update({ dayWindowHours: h });
+  };
+
+  // For Single Hour, End is derived (Start + 1h) and shown read-only.
+  const isSingleHour = temporalInput.timeMode === 'single-hour';
+  const isSingleDay = temporalInput.timeMode === 'single-day';
+  const bounds = effectiveTimeBounds(temporalInput);
+
+  // Validation flags — surface inline so the user fixes before Generate.
+  const dateValid = isValidDateStr(temporalInput.date);
+  const startValid = isValidTimeStr(temporalInput.startTime);
+  const endValid = isValidTimeStr(temporalInput.endTime);
+  const rangeValid =
+    temporalInput.timeMode !== 'range-of-hours' ||
+    (startValid && endValid && bounds.end > bounds.start);
+  const allValid = dateValid && startValid && endValid && rangeValid;
 
   return (
     <div className="space-y-4">
@@ -87,8 +129,10 @@ export function ControlRail({
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-text-secondary">Analysis Area</span>
+            <span className="text-[10px] font-mono text-text-dimmed">shape + size</span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          {/* Shape toggle */}
+          <div className="grid grid-cols-2 gap-2 mb-2">
             {(['polygon', 'circle'] as const).map((shape) => (
               <button
                 key={shape}
@@ -102,6 +146,28 @@ export function ControlRail({
                 {shape}
               </button>
             ))}
+          </div>
+          {/* AOI size presets — distinct from Resolution (60/80/100m).
+              Half-side in metres (polygon) or radius in metres (circle). */}
+          <div className="grid grid-cols-5 gap-1.5">
+            {AOI_HALF_SIDE_PRESETS.map((size) => {
+              const label = size >= 1000 ? `${size / 1000}km` : `${size}m`;
+              const active = prefs.analysisAoiHalfSideMetres === size;
+              return (
+                <button
+                  key={size}
+                  onClick={() => setters.setAnalysisAoiHalfSideMetres(size)}
+                  className={`min-h-[36px] rounded-md text-[10px] font-mono font-bold transition-all border ${
+                    active
+                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                  }`}
+                  aria-pressed={active}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -130,42 +196,163 @@ export function ControlRail({
 
         <div className="border-t border-border" />
 
-        {/* Operating window */}
-        <div>
+        {/* WHEN — explicit date + time window (Section 4). Replaces duration-only. */}
+        <div data-testid="when-section">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-text-secondary">Operating Window</span>
-            <span className="text-base font-black text-accent-cyan font-mono" data-testid="duration-display">
-              {duration}h
+            <span className="text-sm font-medium text-text-secondary">WHEN</span>
+            {isFixtureAnchored ? (
+              <span
+                className="px-2 py-0.5 rounded text-[9px] font-mono font-bold border"
+                style={{
+                  background: 'var(--accent-amber-bg)',
+                  color: 'var(--accent-amber)',
+                  borderColor: 'var(--accent-amber)',
+                }}
+                title={FIXTURE_TEMPORAL_METADATA.captureLabel}
+              >
+                Fixture capture
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-text-dimmed">{tz || 'UTC'}</span>
+            )}
+          </div>
+
+          {/* Time Mode selector (Section 5) */}
+          <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+            {TIME_MODE_OPTIONS.map((opt) => {
+              const active = temporalInput.timeMode === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => handleTimeModeChange(opt.value)}
+                  className={`min-h-[36px] rounded-md text-[10px] font-bold transition-all border leading-tight px-1 ${
+                    active
+                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                  }`}
+                  aria-pressed={active}
+                  title={opt.description}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Date input (always visible — Section 7) */}
+          <label className="block mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">Date</span>
+            <input
+              type="date"
+              value={temporalInput.date}
+              onChange={(e) => update({ date: e.target.value })}
+              disabled={isFixtureAnchored}
+              className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
+                dateValid ? 'border-border' : 'border-red-400'
+              } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
+              aria-label="Analysis date"
+            />
+          </label>
+
+          {/* Start / End time inputs */}
+          <div className={`grid ${isSingleHour ? 'grid-cols-1' : 'grid-cols-2'} gap-2 mb-2`}>
+            <label className="block">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+                {isSingleHour ? 'Hour' : 'Start'}
+              </span>
+              <input
+                type="time"
+                value={temporalInput.startTime}
+                onChange={(e) => update({ startTime: e.target.value })}
+                disabled={isFixtureAnchored || isSingleDay}
+                className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
+                  startValid ? 'border-border' : 'border-red-400'
+                } ${isFixtureAnchored || isSingleDay ? 'opacity-70 cursor-not-allowed' : ''}`}
+                aria-label="Analysis start time"
+              />
+            </label>
+            {!isSingleHour && (
+              <label className="block">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">End</span>
+                <input
+                  type="time"
+                  value={temporalInput.endTime}
+                  onChange={(e) => update({ endTime: e.target.value })}
+                  disabled={isFixtureAnchored || isSingleDay}
+                  className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
+                    endValid ? 'border-border' : 'border-red-400'
+                  } ${isFixtureAnchored || isSingleDay ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  aria-label="Analysis end time"
+                />
+              </label>
+            )}
+          </div>
+
+          {/* Single Day: window-length selector (the engine finds this length within the day) */}
+          {isSingleDay && (
+            <div className="mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+                Window length to find
+              </span>
+              <div className="grid grid-cols-3 gap-1.5 mt-1">
+                {([2, 3, 4] as const).map((h) => {
+                  const active = (temporalInput.dayWindowHours ?? 3) === h;
+                  return (
+                    <button
+                      key={h}
+                      onClick={() => handleDayWindowChange(h)}
+                      className={`min-h-[34px] rounded-md text-[11px] font-bold font-mono transition-all border ${
+                        active
+                          ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+                          : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                      }`}
+                      aria-pressed={active}
+                    >
+                      {h}h
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Derived duration (read-only) — Section 4: "duration should be derived from start/end" */}
+          <div className="flex items-center justify-between rounded-lg bg-surface-deep px-3 py-2 border border-border">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+              Duration
+            </span>
+            <span
+              className="text-base font-black font-mono"
+              style={{ color: 'var(--accent-cyan)' }}
+              data-testid="duration-display"
+            >
+              {derivedDuration}h
             </span>
           </div>
-          <div className="relative h-2 bg-surface-deep rounded-full">
-            <div
-              className="absolute left-0 top-0 h-full rounded-full transition-all"
-              style={{ width: `${((duration - 1) / 3) * 100}%`, background: 'var(--accent-cyan)' }}
-            />
-            <input
-              type="range" min={1} max={4} step={1} value={duration}
-              onChange={(e) => onDurationChange(parseInt(e.target.value))}
-              className="absolute inset-0 w-full opacity-0 cursor-pointer h-full"
-              aria-label="Operating window duration in hours"
-            />
-          </div>
-          <div className="flex justify-between text-[10px] text-text-dimmed mt-1.5 font-mono">
-            {[1, 2, 3, 4].map((h) => (
-              <span key={h} className={duration === h ? 'font-bold' : ''} style={duration === h ? { color: 'var(--accent-cyan)' } : {}}>
-                {h}h
-              </span>
-            ))}
-          </div>
+
+          {/* Inline validation hint */}
+          {!allValid && (
+            <p className="text-[10px] text-red-400 mt-1.5">
+              {!dateValid && 'Enter a valid date (YYYY-MM-DD). '}
+              {!rangeValid && 'End time must be after start time.'}
+            </p>
+          )}
+
+          {/* Human-readable window preview (what will be sent to FortyGuard) */}
+          {allValid && (
+            <p className="text-[10px] font-mono text-text-muted mt-2 leading-relaxed">
+              {formatTemporalForHeader(temporalInput, tz)}
+            </p>
+          )}
         </div>
 
-        {/* Active location indicator */}
+        {/* Selected Analysis Area indicator */}
         <div
           className="rounded-lg p-3 bg-surface-deep border border-border space-y-1"
           data-testid="active-analysis-location-indicator"
         >
           <div className="flex items-center justify-between">
-            <span className="text-[9px] font-bold uppercase tracking-widest text-text-dimmed">Analysis Location</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-text-dimmed">Selected Analysis Area</span>
             <span
               className="px-2 py-0.5 rounded text-[10px] font-bold border"
               style={mode === 'LIVE'

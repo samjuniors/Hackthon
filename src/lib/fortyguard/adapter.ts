@@ -20,6 +20,17 @@ import {
 import { findTileForPoint } from '../spatial/mapper';
 import hourlyFixtureData from '../../../tests/fixtures/heatmap_hourly_fixture.json';
 
+// Canonical AOI builder — re-exported from the client-safe spatial module so
+// the SAME geometry is rendered on the map AND sent to FortyGuard. There is no
+// "display AOI" vs "API AOI" split; one PolygonAOI per analysis.
+export {
+  createBoundingAOI,
+  analyzeAoiAreaMi2,
+  isAoiWithinLimit,
+  FORTYGUARD_AOI_LIMIT_MI2,
+} from '../spatial/aoi';
+export type { AnalysisAreaShape } from '../spatial/aoi';
+
 // Zod Schemas for runtime validation
 export const FortyGuardHeatmapRequestSchema = z.object({
   polygon_aoi: z.object({
@@ -52,64 +63,6 @@ export const FortyGuardEnvParamsRequestSchema = z.object({
   }),
   analysis: z.array(z.string()).optional(),
 });
-
-/**
- * Analysis-area shape preference (persisted client-side, sent to /api/decision).
- * 'polygon' = square bounding box (default); 'circle' = regular 32-gon approximation.
- */
-export type AnalysisAreaShape = 'polygon' | 'circle';
-
-/**
- * Creates a bounding PolygonAOI FeatureCollection around a point for the API query boundary.
- * When shape === 'circle', the boundary is a regular 32-gon approximating a circle of the
- * given radius — useful for radial operational footprints. FortyGuard still receives a
- * Polygon geometry; the shape only affects the footprint vertices.
- */
-export function createBoundingAOI(
-  center: LocationPoint,
-  halfSideMetres = 400,
-  shape: AnalysisAreaShape = 'polygon',
-): PolygonAOI {
-  if (shape === 'circle') {
-    const radius = halfSideMetres;
-    const segments = 32;
-    const ring: [number, number][] = [];
-    for (let i = 0; i <= segments; i++) {
-      const angle = (i / segments) * 2 * Math.PI;
-      const dLat = (radius * Math.cos(angle)) / 111320;
-      const dLon = (radius * Math.sin(angle)) / (111320 * Math.cos((center.latitude * Math.PI) / 180));
-      ring.push([center.longitude + dLon, center.latitude + dLat]);
-    }
-    return {
-      type: 'FeatureCollection',
-      features: [{ type: 'Feature', properties: { shape: 'circle', radiusMetres: radius }, geometry: { type: 'Polygon', coordinates: [ring] } }],
-    };
-  }
-
-  const dLat = halfSideMetres / 111320;
-  const dLon = halfSideMetres / (111320 * Math.cos((center.latitude * Math.PI) / 180));
-  const ring = [
-    [center.longitude - dLon, center.latitude - dLat],
-    [center.longitude + dLon, center.latitude - dLat],
-    [center.longitude + dLon, center.latitude + dLat],
-    [center.longitude - dLon, center.latitude + dLat],
-    [center.longitude - dLon, center.latitude - dLat],
-  ];
-
-  return {
-    type: 'FeatureCollection',
-    features: [
-      {
-        type: 'Feature',
-        properties: { shape: 'polygon' },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [ring],
-        },
-      },
-    ],
-  };
-}
 
 /**
  * Helper to run async tasks across items with bounded concurrency.
@@ -155,6 +108,41 @@ function logProviderEvent(
   } else {
     console.warn(`[FortyGuard] ${event}:`, JSON.stringify(sanitized));
   }
+}
+
+/**
+ * Recursively search an arbitrary JSON value for the first object that looks
+ * like a GeoJSON FeatureCollection (`type === 'FeatureCollection'` AND an
+ * Array `features`). Used to robustly extract the thermal polygons from a
+ * LIVE FortyGuard response whose envelope shape may drift over time.
+ *
+ * Bounded by a depth ceiling (4) to avoid pathological nested envelopes.
+ */
+function findFeatureCollection(node: unknown, depth = 0): PolygonAOI | null {
+  if (!node || typeof node !== 'object' || depth > 4) return null;
+
+  // Array — recurse into entries up to a sensible breadth ceiling.
+  if (Array.isArray(node)) {
+    for (const item of node.slice(0, 64)) {
+      const found = findFeatureCollection(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const obj = node as Record<string, unknown>;
+  if (obj.type === 'FeatureCollection' && Array.isArray(obj.features)) {
+    return obj as unknown as PolygonAOI;
+  }
+
+  for (const key of Object.keys(obj)) {
+    const v = obj[key];
+    if (v && typeof v === 'object') {
+      const found = findFeatureCollection(v, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 /** In-memory cache for FortyGuard requests during the session */
@@ -382,17 +370,30 @@ export class FortyGuardAdapter {
         try {
           const response = await this.submitAndPoll('/v1/heatmap', validReq as Record<string, unknown>);
 
-          const result = response.data?.result as { map_data?: PolygonAOI } | PolygonAOI | undefined;
-          let aoi: PolygonAOI;
+          // FortyGuard's LIVE heatmap response shape is not guaranteed. The
+          // FeatureCollection of thermal polygons may live at:
+          //   - result.map_data   (documented shape)
+          //   - result itself    (alternate shape)
+          //   - some nested key   (provider response envelope drift)
+          // Recursively search for the first FeatureCollection with a `features`
+          // array so we never silently fall back to the empty-field state when
+          // FortyGuard returns a valid but differently-wrapped payload.
+          const result = response.data?.result as unknown;
+          let aoi: PolygonAOI | null = null;
 
-          if (result && typeof result === 'object' && 'map_data' in result && result.map_data?.type === 'FeatureCollection') {
-            aoi = result.map_data;
-          } else if (result && typeof result === 'object' && 'type' in result && result.type === 'FeatureCollection') {
-            aoi = result as PolygonAOI;
-          } else {
-            // FortyGuard returned data in an unexpected format — no valid FeatureCollection.
-            // Return an empty FeatureCollection rather than the query bounding polygon,
-            // which has no 'average_temperature' and would render as invisible fill.
+          if (result && typeof result === 'object') {
+            const found = findFeatureCollection(result);
+            if (found) {
+              aoi = found;
+            }
+          }
+
+          if (!aoi) {
+            // FortyGuard returned data in an unexpected format with NO
+            // FeatureCollection anywhere. Return an empty FeatureCollection
+            // (not the query bounding polygon — that has no temperatures and
+            // would render as invisible fill). The client treats an empty FC
+            // as `spatialField: null` so the map shows the clean empty state.
             logProviderEvent('warn', 'HEATMAP_UNEXPECTED_RESULT_FORMAT', {
               activityId: response.data?.activity_id,
               hasResult: result !== undefined,

@@ -24,6 +24,14 @@ import {
 } from '@/types/errors';
 import { isLocationCoveredByFixture } from '@/lib/location/search';
 import { z } from 'zod';
+import {
+  buildEngineConstraints,
+  buildHourlyTimestamps,
+  buildFortyGuardDateTime,
+  getFixtureTemporalMetadata,
+} from '@/lib/temporal/server-conversion';
+import type { AnalysisTemporalInput } from '@/lib/temporal/analysis-window';
+import { FIXTURE_TEMPORAL_METADATA, buildFixtureTemporalInput } from '@/lib/temporal/analysis-window';
 
 const CandidateSchema = z.object({
   locationId: z.string().min(1),
@@ -32,17 +40,59 @@ const CandidateSchema = z.object({
   longitude: z.number().min(-180).max(180),
 });
 
+/**
+ * PolygonAOI FeatureCollection validator. The client builds ONE canonical AOI
+ * (src/lib/spatial/aoi.ts createBoundingAOI) and sends it as `analysisAoi`.
+ * The adapter uses THIS geometry for the FortyGuard request — so the visible
+ * AOI on the map and the requested AOI at FortyGuard are exactly the same.
+ *
+ * Validation is intentionally permissive at the API boundary: we only check
+ * that the payload is a FeatureCollection with a non-empty features array.
+ * Real geometry validation happens inside the adapter's `findTileForPoint`
+ * (ray-casting) which throws OutsideCoverageError / EmptyThermalFieldError /
+ * MissingThermalValueError for malformed data — those surface as proper
+ * production errors via mapErrorToProductionDetails().
+ */
+const AnalysisAoiSchema = z.object({
+  type: z.literal('FeatureCollection'),
+  features: z.array(z.any()).min(1, 'AOI must contain at least one feature'),
+});
+
+const TemporalInputSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, 'startTime must be HH:MM'),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, 'endTime must be HH:MM'),
+  timeMode: z.enum(['single-hour', 'range-of-hours', 'single-day']),
+  dayWindowHours: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
+});
+
 const DecisionRequestSchema = z.object({
   latitude: z.number().min(-90).max(90).default(40.7128),
   longitude: z.number().min(-180).max(180).default(-74.006),
   candidates: z.array(CandidateSchema).optional(),
-  durationHours: z.number().int().min(1).max(12).default(3),
+  durationHours: z.number().int().min(1).max(12).optional(),
   allowedStart: z.string().optional(),
   allowedEnd: z.string().optional(),
   mode: z.enum(['LIVE', 'FIXTURE']).optional(),
   // Operational analysis preferences (persisted client-side; affect LIVE FortyGuard queries).
   granularity: z.union([z.literal(60), z.literal(80), z.literal(100)]).optional(),
   analysisAreaShape: z.enum(['polygon', 'circle']).optional(),
+  /**
+   * Canonical analysis AOI built client-side (src/lib/spatial/aoi.ts).
+   * The SAME geometry is rendered on the map AND sent to FortyGuard.
+   * If absent, the adapter falls back to its own createBoundingAOI() with
+   * a 400m half-side — but the recommended flow is for the client to send
+   * the canonical AOI explicitly so the visible == requested contract holds.
+   */
+  analysisAoi: AnalysisAoiSchema.optional(),
+  /**
+   * Explicit temporal input (Section 4) — replaces duration-only. The server
+   * converts local wall-clock → UTC at the adapter boundary (Section 6).
+   * The AI never performs date/time conversion.
+   */
+  temporalInput: TemporalInputSchema.optional(),
+  /** IANA timezone of the selected location (e.g. 'America/Los_Angeles'). */
+  timezone: z.string().optional(),
 });
 
 const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
@@ -117,21 +167,54 @@ export async function POST(request: Request) {
       latitude,
       longitude,
       candidates: reqCandidates,
-      durationHours,
+      durationHours: reqDurationHours,
       allowedStart: reqStart,
       allowedEnd: reqEnd,
       mode: reqMode,
       granularity: reqGranularity,
       analysisAreaShape: reqShape,
+      analysisAoi: reqAnalysisAoi,
+      temporalInput: reqTemporalInput,
+      timezone: reqTimezone,
     } = parseResult.data;
 
     const mode: DataSourceMode = reqMode ?? (process.env.FORTYGUARD_DATA_SOURCE === 'LIVE' ? 'LIVE' : 'FIXTURE');
 
     const adapter = new FortyGuardAdapter({ mode });
-    const defaultWindow = adapter.getDefaultOperatingWindow(6);
 
-    const allowedStart = reqStart || defaultWindow.allowedStart;
-    const allowedEnd = reqEnd || defaultWindow.allowedEnd;
+    // Build the engine's UTC constraints from the explicit temporal input
+    // (Section 4 + 6). For DEMO mode without a temporal input, anchor to the
+    // fixture's captured window so the displayed WHEN matches the fixture data.
+    let temporalInput: AnalysisTemporalInput;
+    if (reqTemporalInput) {
+      temporalInput = reqTemporalInput as AnalysisTemporalInput;
+    } else if (mode === 'FIXTURE') {
+      temporalInput = buildFixtureTemporalInput();
+    } else {
+      // LIVE without explicit temporal input — reject. The UI must always
+      // send an explicit date/time (Section 7: "Do not silently use an
+      // undocumented date").
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'LIVE mode requires an explicit temporalInput (date, startTime, endTime, timeMode).',
+            recoverySuggestion: 'Set the WHEN date/time inputs before generating.',
+            category: 'VALIDATION',
+          } as const,
+        },
+        { status: 400 }
+      );
+    }
+
+    const timezone = reqTimezone || 'UTC';
+    const { allowedStart: tAllowedStart, allowedEnd: tAllowedEnd, durationHours: tDurationHours } =
+      buildEngineConstraints(temporalInput, timezone);
+
+    const allowedStart = reqStart || tAllowedStart;
+    const allowedEnd = reqEnd || tAllowedEnd;
+    const durationHours = reqDurationHours ?? tDurationHours;
 
     const location: LocationPoint = { latitude, longitude };
     const constraints: DecisionConstraints = {
@@ -191,7 +274,15 @@ export async function POST(request: Request) {
       seenCoords.add(coordKey);
     }
 
-    const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps, undefined, {
+    // The canonical analysis AOI: if the client sent one, use it; otherwise the
+    // adapter builds its own 400m AOI from the location + shape. The contract
+    // is that the visible AOI on the map == the AOI sent to FortyGuard, so the
+    // recommended flow is for the client to always send `analysisAoi` explicitly.
+    const canonicalAoi = reqAnalysisAoi as
+      | import('@/types/domain').PolygonAOI
+      | undefined;
+
+    const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps, canonicalAoi, {
       granularity: reqGranularity,
       analysisAreaShape: reqShape,
     });
@@ -293,6 +384,18 @@ export async function POST(request: Request) {
             totalEvaluatedHours: hourlyTimestamps.length,
           }
         : undefined,
+      // Echo the temporal provenance so the client can display the exact
+      // date/time the heatmap represents (Section 8 + 9).
+      temporalProvenance: {
+        input: temporalInput,
+        allowedStartUtc: allowedStart,
+        allowedEndUtc: allowedEnd,
+        durationHours,
+        timezone,
+        fortyGuardDateTime: buildFortyGuardDateTime(temporalInput),
+        isFixtureCapture: mode === 'FIXTURE',
+        fixtureMetadata: mode === 'FIXTURE' ? getFixtureTemporalMetadata() : undefined,
+      },
     });
   } catch (error) {
     const errorDetails = mapErrorToProductionDetails(error);

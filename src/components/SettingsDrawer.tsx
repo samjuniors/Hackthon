@@ -15,6 +15,7 @@ import { useTheme } from '@/components/ThemeProvider';
 import type {
   PreferredAIProvider,
 } from '@/types/provider';
+import type { ProviderCapability } from '@/types/fortyguard-capability';
 
 /**
  * SettingsDrawer — self-contained, non-secret settings drawer.
@@ -27,6 +28,8 @@ import type {
 interface SettingsDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Provider capability surfaced from the live API (Section 1 diagnostics). */
+  capability?: ProviderCapability | null;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -51,7 +54,7 @@ function pillButtonClass(active: boolean): string {
 const borderedCardClass =
   'rounded-lg border border-border bg-surface-card p-4 space-y-3';
 
-export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
+export function SettingsDrawer({ open, onOpenChange, capability }: SettingsDrawerProps) {
   const [prefs, set] = useUserPreferences();
   const [unit, setUnit] = useTempUnit();
   const { theme, toggleTheme } = useTheme();
@@ -176,6 +179,132 @@ export function SettingsDrawer({ open, onOpenChange }: SettingsDrawerProps) {
                 : 'Captured 12-hour Manhattan thermal field. No API calls required.'}
             </p>
           </section>
+
+          {/* ── 2b. Provider Diagnostics (Section 1) ────────────────────── */}
+          {(prefs.dataSourceMode === 'LIVE' || capability) && (
+            <section className={borderedCardClass}>
+              <SectionLabel>FortyGuard Provider Diagnostics</SectionLabel>
+              {!capability ? (
+                <p className="text-[11px] text-text-muted leading-relaxed">
+                  No capability probe available yet. Open the drawer in LIVE mode or click the FortyGuard Test button to probe.
+                </p>
+              ) : (
+                <div className="space-y-2 text-[11px] font-mono">
+                  {/* Coverage region — honestly labelled (documented, not fabricated) */}
+                  <div className="flex justify-between gap-2">
+                    <span className="text-text-dimmed">Coverage</span>
+                    <span className="text-text-primary text-right">
+                      {capability.coverageRegion}{' '}
+                      <span
+                        className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+                        style={{
+                          background: capability.coverageConfidence === 'confirmed' ? 'var(--accent-emerald-bg)' : 'var(--surface-elevated)',
+                          color: capability.coverageConfidence === 'confirmed' ? 'var(--accent-emerald)' : 'var(--text-dimmed)',
+                        }}
+                      >
+                        {capability.coverageConfidence}
+                      </span>
+                    </span>
+                  </div>
+                  {/* Plan / capability */}
+                  {capability.planName && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-text-dimmed">Plan</span>
+                      <span className="text-text-primary text-right">{capability.planName}</span>
+                    </div>
+                  )}
+                  {/* API access */}
+                  {typeof capability.apiAccessAvailable === 'boolean' && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-text-dimmed">API access</span>
+                      <span className="text-text-primary text-right">
+                        {capability.apiAccessAvailable ? 'available' : 'unavailable'}
+                      </span>
+                    </div>
+                  )}
+                  {/* Billing period */}
+                  {capability.billingPeriod && (
+                    <div className="flex justify-between gap-2">
+                      <span className="text-text-dimmed">Billing cycle</span>
+                      <span className="text-text-primary text-right text-[10px]">
+                        {capability.billingPeriod.start} – {capability.billingPeriod.end}
+                      </span>
+                    </div>
+                  )}
+                  {/* Credit ledger */}
+                  {capability.creditSummary && (
+                    <div className="space-y-1 pt-1 border-t border-border">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-text-dimmed">Credits available</span>
+                        <span className="text-text-primary text-right">
+                          {capability.creditSummary.totalAvailable.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-text-dimmed">Credits used</span>
+                        <span className="text-text-primary text-right">
+                          {capability.creditSummary.cycleUsed.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-text-dimmed">Credits remaining</span>
+                        <span
+                          className="text-right font-bold"
+                          style={{
+                            color: capability.creditSummary.exhausted
+                              ? 'var(--accent-amber)'
+                              : 'var(--accent-emerald)',
+                          }}
+                        >
+                          {capability.creditSummary.cycleRemaining.toLocaleString()}
+                          {capability.creditSummary.exhausted && ' ⚠ exhausted'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {/* AOI limit — honestly labelled (documented, not confirmed) */}
+                  <div className="flex justify-between gap-2 pt-1 border-t border-border">
+                    <span className="text-text-dimmed">AOI limit</span>
+                    <span className="text-text-primary text-right">
+                      {capability.aoiLimitDocumentedMi2} mi²{' '}
+                      <span
+                        className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+                        style={{
+                          background: 'var(--surface-elevated)',
+                          color: 'var(--text-dimmed)',
+                        }}
+                      >
+                        {capability.aoiLimitConfidence}
+                      </span>
+                    </span>
+                  </div>
+                  {/* Connectivity */}
+                  <div className="flex justify-between gap-2">
+                    <span className="text-text-dimmed">Connectivity</span>
+                    <span
+                      className="text-right font-bold"
+                      style={{
+                        color:
+                          capability.connectivity === 'connected'
+                            ? 'var(--accent-emerald)'
+                            : capability.connectivity === 'exhausted' || capability.connectivity === 'auth-error'
+                              ? 'var(--accent-amber)'
+                              : 'var(--text-dimmed)',
+                      }}
+                    >
+                      {capability.connectivity}
+                    </span>
+                  </div>
+                  {/* Honest note (Section 13) */}
+                  {capability.note && (
+                    <p className="text-[10px] text-text-dimmed leading-relaxed pt-2 border-t border-border font-sans">
+                      {capability.note}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* ── 3. AI Explainer — Preferred Provider ───────────────────── */}
           <section className={borderedCardClass}>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 
 import { Header } from '@/components/dashboard/Header';
@@ -31,9 +31,24 @@ import type {
   NamedLocation,
   ProductionErrorDetails,
 } from '@/types/provider';
+import type { ProviderCapability } from '@/types/fortyguard-capability';
 import { METROPOLITAN_LOCATIONS, isLocationCoveredByFixture } from '@/lib/location/search';
 import { useTempUnit } from '@/lib/temperature';
 import { useUserPreferences } from '@/lib/user-preferences';
+import {
+  createBoundingAOI,
+  isAoiWithinLimit,
+  analyzeAoiAreaMi2,
+  FORTYGUARD_AOI_LIMIT_MI2,
+} from '@/lib/spatial/aoi';
+import {
+  type AnalysisTemporalInput,
+  defaultTemporalInput,
+  buildFixtureTemporalInput,
+  deriveDurationHours,
+  isValidDateStr,
+  isValidTimeStr,
+} from '@/lib/temporal/analysis-window';
 
 // Dynamically import MapLibre map component to bypass SSR canvas requirement
 const ThermalMap = dynamic(() => import('@/components/ThermalMap'), {
@@ -82,11 +97,37 @@ export default function WorkspacePage() {
 
   // ── Input state ──
   const [selectedLocation, setSelectedLocation] = useState<NamedLocation>(METROPOLITAN_LOCATIONS[0]);
-  const [duration, setDuration] = useState(3);
 
-  // ── Provider health state ──
+  // ── Explicit WHEN inputs (Section 4) — replaces duration-only ──
+  // Session-level state. date/startTime/endTime reset on location/mode change;
+  // timeMode + dayWindowHours are also persisted via prefs.
+  // Initial default = fixture capture (DEMO mode is the initial mode).
+  const [temporalInput, setTemporalInput] = useState<AnalysisTemporalInput>(() =>
+    buildFixtureTemporalInput()
+  );
+
+  // ── Canonical Analysis AOI ──
+  // ONE geometry, built client-side from the user-selected location + shape +
+  // size. This SAME geometry is:
+  //   - Rendered as the visible AOI boundary on <ThermalMap>
+  //   - Sent to /api/decision as `analysisAoi` (used by the FortyGuard adapter)
+  // There is no "display AOI" vs "API AOI" split — one PolygonAOI per analysis.
+  const analysisAoi: PolygonAOI = useMemo(
+    () => createBoundingAOI(
+      { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude },
+      prefs.analysisAoiHalfSideMetres,
+      prefs.analysisAreaShape,
+    ),
+    [selectedLocation.latitude, selectedLocation.longitude, prefs.analysisAreaShape, prefs.analysisAoiHalfSideMetres],
+  );
+
+  // AOI limit validation happens inside runDecisionPipeline (isAoiWithinLimit).
+  // The documented 150 mi² ceiling is labelled as "documented" — never silently shrunk.
+
+  // ── Provider health + capability state ──
   const [fgStatus, setFgStatus] = useState<ProviderStatus>('UNKNOWN');
   const [fgHealth, setFgHealth] = useState<FortyGuardHealthResponse | null>(null);
+  const [capability, setCapability] = useState<ProviderCapability | null>(null);
   const [aiStatus, setAiStatus] = useState<ProviderStatus>('UNKNOWN');
   const [aiHealth, setAiHealth] = useState<AIHealthResponse | null>(null);
 
@@ -115,7 +156,7 @@ export default function WorkspacePage() {
   const activeRequestIdRef = useRef(0);
   const modeRef = useRef(mode);
   const selectedLocationRef = useRef(selectedLocation);
-  const durationRef = useRef(duration);
+  const temporalInputRef = useRef(temporalInput);
   const preferredProviderRef = useRef(prefs.preferredAIProvider);
   const selectedScenarioIdRef = useRef(selectedScenarioId);
   const jointDecisionRef = useRef<JointDecisionResult | null>(null);
@@ -126,12 +167,12 @@ export default function WorkspacePage() {
   useEffect(() => {
     modeRef.current = mode;
     selectedLocationRef.current = selectedLocation;
-    durationRef.current = duration;
+    temporalInputRef.current = temporalInput;
     preferredProviderRef.current = prefs.preferredAIProvider;
     selectedScenarioIdRef.current = selectedScenarioId;
     jointDecisionRef.current = jointDecision;
     scenarioAnalysisRef.current = scenarioAnalysis;
-  }, [mode, selectedLocation, duration, prefs.preferredAIProvider, selectedScenarioId, jointDecision, scenarioAnalysis]);
+  }, [mode, selectedLocation, temporalInput, prefs.preferredAIProvider, selectedScenarioId, jointDecision, scenarioAnalysis]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Data-fetching handlers (stable; read fresh values via refs)
@@ -140,7 +181,11 @@ export default function WorkspacePage() {
   const checkFortyGuardHealth = useCallback(async (checkMode?: DataSourceMode) => {
     const m = checkMode ?? modeRef.current;
     setFgStatus('CHECKING');
-    const { ok, data } = await safeJsonFetch<{ success: boolean; health: FortyGuardHealthResponse }>('/api/health/fortyguard', {
+    const { ok, data } = await safeJsonFetch<{
+      success: boolean;
+      health: FortyGuardHealthResponse;
+      capability?: ProviderCapability | null;
+    }>('/api/health/fortyguard', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ mode: m }),
@@ -148,6 +193,7 @@ export default function WorkspacePage() {
     if (ok && data?.success && data.health) {
       setFgHealth(data.health);
       setFgStatus(data.health.connected ? 'CONNECTED' : 'ERROR');
+      if (data.capability) setCapability(data.capability);
     } else {
       setFgStatus('ERROR');
     }
@@ -192,21 +238,63 @@ export default function WorkspacePage() {
 
   const runDecisionPipeline = useCallback(async (
     loc: NamedLocation,
-    durationHours: number,
+    temporal: AnalysisTemporalInput,
+    tz: string,
     dataSourceMode: DataSourceMode,
   ) => {
     const requestId = ++activeRequestIdRef.current;
     setLoading(true);
     setErrorDetails(null);
 
+    // Build the canonical AOI for THIS location + the user's current shape/size
+    // preference. The SAME geometry is rendered on the map AND sent to FortyGuard.
+    const aoi = createBoundingAOI(
+      { latitude: loc.latitude, longitude: loc.longitude },
+      prefs.analysisAoiHalfSideMetres,
+      prefs.analysisAreaShape,
+    );
+
+    // Validate the AOI against the documented FortyGuard limit.
+    if (!isAoiWithinLimit(aoi)) {
+      const area = analyzeAoiAreaMi2(aoi);
+      setLoading(false);
+      setErrorDetails({
+        code: 'AOI_EXCEEDS_PROVIDER_LIMIT',
+        message: `Analysis area (${area.areaMi2.toFixed(1)} mi²) exceeds the documented FortyGuard ${FORTYGUARD_AOI_LIMIT_MI2} mi² AOI limit.`,
+        recoverySuggestion: 'Pick a smaller AOI size in the Analysis Area control, then generate again.',
+        category: 'VALIDATION',
+      });
+      return;
+    }
+
+    // Validate the explicit temporal input before sending (Section 7).
+    if (!isValidDateStr(temporal.date) || !isValidTimeStr(temporal.startTime) || !isValidTimeStr(temporal.endTime)) {
+      setLoading(false);
+      setErrorDetails({
+        code: 'TEMPORAL_INPUT_INVALID',
+        message: 'The WHEN inputs are incomplete or invalid. Set a valid date and HH:MM times.',
+        recoverySuggestion: 'Set the Date, Start, and End fields in the WHEN section.',
+        category: 'VALIDATION',
+      });
+      return;
+    }
+
     try {
       const body: Record<string, unknown> = {
         latitude: loc.latitude,
         longitude: loc.longitude,
-        durationHours,
+        // durationHours is now DERIVED from the explicit temporal input
+        // (Section 4). Sent for backward-compat; the route also derives it.
+        durationHours: deriveDurationHours(temporal),
         mode: dataSourceMode,
         granularity: prefs.analysisResolution,
         analysisAreaShape: prefs.analysisAreaShape,
+        // Canonical analysis AOI — the EXACT geometry rendered on the map.
+        analysisAoi: aoi,
+        // Explicit WHEN inputs (Section 4) — the server converts local→UTC
+        // at the adapter boundary (Section 6). The AI never does time conversion.
+        temporalInput: temporal,
+        timezone: tz,
       };
 
       const { ok, data } = await safeJsonFetch<{
@@ -274,11 +362,24 @@ export default function WorkspacePage() {
     } finally {
       if (requestId === activeRequestIdRef.current) setLoading(false);
     }
-  }, [fetchExplanation, prefs.analysisResolution, prefs.analysisAreaShape]);
+  }, [fetchExplanation, prefs.analysisResolution, prefs.analysisAreaShape, prefs.analysisAoiHalfSideMetres]);
 
   const handleSelectLocation = useCallback((loc: NamedLocation) => {
     setSelectedLocation(loc);
     selectedLocationRef.current = loc;
+    // When switching to a fixture-covered location in DEMO mode, reset the
+    // WHEN inputs to the fixture capture window so the displayed date/time
+    // matches the fixture data (Section 10 — never "Today" for a capture).
+    if (modeRef.current === 'FIXTURE' && isLocationCoveredByFixture(loc)) {
+      const fixtureTemporal = buildFixtureTemporalInput();
+      setTemporalInput(fixtureTemporal);
+      temporalInputRef.current = fixtureTemporal;
+    } else if (modeRef.current === 'LIVE') {
+      // LIVE: default to today's date in the new location's timezone.
+      const liveDefault = defaultTemporalInput(loc.timezone);
+      setTemporalInput(liveDefault);
+      temporalInputRef.current = liveDefault;
+    }
     // Clear model state
     setDecision(null);
     setSpatialDecision(null);
@@ -288,6 +389,11 @@ export default function WorkspacePage() {
     setSpatialField(null);
     setSpatialFieldMeta(null);
     setErrorDetails(null);
+  }, []);
+
+  const handleTemporalChange = useCallback((next: AnalysisTemporalInput) => {
+    setTemporalInput(next);
+    temporalInputRef.current = next;
   }, []);
 
   const handleModeChange = useCallback((newMode: DataSourceMode) => {
@@ -303,15 +409,19 @@ export default function WorkspacePage() {
   useEffect(() => {
     let isMounted = true;
     Promise.all([
-      safeJsonFetch('/api/health/fortyguard', {
+      safeJsonFetch<{
+        success: boolean;
+        health: FortyGuardHealthResponse;
+        capability?: ProviderCapability | null;
+      }>('/api/health/fortyguard', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ mode: 'FIXTURE' }),
       }).then(({ ok, data }) => {
-        if (isMounted && ok && data?.success && (data as { health: FortyGuardHealthResponse }).health) {
-          const h = (data as { health: FortyGuardHealthResponse }).health;
-          setFgHealth(h);
-          setFgStatus(h.connected ? 'CONNECTED' : 'ERROR');
+        if (isMounted && ok && data?.success && data.health) {
+          setFgHealth(data.health);
+          setFgStatus(data.health.connected ? 'CONNECTED' : 'ERROR');
+          if (data.capability) setCapability(data.capability);
         }
       }).catch(() => {}),
       safeJsonFetch('/api/health/ai', {
@@ -326,7 +436,18 @@ export default function WorkspacePage() {
         }
       }).catch(() => {}),
     ]).then(() => {
-      if (isMounted) runDecisionPipeline(METROPOLITAN_LOCATIONS[0], 3, 'FIXTURE');
+      if (isMounted) {
+        // Initial DEMO pipeline with the fixture capture temporal input.
+        const fixtureTemporal = buildFixtureTemporalInput();
+        setTemporalInput(fixtureTemporal);
+        temporalInputRef.current = fixtureTemporal;
+        runDecisionPipeline(
+          METROPOLITAN_LOCATIONS[0],
+          fixtureTemporal,
+          METROPOLITAN_LOCATIONS[0].timezone || 'America/New_York',
+          'FIXTURE'
+        );
+      }
     });
     return () => { isMounted = false; };
   }, []);
@@ -350,7 +471,8 @@ export default function WorkspacePage() {
 
     checkFortyGuardHealth(newMode);
 
-    // When switching to FIXTURE on a non-fixture location, reset to the demo site.
+    // Reset the WHEN inputs to match the new mode's data source.
+    // DEMO → fixture capture (Section 10). LIVE → today in the location's tz (Section 7).
     let loc = selectedLocationRef.current;
     if (newMode === 'FIXTURE' && !isLocationCoveredByFixture(loc)) {
       loc = METROPOLITAN_LOCATIONS[0];
@@ -358,8 +480,14 @@ export default function WorkspacePage() {
       selectedLocationRef.current = loc;
     }
 
+    const newTemporal = newMode === 'FIXTURE'
+      ? buildFixtureTemporalInput()
+      : defaultTemporalInput(loc.timezone);
+    setTemporalInput(newTemporal);
+    temporalInputRef.current = newTemporal;
+
     if (newMode === 'LIVE' || isLocationCoveredByFixture(loc)) {
-      runDecisionPipeline(loc, durationRef.current, newMode);
+      runDecisionPipeline(loc, newTemporal, loc.timezone || 'UTC', newMode);
     }
   }, [mode]);
 
@@ -367,7 +495,6 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!didMountRef.current) return;
     checkAIHealth();
-    // Re-explain with the new preferred provider if we have a current decision.
     if (jointDecisionRef.current) {
       const activeScen = scenarioAnalysisRef.current?.scenarios?.find(
         (s) => s.scenarioId === selectedScenarioIdRef.current
@@ -405,26 +532,31 @@ export default function WorkspacePage() {
     }
   }, [fetchExplanation]);
 
-  const handleDurationChange = useCallback((dur: number) => {
-    setDuration(dur);
-    durationRef.current = dur;
-    if (modeRef.current === 'LIVE' || isLocationCoveredByFixture(selectedLocationRef.current)) {
-      runDecisionPipeline(selectedLocationRef.current, dur, modeRef.current);
-    }
-  }, [runDecisionPipeline]);
-
   const handleGenerate = useCallback(() => {
-    runDecisionPipeline(selectedLocationRef.current, durationRef.current, modeRef.current);
+    runDecisionPipeline(
+      selectedLocationRef.current,
+      temporalInputRef.current,
+      selectedLocationRef.current.timezone || 'UTC',
+      modeRef.current
+    );
   }, [runDecisionPipeline]);
 
   const handleRetry = useCallback(() => {
-    runDecisionPipeline(selectedLocationRef.current, durationRef.current, modeRef.current);
+    runDecisionPipeline(
+      selectedLocationRef.current,
+      temporalInputRef.current,
+      selectedLocationRef.current.timezone || 'UTC',
+      modeRef.current
+    );
   }, [runDecisionPipeline]);
 
   const handleSelectAltLocation = useCallback((loc: NamedLocation) => {
     setSelectedLocation(loc);
     selectedLocationRef.current = loc;
-    runDecisionPipeline(loc, durationRef.current, 'LIVE');
+    const liveDefault = defaultTemporalInput(loc.timezone);
+    setTemporalInput(liveDefault);
+    temporalInputRef.current = liveDefault;
+    runDecisionPipeline(loc, liveDefault, loc.timezone || 'UTC', 'LIVE');
   }, [runDecisionPipeline]);
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -452,8 +584,8 @@ export default function WorkspacePage() {
             <ControlRail
               mode={mode}
               selectedLocation={selectedLocation}
-              duration={duration}
-              onDurationChange={handleDurationChange}
+              temporalInput={temporalInput}
+              onTemporalChange={handleTemporalChange}
               onGenerate={handleGenerate}
               loading={loading}
               onSelectLocation={handleSelectLocation}
@@ -488,10 +620,21 @@ export default function WorkspacePage() {
               baseTimestamp={spatialFieldMeta?.baseTimestamp}
               thermalCellCount={thermalCellCount}
               resolution={prefs.analysisResolution}
+              mode={mode}
               loading={loading}
+              selectedLocation={selectedLocation}
+              temporalInput={temporalInput}
+              timezone={selectedLocation.timezone}
+              rankedCandidates={spatialDecision?.rankedLocations.map((r) => ({
+                locationId: r.locationId,
+                name: r.name,
+                location: r.location,
+              }))}
+              recommendedLocationId={spatialDecision?.recommendedLocation.locationId}
             >
               <ThermalMap
                 location={{ latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }}
+                analysisAoi={analysisAoi}
                 spatialField={spatialField}
                 selectedTileId={decision?.evidenceBundle.selectedTileId}
                 candidates={spatialDecision?.rankedLocations.map((r) => ({
@@ -510,6 +653,8 @@ export default function WorkspacePage() {
                 jointDecision={jointDecision}
                 unit={unit}
                 timezone={selectedLocation.timezone}
+                mode={mode}
+                temporalInput={temporalInput}
               />
             )}
 
@@ -549,15 +694,15 @@ export default function WorkspacePage() {
               <div className="rounded-xl border border-border bg-surface-card px-5 py-12 text-center">
                 <div className="text-2xl mb-2">🌡</div>
                 <p className="text-text-muted text-sm font-medium">Generate a thermal field to see the recommended operational plan.</p>
-                <p className="text-text-dimmed text-xs mt-1">Select a location, set an operating window, then click Generate.</p>
+                <p className="text-text-dimmed text-xs mt-1">Select a location, set the WHEN date/time, then click Generate.</p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* SETTINGS DRAWER */}
-      <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {/* SETTINGS DRAWER — now surfaces provider capability (Section 1) */}
+      <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} capability={capability} />
     </main>
   );
 }

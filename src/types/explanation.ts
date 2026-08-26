@@ -4,6 +4,7 @@ import type {
 } from './domain';
 
 import type { DataSourceMode } from './provenance';
+import type { AIProviderName } from './provider';
 
 export type ExplanationGeneratorType = 'AI_GROUNDED_EXPLAINER' | 'DETERMINISTIC_FALLBACK';
 
@@ -27,4 +28,8 @@ export interface DecisionExplanation {
   fallbackReason?: string;
   dataSource: DataSourceMode;
   modelVersion: 'v1.0.0-spatial-thermal-baseline';
+  /** Which AI provider actually produced this grounded explanation ('NONE' for deterministic). */
+  providerUsed?: AIProviderName;
+  /** Ordered trace of providers attempted + why each fell back. Empty when the first provider succeeded. */
+  fallbackTrace?: string[];
 }

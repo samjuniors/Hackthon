@@ -11,8 +11,10 @@ import {
   tempUnitSuffix,
 } from '@/lib/temperature';
 
+import type { FeatureCollection } from 'geojson';
+
 // Minimal inline type for MapLibre GeoJSON source data casts.
-type GeoJSONFC = { type: 'FeatureCollection'; features: unknown[] };
+type GeoJSONFC = FeatureCollection;
 
 interface ThermalMapProps {
   location: LocationPoint;

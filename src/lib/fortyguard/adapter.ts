@@ -54,9 +54,38 @@ export const FortyGuardEnvParamsRequestSchema = z.object({
 });
 
 /**
- * Creates standard bounding PolygonAOI FeatureCollection around a point for API query boundary.
+ * Analysis-area shape preference (persisted client-side, sent to /api/decision).
+ * 'polygon' = square bounding box (default); 'circle' = regular 32-gon approximation.
  */
-export function createBoundingAOI(center: LocationPoint, halfSideMetres = 400): PolygonAOI {
+export type AnalysisAreaShape = 'polygon' | 'circle';
+
+/**
+ * Creates a bounding PolygonAOI FeatureCollection around a point for the API query boundary.
+ * When shape === 'circle', the boundary is a regular 32-gon approximating a circle of the
+ * given radius — useful for radial operational footprints. FortyGuard still receives a
+ * Polygon geometry; the shape only affects the footprint vertices.
+ */
+export function createBoundingAOI(
+  center: LocationPoint,
+  halfSideMetres = 400,
+  shape: AnalysisAreaShape = 'polygon',
+): PolygonAOI {
+  if (shape === 'circle') {
+    const radius = halfSideMetres;
+    const segments = 32;
+    const ring: [number, number][] = [];
+    for (let i = 0; i <= segments; i++) {
+      const angle = (i / segments) * 2 * Math.PI;
+      const dLat = (radius * Math.cos(angle)) / 111320;
+      const dLon = (radius * Math.sin(angle)) / (111320 * Math.cos((center.latitude * Math.PI) / 180));
+      ring.push([center.longitude + dLon, center.latitude + dLat]);
+    }
+    return {
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', properties: { shape: 'circle', radiusMetres: radius }, geometry: { type: 'Polygon', coordinates: [ring] } }],
+    };
+  }
+
   const dLat = halfSideMetres / 111320;
   const dLon = halfSideMetres / (111320 * Math.cos((center.latitude * Math.PI) / 180));
   const ring = [
@@ -72,7 +101,7 @@ export function createBoundingAOI(center: LocationPoint, halfSideMetres = 400): 
     features: [
       {
         type: 'Feature',
-        properties: {},
+        properties: { shape: 'polygon' },
         geometry: {
           type: 'Polygon',
           coordinates: [ring],
@@ -421,10 +450,12 @@ export class FortyGuardAdapter {
   async getHourlyHeatmapSnapshots(
     location: LocationPoint,
     timestamps: string[],
-    baseAoi?: PolygonAOI
+    baseAoi?: PolygonAOI,
+    options?: { granularity?: 60 | 80 | 100; analysisAreaShape?: AnalysisAreaShape },
   ): Promise<Map<string, PolygonAOI>> {
     const results = new Map<string, PolygonAOI>();
-    const aoiToQuery = baseAoi || createBoundingAOI(location);
+    const aoiToQuery = baseAoi || createBoundingAOI(location, 400, options?.analysisAreaShape ?? 'polygon');
+    const granularity = options?.granularity ?? 60;
 
     if (this.mode === 'LIVE') {
       // Execute with bounded concurrency (default concurrency = 2)
@@ -443,7 +474,7 @@ export class FortyGuardAdapter {
               start_time: hourStr,
               filter_type: 1,
             },
-            granularity: 60,
+            granularity,
           });
           return [timestamp, heatmapResult.aoi] as [string, PolygonAOI];
         }

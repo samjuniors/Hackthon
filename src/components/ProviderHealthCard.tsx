@@ -73,8 +73,10 @@ export function ProviderHealthCard({
 
   const aiLabel = aiHealth?.provider === 'GEMINI'
     ? 'Gemini'
-    : aiHealth?.provider === 'OPENAI'
-    ? 'OpenAI'
+    : aiHealth?.provider === 'CLAUDE'
+    ? 'Claude'
+    : aiHealth?.provider === 'ZAI'
+    ? 'Z.ai'
     : 'Deterministic';
 
   const aiSubtext = aiHealth?.configured

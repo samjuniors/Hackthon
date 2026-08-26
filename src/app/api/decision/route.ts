@@ -40,6 +40,9 @@ const DecisionRequestSchema = z.object({
   allowedStart: z.string().optional(),
   allowedEnd: z.string().optional(),
   mode: z.enum(['LIVE', 'FIXTURE']).optional(),
+  // Operational analysis preferences (persisted client-side; affect LIVE FortyGuard queries).
+  granularity: z.union([z.literal(60), z.literal(80), z.literal(100)]).optional(),
+  analysisAreaShape: z.enum(['polygon', 'circle']).optional(),
 });
 
 const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
@@ -118,6 +121,8 @@ export async function POST(request: Request) {
       allowedStart: reqStart,
       allowedEnd: reqEnd,
       mode: reqMode,
+      granularity: reqGranularity,
+      analysisAreaShape: reqShape,
     } = parseResult.data;
 
     const mode: DataSourceMode = reqMode ?? (process.env.FORTYGUARD_DATA_SOURCE === 'LIVE' ? 'LIVE' : 'FIXTURE');
@@ -186,7 +191,10 @@ export async function POST(request: Request) {
       seenCoords.add(coordKey);
     }
 
-    const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps);
+    const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps, undefined, {
+      granularity: reqGranularity,
+      analysisAreaShape: reqShape,
+    });
     const observationsByCandidate = new Map<string, NormalizedThermalObservation[]>();
 
     for (const cand of candidatesToEvaluate) {

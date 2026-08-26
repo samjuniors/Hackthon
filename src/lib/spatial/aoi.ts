@@ -263,3 +263,40 @@ export function aoiSpanLabel(spanMetres: number, shape: AnalysisAreaShape): stri
 export function isAoiWithinLimit(aoi: PolygonAOI, limitMi2 = FORTYGUARD_AOI_LIMIT_MI2): boolean {
   return analyzeAoiAreaMi2(aoi).areaMi2 <= limitMi2;
 }
+
+/**
+ * Return true if the geographic BOUNDING BOXES of two AOIs intersect.
+ *
+ * Used for coverage-style checks where the reference AOI (e.g. the captured
+ * DEMO field extent) is itself a bounding box, so bbox-vs-bbox is exact with
+ * respect to the displayed boundary.
+ */
+export function aoiBboxesIntersect(a: PolygonAOI, b: PolygonAOI): boolean {
+  const boxOf = (aoi: PolygonAOI) => {
+    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    let found = false;
+    for (const f of aoi.features) {
+      const geom = f.geometry as { type: string; coordinates: number[][][] } | undefined;
+      if (!geom?.coordinates) continue;
+      for (const ring of geom.coordinates) {
+        for (const [lng, lat] of ring) {
+          found = true;
+          if (lng < minLng) minLng = lng;
+          if (lng > maxLng) maxLng = lng;
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
+        }
+      }
+    }
+    return found ? { minLng, maxLng, minLat, maxLat } : null;
+  };
+  const boxA = boxOf(a);
+  const boxB = boxOf(b);
+  if (!boxA || !boxB) return false;
+  return (
+    boxA.maxLng >= boxB.minLng &&
+    boxA.minLng <= boxB.maxLng &&
+    boxA.maxLat >= boxB.minLat &&
+    boxA.minLat <= boxB.maxLat
+  );
+}

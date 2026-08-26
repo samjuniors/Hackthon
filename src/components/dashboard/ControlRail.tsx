@@ -22,7 +22,15 @@ import {
   isValidDateStr,
   isValidTimeStr,
   todayLocalDate,
+  FIXTURE_TIMEZONE,
 } from '@/lib/temporal/analysis-window';
+import {
+  FIXTURE_DISPLAY_GRANULARITY,
+  FIXTURE_DISPLAY_SNAPSHOT_COUNT,
+  FIXTURE_CELL_COUNT,
+  FIXTURE_CAPTURED_AT_ISO,
+  FIXTURE_CAPTURED_HOUR_ISO,
+} from '@/lib/fortyguard/fixture-display';
 
 interface ControlRailProps {
   mode: DataSourceMode;
@@ -99,7 +107,9 @@ export function ControlRail({
   const [showSiteSearch, setShowSiteSearch] = useState(false);
   const isFixtureMismatch = mode === 'FIXTURE' && !isLocationCoveredByFixture(selectedLocation);
   const aiProvider = aiHealth?.provider;
-  const tz = selectedLocation.timezone;
+  // Display timezone: DEMO is UTC-anchored (the capture's request hour is a
+  // UTC instant); LIVE uses the selected location's timezone.
+  const tz = mode === 'FIXTURE' ? FIXTURE_TIMEZONE : selectedLocation.timezone;
   const derivedDuration = deriveDurationHours(temporalInput);
   const isFixtureAnchored = mode === 'FIXTURE';
   const centerCoords = analysisCenter ?? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude };
@@ -112,14 +122,9 @@ export function ControlRail({
     setters.setAnalysisTimeMode(m);
     update({ timeMode: m });
   };
-  const handleDayWindowChange = (h: 2 | 3 | 4) => {
-    setters.setAnalysisDayWindowHours(h);
-    update({ dayWindowHours: h });
-  };
 
-  // For Single Hour, End is derived (Start + 1h) and shown read-only.
+  // For Single hour, End is derived (Start + 1h) and shown read-only.
   const isSingleHour = temporalInput.timeMode === 'single-hour';
-  const isSingleDay = temporalInput.timeMode === 'single-day';
   const bounds = effectiveTimeBounds(temporalInput);
 
   // Validation flags — surface inline so the user fixes before Generate.
@@ -136,20 +141,30 @@ export function ControlRail({
 
   const outsideSiteCount = candidateSites.filter((s) => s.outsideAoi).length;
 
+  // LIVE billing disclosure: a range evaluation sends ONE hourly provider
+  // request per evaluated hour (cached results are reused at no extra cost).
+  const liveHourlyRequestCount = Math.max(1, derivedDuration);
+
   return (
     <div className="space-y-4">
-      {/* ── DEMO notice ── */}
+      {/* ── DEMO notice — truthful capture provenance ── */}
       {mode === 'FIXTURE' && (
-        <div className="rounded-xl p-3.5 border border-border bg-accent-amber-bg">
+        <div className="rounded-xl p-3.5 border border-border bg-accent-amber-bg" data-testid="demo-capture-notice">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-sm" style={{ color: 'var(--accent-amber)' }}>⬡</span>
             <span className="text-sm font-bold" style={{ color: 'var(--accent-amber)' }}>
               DEMO · Captured FortyGuard
             </span>
           </div>
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--accent-amber-text)', opacity: 0.85 }}>
-            Offline demonstration using a 12-hour Manhattan thermal-field capture ({fixtureGranularity ?? 60}m cells).
-            Switch to LIVE in Settings to analyse any location in real time.
+          <div className="text-[10px] font-mono leading-relaxed" style={{ color: 'var(--accent-amber-text)', opacity: 0.9 }}>
+            <div>{FIXTURE_DISPLAY_GRANULARITY}m cell resolution</div>
+            <div>Model hour: {FIXTURE_CAPTURED_HOUR_ISO.slice(0, 10)} · {FIXTURE_CAPTURED_HOUR_ISO.slice(11, 16)} UTC</div>
+            <div>Captured: {FIXTURE_CAPTURED_AT_ISO.slice(0, 10)} {FIXTURE_CAPTURED_AT_ISO.slice(11, 16)} UTC</div>
+            <div>{FIXTURE_CELL_COUNT} provider cells · {FIXTURE_DISPLAY_SNAPSHOT_COUNT}-hour snapshot</div>
+          </div>
+          <p className="text-xs leading-relaxed mt-1.5" style={{ color: 'var(--accent-amber-text)', opacity: 0.85 }}>
+            Offline demonstration replaying one genuine captured FortyGuard field (Lower Manhattan). Switch to LIVE in
+            Settings to analyse any location in real time.
           </p>
         </div>
       )}
@@ -251,7 +266,7 @@ export function ControlRail({
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-text-secondary">Thermal Cell</span>
             <span className="text-[10px] font-mono text-text-dimmed">
-              {mode === 'LIVE' ? 'FortyGuard granularity' : `fixture captured at ${fixtureGranularity ?? 60}m`}
+              {mode === 'LIVE' ? 'FortyGuard granularity' : `fixture captured at ${fixtureGranularity ?? 100}m`}
             </span>
           </div>
           <div className="grid grid-cols-3 gap-2" data-testid="resolution-options">
@@ -277,7 +292,7 @@ export function ControlRail({
           </div>
           {mode === 'FIXTURE' && fixtureGranularity !== prefs.analysisResolution && (
             <p className="text-[9px] mt-1" style={{ color: 'var(--accent-amber)' }}>
-              DEMO displays the fixture&apos;s actual {fixtureGranularity ?? 60}m cells — the {prefs.analysisResolution}m
+              DEMO displays the fixture&apos;s actual {fixtureGranularity ?? 100}m cells — the {prefs.analysisResolution}m
               selection only affects LIVE queries.
             </p>
           )}
@@ -289,20 +304,21 @@ export function ControlRail({
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-text-secondary">Candidate Sites</span>
             <span className="text-[10px] font-mono text-text-dimmed">
-              {mode === 'FIXTURE' ? 'captured demo sites' : 'user-placed'}
+              {mode === 'FIXTURE' ? 'DEMO CANDIDATES' : 'user-placed'}
             </span>
           </div>
 
           {mode === 'FIXTURE' ? (
             <div className="space-y-1.5">
               <p className="text-[10px] text-text-muted leading-relaxed">
-                The three sites actually captured in the Manhattan fixture (read-only). LIVE lets you place your own sites.
+                DEMO CANDIDATES — application-defined points evaluated against the captured FortyGuard field (not
+                captured sites). LIVE lets you place your own sites.
               </p>
               {['Battery Park Greenway', 'City Hall Civic Center', 'Chinatown / Bowery'].map((n) => (
                 <div key={n} className="flex items-center gap-2 rounded-md bg-surface-deep border border-border px-2.5 py-1.5">
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--text-secondary)' }} />
                   <span className="text-xs text-text-secondary">{n}</span>
-                  <span className="ml-auto text-[8px] font-mono uppercase text-text-dimmed">captured</span>
+                  <span className="ml-auto text-[8px] font-mono uppercase text-text-dimmed">demo candidate</span>
                 </div>
               ))}
             </div>
@@ -459,26 +475,39 @@ export function ControlRail({
             )}
           </div>
 
-          {/* Time Mode selector */}
-          <div className="grid grid-cols-3 gap-1.5 mb-2.5">
-            {TIME_MODE_OPTIONS.map((opt) => {
-              const active = temporalInput.timeMode === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  onClick={() => handleTimeModeChange(opt.value)}
-                  className={`min-h-[36px] rounded-md text-[10px] font-bold transition-all border leading-tight px-1 ${
-                    active
-                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
-                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
-                  }`}
-                  aria-pressed={active}
-                  title={opt.description}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
+          {/* EVALUATION WINDOW selector — a UI concept, NOT a provider
+              filter_type. The verified wire contract: every evaluated hour is
+              its own single-hour FortyGuard request (filter_type: 1). */}
+          <div className="mb-2.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+                Evaluation Window
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {TIME_MODE_OPTIONS.map((opt) => {
+                const active = temporalInput.timeMode === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    data-testid={`evaluation-window-${opt.value}`}
+                    onClick={() => handleTimeModeChange(opt.value)}
+                    className={`min-h-[36px] rounded-md text-[10px] font-bold transition-all border leading-tight px-1 ${
+                      active
+                        ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                    }`}
+                    aria-pressed={active}
+                    title={opt.description}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
+              A time range is evaluated as a sequence of hourly FortyGuard requests — one request per hour.
+            </p>
           </div>
 
           {/* Date input (always visible) */}
@@ -494,6 +523,15 @@ export function ControlRail({
               } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
               aria-label="Analysis date"
             />
+            {/* LIVE date hint — honest about model completion, no invented
+                "guaranteed valid" date, no silent retry / DEMO fallback. */}
+            {mode === 'LIVE' && (
+              <span className="block text-[9px] text-text-dimmed mt-1 leading-relaxed" data-testid="live-date-hint">
+                Pick the date explicitly. Recently requested periods may have no completed FortyGuard model yet (the
+                provider then returns an empty thermal field — reported verbatim, never retried with another date).
+                Documented forecast support: up to +12h ahead.
+              </span>
+            )}
           </label>
 
           {/* Start / End time inputs */}
@@ -506,10 +544,10 @@ export function ControlRail({
                 type="time"
                 value={temporalInput.startTime}
                 onChange={(e) => update({ startTime: e.target.value })}
-                disabled={isFixtureAnchored || isSingleDay}
+                disabled={isFixtureAnchored}
                 className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
                   startValid ? 'border-border' : 'border-red-400'
-                } ${isFixtureAnchored || isSingleDay ? 'opacity-70 cursor-not-allowed' : ''}`}
+                } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
                 aria-label="Analysis start time"
               />
             </label>
@@ -520,43 +558,15 @@ export function ControlRail({
                   type="time"
                   value={temporalInput.endTime}
                   onChange={(e) => update({ endTime: e.target.value })}
-                  disabled={isFixtureAnchored || isSingleDay}
+                  disabled={isFixtureAnchored}
                   className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
                     endValid ? 'border-border' : 'border-red-400'
-                  } ${isFixtureAnchored || isSingleDay ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
                   aria-label="Analysis end time"
                 />
               </label>
             )}
           </div>
-
-          {/* Single Day: window-length selector */}
-          {isSingleDay && (
-            <div className="mb-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
-                Window length to find
-              </span>
-              <div className="grid grid-cols-3 gap-1.5 mt-1">
-                {([2, 3, 4] as const).map((h) => {
-                  const active = (temporalInput.dayWindowHours ?? 3) === h;
-                  return (
-                    <button
-                      key={h}
-                      onClick={() => handleDayWindowChange(h)}
-                      className={`min-h-[34px] rounded-md text-[11px] font-bold font-mono transition-all border ${
-                        active
-                          ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
-                          : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
-                      }`}
-                      aria-pressed={active}
-                    >
-                      {h}h
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* Derived duration (read-only) */}
           <div className="flex items-center justify-between rounded-lg bg-surface-deep px-3 py-2 border border-border">
@@ -585,6 +595,30 @@ export function ControlRail({
             <p className="text-[10px] mt-1.5" style={{ color: 'var(--accent-amber)' }}>
               Future date selected — subject to FortyGuard forecast availability. The provider reports any unsupported window verbatim.
             </p>
+          )}
+
+          {/* LIVE billing disclosure — the engine sends ONE hourly provider
+              request per evaluated hour; make that explicit BEFORE Generate.
+              Conservative wording: no exact credit cost is claimed. */}
+          {mode === 'LIVE' && allValid && (
+            <div
+              className="rounded-lg px-3 py-2 mt-2 border"
+              style={{ background: 'rgba(5,150,105,0.08)', borderColor: 'rgba(5,150,105,0.35)' }}
+              data-testid="live-request-disclosure"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#059669' }}>
+                  LIVE · {derivedDuration}-hour evaluation
+                </span>
+                <span className="text-[10px] font-mono font-bold" style={{ color: '#059669' }}>
+                  {liveHourlyRequestCount} FortyGuard hourly request{liveHourlyRequestCount > 1 ? 's' : ''}
+                </span>
+              </div>
+              <p className="text-[9px] text-text-muted mt-0.5 leading-relaxed">
+                Each evaluated hour is submitted as its own single-hour FortyGuard /v1/heatmap request (cached results are
+                reused, not re-billed). Repeat requests may consume provider credits.
+              </p>
+            </div>
           )}
 
           {/* Human-readable window preview */}

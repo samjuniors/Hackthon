@@ -79,14 +79,25 @@ describe('FortyGuard Adapter Unit Tests', () => {
   describe('FIXTURE Mode Constraints', () => {
     it('fetches discrete hourly snapshots in FIXTURE mode without inventing data', async () => {
       const fixtureAdapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
+      // The REAL capture contains exactly ONE hour: 2026-08-14T12:00Z.
       const snapshots = await fixtureAdapter.getHourlyHeatmapSnapshots(
         { latitude: 40.7128, longitude: -74.006 },
-        ['2026-08-21T08:00:00.000Z', '2026-08-21T09:00:00.000Z']
+        ['2026-08-14T12:00:00.000Z']
       );
 
-      expect(snapshots.size).toBe(2);
-      expect(snapshots.has('2026-08-21T08:00:00.000Z')).toBe(true);
-      expect(snapshots.has('2026-08-21T09:00:00.000Z')).toBe(true);
+      expect(snapshots.size).toBe(1);
+      expect(snapshots.has('2026-08-14T12:00:00.000Z')).toBe(true);
+      // EXACTLY the 425 captured provider cells — never invented.
+      expect((snapshots.get('2026-08-14T12:00:00.000Z') as { features: unknown[] }).features.length).toBe(425);
+
+      // Any hour the capture does NOT contain is honestly rejected — the
+      // adapter never fabricates additional hours.
+      await expect(
+        fixtureAdapter.getHourlyHeatmapSnapshots(
+          { latitude: 40.7128, longitude: -74.006 },
+          ['2026-08-14T13:00:00.000Z']
+        )
+      ).rejects.toThrow(IncompleteTemporalCoverageError);
     });
 
     it('throws IncompleteTemporalCoverageError when requested timestamp is missing from fixture', async () => {

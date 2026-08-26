@@ -26,13 +26,13 @@ describe('Security & Epistemic Boundaries', () => {
     const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
     // Attempting to query non-Manhattan coords in fixture mode throws OutsideCoverageError
     const snapshots = await adapter.getHourlyHeatmapSnapshots({ latitude: 34.0522, longitude: -118.2437 }, [
-      '2026-08-21T08:00:00.000Z',
+      '2026-08-14T12:00:00.000Z',
     ]);
-    const aoi = snapshots.get('2026-08-21T08:00:00.000Z');
+    const aoi = snapshots.get('2026-08-14T12:00:00.000Z');
     expect(aoi).toBeDefined();
     if (aoi) {
       expect(() =>
-        adapter.normalizePointObservation(aoi, { latitude: 34.0522, longitude: -118.2437 }, '2026-08-21T08:00:00.000Z')
+        adapter.normalizePointObservation(aoi, { latitude: 34.0522, longitude: -118.2437 }, '2026-08-14T12:00:00.000Z')
       ).toThrow(OutsideCoverageError);
     }
   });

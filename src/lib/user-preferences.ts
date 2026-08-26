@@ -5,7 +5,6 @@ import type { PreferredAIProvider } from '@/types/provider';
 import {
   type AnalysisTimeMode,
   DEFAULT_TIME_MODE,
-  DEFAULT_DAY_WINDOW_HOURS,
 } from '@/lib/temporal/analysis-window';
 
 /**
@@ -67,10 +66,8 @@ export interface UserPreferences {
   analysisAreaShape: AnalysisAreaShape;
   /** User-facing AOI span (square side / circle diameter) in metres. */
   analysisAoiSpanMetres: AoiSpanMetres;
-  /** Time mode persisted per Section 5 (Single Hour / Range of Hours / Single Day). */
+  /** Evaluation-window mode (Single hour / Time range) — a UI concept, NOT a provider filter_type. */
   analysisTimeMode: AnalysisTimeMode;
-  /** For Single Day mode — the operating-window length the engine finds (2h/3h/4h). */
-  analysisDayWindowHours: 2 | 3 | 4;
   mapLayerVisibility: MapLayerVisibility;
 }
 
@@ -81,7 +78,6 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   analysisAreaShape: 'polygon',
   analysisAoiSpanMetres: 400,
   analysisTimeMode: DEFAULT_TIME_MODE,
-  analysisDayWindowHours: DEFAULT_DAY_WINDOW_HOURS,
   mapLayerVisibility: {
     thermal: true,
     candidates: true,
@@ -116,11 +112,9 @@ function isValidAreaShape(v: unknown): v is AnalysisAreaShape {
 }
 
 function isValidTimeMode(v: unknown): v is AnalysisTimeMode {
-  return v === 'single-hour' || v === 'range-of-hours' || v === 'single-day';
-}
-
-function isValidDayWindowHours(v: unknown): v is 2 | 3 | 4 {
-  return v === 2 || v === 3 || v === 4;
+  // 'single-day' was REMOVED (broken vs the +12h engine horizon) — any
+  // persisted legacy value falls back to the default mode.
+  return v === 'single-hour' || v === 'range-of-hours';
 }
 
 /**
@@ -202,9 +196,6 @@ export function loadUserPreferences(): UserPreferences {
       analysisTimeMode: isValidTimeMode(p.analysisTimeMode)
         ? p.analysisTimeMode
         : DEFAULT_USER_PREFERENCES.analysisTimeMode,
-      analysisDayWindowHours: isValidDayWindowHours(p.analysisDayWindowHours)
-        ? p.analysisDayWindowHours
-        : DEFAULT_USER_PREFERENCES.analysisDayWindowHours,
       mapLayerVisibility: mergedLayers,
     };
     return cachedPrefs;
@@ -270,7 +261,6 @@ export interface UserPreferencesSetters {
   setAnalysisAreaShape: (s: AnalysisAreaShape) => void;
   setAnalysisAoiSpanMetres: (m: AoiSpanMetres) => void;
   setAnalysisTimeMode: (m: AnalysisTimeMode) => void;
-  setAnalysisDayWindowHours: (h: 2 | 3 | 4) => void;
   setMapLayerVisibility: (v: Partial<MapLayerVisibility>) => void;
   reset: () => void;
 }
@@ -311,10 +301,6 @@ export function useUserPreferences(): [UserPreferences, UserPreferencesSetters] 
     commit({ ...getSnapshot(), analysisTimeMode: m });
   }, []);
 
-  const setAnalysisDayWindowHours = useCallback((h: 2 | 3 | 4) => {
-    commit({ ...getSnapshot(), analysisDayWindowHours: h });
-  }, []);
-
   const setMapLayerVisibility = useCallback((v: Partial<MapLayerVisibility>) => {
     const current = getSnapshot();
     commit({
@@ -336,7 +322,6 @@ export function useUserPreferences(): [UserPreferences, UserPreferencesSetters] 
       setAnalysisAreaShape,
       setAnalysisAoiSpanMetres,
       setAnalysisTimeMode,
-      setAnalysisDayWindowHours,
       setMapLayerVisibility,
       reset,
     },

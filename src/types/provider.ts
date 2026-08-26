@@ -77,5 +77,5 @@ export interface ProductionErrorDetails {
   code: string;
   message: string;
   recoverySuggestion: string;
-  category: 'PROVIDER' | 'DATA' | 'VALIDATION' | 'AI';
+  category: 'PROVIDER' | 'DATA' | 'VALIDATION' | 'AI' | 'COVERAGE';
 }

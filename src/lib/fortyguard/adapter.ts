@@ -20,13 +20,14 @@ import {
 } from '@/types/errors';
 import { findTileForPoint } from '../spatial/mapper';
 import { isLocationCoveredByFixture } from '../location/search';
-import hourlyFixtureData from '../../../tests/fixtures/heatmap_hourly_fixture.json';
+import capturedDemoData from '../../../tests/fixtures/heatmap_captured_demo.json';
 
 // Canonical AOI builder — imported from the client-safe spatial module so
 // the SAME geometry is rendered on the map AND sent to FortyGuard. There is no
 // "display AOI" vs "API AOI" split; one PolygonAOI per analysis.
 import { createBoundingAOI } from '../spatial/aoi';
 import type { AnalysisAreaShape } from '../spatial/aoi';
+import { buildHourlyRequestDateTime } from '../temporal/server-conversion';
 
 /**
  * GENUINE provider data only (provenance rule):
@@ -37,12 +38,12 @@ import type { AnalysisAreaShape } from '../spatial/aoi';
  */
 
 /**
- * Resolution (granularity) the captured fixture was ACTUALLY recorded at.
- * Used by the UI in DEMO mode so the resolution label always reflects the
- * fixture's real granularity — never a user-selected value the fixture does
- * not contain.
+ * Resolution (granularity) the captured fixture was ACTUALLY recorded at
+ * (100m — the real Lower Manhattan capture). Used by the UI in DEMO mode so
+ * the resolution label always reflects the fixture's real granularity — never
+ * a user-selected value the fixture does not contain.
  */
-export const FIXTURE_GRANULARITY = 60 as const;
+export const FIXTURE_GRANULARITY = 100 as const;
 
 export { hourlyFixtureGranularity } from './fixture-metadata';
 
@@ -171,9 +172,21 @@ function findFeatureCollection(node: unknown, depth = 0): PolygonAOI | null {
 /** In-memory cache for FortyGuard requests during the session */
 const sessionCache = new Map<string, unknown>();
 
-/** Extract the UTC HH:MM hour string from an ISO timestamp. */
-function hourStrFor(timestamp: string): string {
-  return `${String(new Date(timestamp).getUTCHours()).padStart(2, '0')}:00`;
+interface CapturedFixtureShape {
+  hourlySnapshots?: Array<{ timestamp: string; aoi?: PolygonAOI }>;
+}
+
+const capturedFixture = capturedDemoData as unknown as CapturedFixtureShape;
+
+/** Look up the captured snapshot for an EXACT ISO UTC timestamp (no fuzzy matching). */
+function findCapturedSnapshot(timestamp: string) {
+  return capturedFixture.hourlySnapshots?.find((s) => s.timestamp === timestamp) ?? null;
+}
+
+/** The only hour(s) the DEMO capture actually contains (for honest error messages). */
+function capturedHoursLabel(): string {
+  const hours = capturedFixture.hourlySnapshots?.map((s) => s.timestamp) ?? [];
+  return hours.length > 0 ? hours.join(', ') : '(none)';
 }
 
 /**
@@ -431,7 +444,10 @@ export class FortyGuardAdapter {
    */
   getDefaultOperatingWindow(spanHours = 6): { allowedStart: string; allowedEnd: string } {
     if (this.mode === 'FIXTURE') {
-      const firstSnapshot = hourlyFixtureData.hourlySnapshots[0];
+      const firstSnapshot = capturedFixture.hourlySnapshots?.[0];
+      if (!firstSnapshot) {
+        throw new IncompleteTemporalCoverageError('The captured DEMO fixture contains no snapshots.');
+      }
       const startMs = new Date(firstSnapshot.timestamp).getTime();
       return {
         allowedStart: new Date(startMs).toISOString(),
@@ -518,14 +534,12 @@ export class FortyGuardAdapter {
       throw lastError;
     }
 
-    // FIXTURE mode: resolve from captured fixture
-    const reqHourIso = `${validReq.date_time.start_date}T${validReq.date_time.start_time || '00:00'}:00.000Z`;
-    const snapshot = hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp === reqHourIso)
-      || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === (validReq.date_time.start_time || '00:00'));
+    // FIXTURE mode: resolve from the REAL captured provider response
+    const snapshot = findCapturedSnapshot(`${validReq.date_time.start_date}T${validReq.date_time.start_time || '00:00'}:00.000Z`);
 
     if (!snapshot) {
       throw new IncompleteTemporalCoverageError(
-        `Fixture data missing for requested timestamp ${validReq.date_time.start_date} ${validReq.date_time.start_time}`
+        `The captured DEMO dataset contains only the hour(s) [${capturedHoursLabel()}] — no capture exists for ${validReq.date_time.start_date} ${validReq.date_time.start_time}. DEMO never fabricates additional hours.`
       );
     }
 
@@ -550,22 +564,17 @@ export class FortyGuardAdapter {
     const granularity = options?.granularity ?? 60;
 
     if (this.mode === 'LIVE') {
-      // Execute with bounded concurrency (default concurrency = 2)
+      // Execute with bounded concurrency (default concurrency = 2).
+      // VERIFIED wire contract: EVERY hour is its own single-hour request
+      // (filter_type: 1, UTC date/hour) — built by the shared helper so the
+      // recorded provenance can never drift from the transmitted payload.
       const entries = await runWithConcurrency(
         timestamps,
         this.concurrencyLimit,
         async (timestamp) => {
-          const d = new Date(timestamp);
-          const dateStr = d.toISOString().slice(0, 10);
-          const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
-
           const heatmapResult = await this.getHeatmap({
             polygon_aoi: aoiToQuery,
-            date_time: {
-              start_date: dateStr,
-              start_time: hourStr,
-              filter_type: 1,
-            },
+            date_time: buildHourlyRequestDateTime(timestamp),
             granularity,
           });
           return [timestamp, heatmapResult.aoi] as [string, PolygonAOI];
@@ -579,18 +588,17 @@ export class FortyGuardAdapter {
       return results;
     }
 
-    // FIXTURE MODE — sequential lookup from verified in-memory fixture.
-    // Returns EXACTLY the captured FortyGuard cells for each hour. The
-    // requested AOI geometry is still sent on the wire (canonical contract)
-    // but the rendered thermal field is the genuine captured cells — never
-    // subdivided, never re-temperatured, never synthesized.
+    // FIXTURE MODE — sequential lookup from the REAL captured provider
+    // response. Returns EXACTLY the captured cells (never subdivided, never
+    // re-temperatured, never synthesized) and ONLY for hours the capture
+    // actually contains (exact timestamp match — no fuzzy hour matching that
+    // could silently serve the wrong day).
     for (const timestamp of timestamps) {
-      const snapshot = hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp === timestamp)
-        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStrFor(timestamp));
+      const snapshot = findCapturedSnapshot(timestamp);
 
       if (!snapshot) {
         throw new IncompleteTemporalCoverageError(
-          `Timestamp ${timestamp} is not covered by the 12-hour Manhattan fixture.`
+          `The captured DEMO dataset contains only the hour(s) [${capturedHoursLabel()}] — no capture exists for ${timestamp}. DEMO never fabricates additional hours.`
         );
       }
 
@@ -612,7 +620,7 @@ export class FortyGuardAdapter {
   ): NormalizedThermalObservation {
     if (this.mode === 'FIXTURE' && !isLocationCoveredByFixture(location)) {
       throw new OutsideCoverageError(
-        `Target location (${location.latitude}, ${location.longitude}) is outside the verified Manhattan fixture bounds in FIXTURE mode.`
+        `Target location (${location.latitude}, ${location.longitude}) is outside the captured DEMO thermal field (Lower Manhattan) in FIXTURE mode.`
       );
     }
     const tile: TileFeature = findTileForPoint(location, aoi);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TIME_MODE_FILTER_TYPE,
+  TIME_MODE_OPTIONS,
   hoursBetween,
   effectiveTimeBounds,
   deriveDurationHours,
@@ -10,13 +10,23 @@ import {
   isValidTimeStr,
   buildFixtureTemporalInput,
   FIXTURE_TEMPORAL_METADATA,
+  FIXTURE_TIMEZONE,
 } from '@/lib/temporal/analysis-window';
 
 describe('temporal analysis window (explicit WHEN model)', () => {
-  it('maps time modes to verified FortyGuard filter_type semantics', () => {
-    expect(TIME_MODE_FILTER_TYPE['single-hour']).toBe(1);
-    expect(TIME_MODE_FILTER_TYPE['range-of-hours']).toBe(2);
-    expect(TIME_MODE_FILTER_TYPE['single-day']).toBe(3);
+  it('exposes ONLY the two verified evaluation-window modes — Single Day is removed', () => {
+    expect(TIME_MODE_OPTIONS.map((o) => o.value)).toEqual(['single-hour', 'range-of-hours']);
+    // The broken 14-hour "Single Day" span (violates the +12h engine horizon)
+    // must NOT be offered.
+    expect(TIME_MODE_OPTIONS.some((o) => o.value === ('single-day' as never))).toBe(false);
+  });
+
+  it('never claims a provider filter_type mapping for evaluation-window modes', () => {
+    // The verified wire contract: every evaluated hour is its own single-hour
+    // request (filter_type: 1). The UI concept is NOT a provider Time Mode,
+    // and no TIME_MODE→filter_type mapping may exist in client code.
+    const moduleSource = TIME_MODE_OPTIONS.toString();
+    expect(moduleSource).not.toContain('filter_type');
   });
 
   it('derives duration from start/end for range of hours', () => {
@@ -27,11 +37,8 @@ describe('temporal analysis window (explicit WHEN model)', () => {
     ).toBe(3);
   });
 
-  it('derives duration for single-hour and single-day modes', () => {
+  it('derives duration for single-hour mode (always 1h)', () => {
     expect(deriveDurationHours({ date: '2026-08-26', startTime: '13:00', endTime: '14:00', timeMode: 'single-hour' })).toBe(1);
-    expect(
-      deriveDurationHours({ date: '2026-08-26', startTime: '06:00', endTime: '20:00', timeMode: 'single-day', dayWindowHours: 4 })
-    ).toBe(4);
   });
 
   it('resolves effective bounds per mode', () => {
@@ -39,8 +46,6 @@ describe('temporal analysis window (explicit WHEN model)', () => {
       .toEqual({ start: '05:00', end: '08:00' });
     expect(effectiveTimeBounds({ date: '2026-08-26', startTime: '13:00', endTime: '14:00', timeMode: 'single-hour' }))
       .toEqual({ start: '13:00', end: '14:00' });
-    expect(effectiveTimeBounds({ date: '2026-08-26', startTime: '01:00', endTime: '02:00', timeMode: 'single-day' }))
-      .toEqual({ start: '06:00', end: '20:00' });
   });
 
   it('validates date/time strings before any provider call', () => {
@@ -65,10 +70,17 @@ describe('temporal analysis window (explicit WHEN model)', () => {
     expect(formatDateLong('2026-08-26', 'America/Los_Angeles')).toBe('August 26, 2026');
   });
 
-  it('anchors DEMO to the fixture capture — never "Today"', () => {
+  it('anchors DEMO to the REAL one-hour capture — never "Today", never a fabricated series', () => {
     const fixture = buildFixtureTemporalInput();
-    expect(fixture.date).toBe('2026-08-21');
-    expect(fixture.timeMode).toBe('range-of-hours');
+    // The real capture requested 2026-08-14 12:00 UTC (filter_type 1).
+    expect(fixture.date).toBe('2026-08-14');
+    expect(fixture.startTime).toBe('12:00');
+    expect(fixture.timeMode).toBe('single-hour');
+    expect(FIXTURE_TIMEZONE).toBe('UTC');
+    expect(FIXTURE_TEMPORAL_METADATA.snapshotCount).toBe(1);
+    expect(FIXTURE_TEMPORAL_METADATA.firstSnapshotIso).toBe('2026-08-14T12:00:00.000Z');
+    expect(FIXTURE_TEMPORAL_METADATA.lastSnapshotIso).toBe('2026-08-14T12:00:00.000Z');
     expect(FIXTURE_TEMPORAL_METADATA.captureLabel).toContain('captured FortyGuard');
+    expect(FIXTURE_TEMPORAL_METADATA.captureLabel).toContain('one-hour snapshot');
   });
 });

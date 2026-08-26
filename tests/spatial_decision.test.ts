@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { FortyGuardAdapter } from '@/lib/fortyguard/adapter';
 import { evaluateCandidateLocations } from '@/lib/decision-engine/evaluator';
+import { buildEngineTestObservations } from './helpers/engine-test-observations';
 import type {
   CandidateLocation,
   CandidateWindow,
@@ -38,19 +38,9 @@ describe('Milestone 5 — Spatial Multi-Location Decision Engine Suite', () => {
   };
 
   it('1. Evaluates 3 candidate locations, produces deterministic ranking, and identifies winning location', async () => {
-    const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
     const timestamps = ['2026-08-21T08:00:00.000Z', '2026-08-21T09:00:00.000Z'];
-    const snapshots = await adapter.getHourlyHeatmapSnapshots(candidateLocations[0].location, timestamps);
-
-    const obsMap = new Map<string, NormalizedThermalObservation[]>();
-    for (const cand of candidateLocations) {
-      const list = timestamps.map((ts) => {
-        const aoi = snapshots.get(ts);
-        if (!aoi) throw new Error('Missing snapshot');
-        return adapter.normalizePointObservation(aoi, cand.location, ts, '/v1/heatmap', 'DERIVED');
-      });
-      obsMap.set(cand.locationId, list);
-    }
+    // Explicit synthetic TEST INPUTS (engine-math verification only).
+    const obsMap = buildEngineTestObservations(candidateLocations, timestamps);
 
     const result = evaluateCandidateLocations(candidateLocations, obsMap, window2h);
 
@@ -77,19 +67,9 @@ describe('Milestone 5 — Spatial Multi-Location Decision Engine Suite', () => {
   });
 
   it('2. Preserves DERIVED provenance on thermalValues in RankedLocationResult', async () => {
-    const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
     const timestamps = ['2026-08-21T08:00:00.000Z', '2026-08-21T09:00:00.000Z'];
-    const snapshots = await adapter.getHourlyHeatmapSnapshots(candidateLocations[0].location, timestamps);
-
-    const obsMap = new Map<string, NormalizedThermalObservation[]>();
-    for (const cand of candidateLocations) {
-      const list = timestamps.map((ts) => {
-        const aoi = snapshots.get(ts);
-        if (!aoi) throw new Error('Missing snapshot');
-        return adapter.normalizePointObservation(aoi, cand.location, ts, '/v1/heatmap', 'DERIVED');
-      });
-      obsMap.set(cand.locationId, list);
-    }
+    // Explicit synthetic TEST INPUTS (engine-math verification only).
+    const obsMap = buildEngineTestObservations(candidateLocations, timestamps);
 
     const result = evaluateCandidateLocations(candidateLocations, obsMap, window2h);
 
@@ -236,24 +216,14 @@ describe('Milestone 5 — Spatial Multi-Location Decision Engine Suite', () => {
   });
 
   it('8. Changing duration recalculates scores deterministically across 4-hour operation', async () => {
-    const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
     const timestamps4h = [
       '2026-08-21T08:00:00.000Z',
       '2026-08-21T09:00:00.000Z',
       '2026-08-21T10:00:00.000Z',
       '2026-08-21T11:00:00.000Z',
     ];
-    const snapshots = await adapter.getHourlyHeatmapSnapshots(candidateLocations[0].location, timestamps4h);
-
-    const obsMap = new Map<string, NormalizedThermalObservation[]>();
-    for (const cand of candidateLocations) {
-      const list = timestamps4h.map((ts) => {
-        const aoi = snapshots.get(ts);
-        if (!aoi) throw new Error('Missing snapshot');
-        return adapter.normalizePointObservation(aoi, cand.location, ts, '/v1/heatmap', 'DERIVED');
-      });
-      obsMap.set(cand.locationId, list);
-    }
+    // Explicit synthetic TEST INPUTS (engine-math verification only).
+    const obsMap = buildEngineTestObservations(candidateLocations, timestamps4h);
 
     const window4h: CandidateWindow = {
       windowId: 'w-001',

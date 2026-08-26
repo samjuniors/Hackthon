@@ -1,4 +1,5 @@
 import type { NamedLocation } from '@/types/provider';
+import { isPointInFixtureExtent } from '@/lib/fortyguard/fixture-display';
 
 /**
  * Curated, verified database of major metropolitan areas and key operational hubs.
@@ -452,17 +453,13 @@ export function getPresetLocations(isFixtureMode?: boolean): NamedLocation[] {
 }
 
 /**
- * Verifies whether a given coordinate point is covered by the captured Manhattan fixture dataset.
+ * Verifies whether a given coordinate point lies inside the geographic extent
+ * of the REAL captured DEMO thermal field (Lower Manhattan — the bounding box
+ * of the captured FortyGuard cells). FIXTURE mode can only analyse inside
+ * this extent; anything outside is honestly rejected as OUTSIDE_COVERAGE.
  */
 export function isLocationCoveredByFixture(loc: { latitude: number; longitude: number }): boolean {
-  return (
-    Number.isFinite(loc.latitude) &&
-    Number.isFinite(loc.longitude) &&
-    loc.latitude >= 40.68 &&
-    loc.latitude <= 40.75 &&
-    loc.longitude >= -74.03 &&
-    loc.longitude <= -73.96
-  );
+  return isPointInFixtureExtent(loc.latitude, loc.longitude);
 }
 
 /**

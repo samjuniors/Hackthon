@@ -6,7 +6,7 @@ import {
   FORTYGUARD_AOI_LIMIT_MI2,
 } from '@/lib/spatial/aoi';
 import { findTileForPoint } from '@/lib/spatial/mapper';
-import fixture from '../../tests/fixtures/heatmap_hourly_fixture.json';
+import fixture from '../../tests/fixtures/heatmap_captured_demo.json';
 
 describe('canonical analysis AOI', () => {
   it('uses the documented FortyGuard AOI limit constant', () => {
@@ -42,13 +42,16 @@ describe('canonical analysis AOI', () => {
   });
 });
 
-describe('DEMO fixture containment', () => {
-  it('maps fixture candidates into the captured thermal cells', () => {
+describe('DEMO fixture containment (REAL captured provider response)', () => {
+  it('maps the DEMO candidates into REAL captured thermal cells', () => {
     const snapshot = fixture.hourlySnapshots[0];
     const aoi = snapshot.aoi as Parameters<typeof findTileForPoint>[1];
-    const inside = findTileForPoint({ latitude: 40.712, longitude: -74.008 }, aoi);
-    expect(inside.tileId).toBeTruthy();
-    expect(Number.isFinite(inside.averageTemperatureCelsius)).toBe(true);
+    // All three DEMO candidates land inside genuine provider cells.
+    for (const [lat, lng] of [[40.712, -74.008], [40.712, -73.998], [40.712, -73.988]]) {
+      const inside = findTileForPoint({ latitude: lat, longitude: lng }, aoi);
+      expect(inside.tileId).toBeTruthy();
+      expect(Number.isFinite(inside.averageTemperatureCelsius)).toBe(true);
+    }
   });
 
   it('has finite temperatures on every captured cell of every snapshot', () => {
@@ -57,5 +60,11 @@ describe('DEMO fixture containment', () => {
         expect(Number.isFinite(feature.properties.average_temperature)).toBe(true);
       }
     }
+  });
+
+  it('contains exactly the 425 provider cells of the real capture — one hour only', () => {
+    expect(fixture.hourlySnapshots).toHaveLength(1);
+    expect(fixture.hourlySnapshots[0].timestamp).toBe('2026-08-14T12:00:00.000Z');
+    expect(fixture.hourlySnapshots[0].aoi.features).toHaveLength(425);
   });
 });

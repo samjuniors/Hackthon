@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { FortyGuardAdapter } from '@/lib/fortyguard/adapter';
 import { evaluateJointDecision } from '@/lib/decision-engine/evaluator';
 import type {
   CandidateLocation,
@@ -10,6 +9,7 @@ import {
   ValidationError,
   IncompleteTemporalCoverageError,
 } from '@/types/errors';
+import { buildEngineTestObservations } from './helpers/engine-test-observations';
 
 describe('Milestone 6 — Joint Spatial-Temporal Decision Model Suite', () => {
   const candidateLocations: CandidateLocation[] = [
@@ -46,24 +46,15 @@ describe('Milestone 6 — Joint Spatial-Temporal Decision Model Suite', () => {
     '2026-08-21T13:00:00.000Z',
   ];
 
-  async function loadTestObservations(): Promise<Map<string, NormalizedThermalObservation[]>> {
-    const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
-    const snapshots = await adapter.getHourlyHeatmapSnapshots(candidateLocations[0].location, timestamps6h);
-
-    const obsMap = new Map<string, NormalizedThermalObservation[]>();
-    for (const cand of candidateLocations) {
-      const list = timestamps6h.map((ts) => {
-        const aoi = snapshots.get(ts);
-        if (!aoi) throw new Error(`Missing snapshot for ${ts}`);
-        return adapter.normalizePointObservation(aoi, cand.location, ts, '/v1/heatmap', 'DERIVED');
-      });
-      obsMap.set(cand.locationId, list);
-    }
-    return obsMap;
+  // Engine math is verified against EXPLICIT SYNTHETIC TEST INPUTS (see
+  // tests/helpers/engine-test-observations.ts) — never the DEMO capture (which
+  // is a single real hour) and never fabricated provider data.
+  function loadTestObservations(): Map<string, NormalizedThermalObservation[]> {
+    return buildEngineTestObservations(candidateLocations, timestamps6h);
   }
 
   it('1. Exhaustively evaluates Cartesian product (3 locations × 5 windows = 15 candidate plans)', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const result = evaluateJointDecision(candidateLocations, obsMap, constraints2h);
 
     expect(result.decisionType).toBe('JOINT_SPATIAL_TEMPORAL_PLAN');
@@ -74,7 +65,7 @@ describe('Milestone 6 — Joint Spatial-Temporal Decision Model Suite', () => {
   });
 
   it('2. Identifies correct Global Optimum (LOC-A @ 08:00–10:00 UTC = 29.15°C)', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const result = evaluateJointDecision(candidateLocations, obsMap, constraints2h);
 
     const topPlan = result.recommendedPlan;
@@ -89,7 +80,7 @@ describe('Milestone 6 — Joint Spatial-Temporal Decision Model Suite', () => {
   });
 
   it('3. Computes exact scores and deltas across all 15 plans and identifies worst feasible plan', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const result = evaluateJointDecision(candidateLocations, obsMap, constraints2h);
 
     // Check rank #2: LOC-B @ 08:00–10:00 = 29.75°C (delta +0.60°C)
@@ -114,7 +105,7 @@ describe('Milestone 6 — Joint Spatial-Temporal Decision Model Suite', () => {
   });
 
   it('4. Preserves DERIVED provenance for all thermalValues across all candidate plans', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const result = evaluateJointDecision(candidateLocations, obsMap, constraints2h);
 
     for (const plan of result.rankedPlans) {
@@ -201,7 +192,7 @@ describe('Milestone 6 — Joint Spatial-Temporal Decision Model Suite', () => {
   });
 
   it('7. Throws IncompleteTemporalCoverageError when candidate observations are missing', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     // Delete LOC-C from observation map
     obsMap.delete('LOC-C');
 
@@ -211,7 +202,7 @@ describe('Milestone 6 — Joint Spatial-Temporal Decision Model Suite', () => {
   });
 
   it('8. Throws IncompleteTemporalCoverageError when window exceeds +12h forecast horizon', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const horizonViolationConstraints: DecisionConstraints = {
       allowedStart: '2026-08-21T08:00:00.000Z',
       allowedEnd: '2026-08-21T22:00:00.000Z', // +14h
@@ -291,7 +282,7 @@ describe('Milestone 6 — Joint Spatial-Temporal Decision Model Suite', () => {
   });
 
   it('10. Recalculates dynamically for 4-hour operation (3 locations × 3 windows = 9 plans)', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const constraints4h: DecisionConstraints = {
       allowedStart: '2026-08-21T08:00:00.000Z',
       allowedEnd: '2026-08-21T14:00:00.000Z',

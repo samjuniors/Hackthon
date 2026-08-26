@@ -18,7 +18,7 @@ import type {
   LocationPoint,
   DecisionConstraints,
 } from '@/types/domain';
-import hourlyFixtureData from './fixtures/heatmap_hourly_fixture.json';
+import hourlyFixtureData from './fixtures/heatmap_captured_demo.json';
 
 describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite', () => {
   const sampleJointDecision: JointDecisionResult = {
@@ -287,7 +287,7 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
     const fixtureAdapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
     const res = await fixtureAdapter.getHourlyHeatmapSnapshots(
       { latitude: 40.712, longitude: -74.008 },
-      ['2026-08-21T08:00:00.000Z']
+      ['2026-08-14T12:00:00.000Z']
     );
 
     expect(res.size).toBe(1);

@@ -63,6 +63,12 @@ interface ThermalMapProps {
   cameraBehavior?: CameraBehavior;
   /** Bump to re-apply cameraBehavior (also refits on location changes). */
   cameraNonce?: number;
+  /**
+   * DEMO captured-field extent (dashed outline). Shown in FIXTURE mode so the
+   * user can see the FIXED extent of the captured provider data — moving the
+   * AOI outside it cannot produce new thermal data.
+   */
+  captureExtent?: PolygonAOI | null;
 }
 
 /** Empty FeatureCollection sentinel for source initialization / clear. */
@@ -213,6 +219,7 @@ export function ThermalMap({
   onToggleAddSiteMode,
   cameraBehavior = 'fit-aoi',
   cameraNonce = 0,
+  captureExtent,
 }: ThermalMapProps) {
   const { theme, toggleTheme } = useTheme();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -395,6 +402,12 @@ export function ThermalMap({
           data: (regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC,
         });
       }
+      if (!map.getSource('capture-extent')) {
+        map.addSource('capture-extent', {
+          type: 'geojson',
+          data: (captureExtent ?? EMPTY_FC) as unknown as GeoJSONFC,
+        });
+      }
       if (!map.getSource('analysis-aoi')) {
         map.addSource('analysis-aoi', {
           type: 'geojson',
@@ -434,6 +447,23 @@ export function ThermalMap({
           paint: {
             'fill-color': '#000000',
             'fill-opacity': 0.0,
+          },
+        });
+      }
+
+      // Layer B2: DEMO captured-field extent — dashed amber outline marking the
+      // FIXED extent of the captured provider data (FIXTURE mode only). The
+      // boundary is context: thermal cells render on top of it.
+      if (!map.getLayer('capture-extent-outline')) {
+        map.addLayer({
+          id: 'capture-extent-outline',
+          type: 'line',
+          source: 'capture-extent',
+          paint: {
+            'line-color': isDark ? '#fbbf24' : '#b45309',
+            'line-width': 2,
+            'line-opacity': 0.9,
+            'line-dasharray': [2, 2],
           },
         });
       }
@@ -554,11 +584,13 @@ export function ThermalMap({
       try {
         const maskSource = map.getSource('region-mask') as GeoJSONSource | undefined;
         const regionSource = map.getSource('region-boundary') as GeoJSONSource | undefined;
+        const captureSource = map.getSource('capture-extent') as GeoJSONSource | undefined;
         const thermalSource = map.getSource('thermal-tiles') as GeoJSONSource | undefined;
         const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
 
         if (maskSource) maskSource.setData((regionMask ?? EMPTY_FC) as unknown as GeoJSONFC);
         if (regionSource) regionSource.setData((regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC);
+        if (captureSource) captureSource.setData((captureExtent ?? EMPTY_FC) as unknown as GeoJSONFC);
         if (thermalSource && spatialField && hasRenderableTemperatureData(spatialField)) {
           thermalSource.setData(spatialField as unknown as GeoJSONFC);
         }
@@ -689,6 +721,7 @@ export function ThermalMap({
       try {
         const maskSource = map.getSource('region-mask') as GeoJSONSource | undefined;
         const regionSource = map.getSource('region-boundary') as GeoJSONSource | undefined;
+        const captureSource = map.getSource('capture-extent') as GeoJSONSource | undefined;
         const thermalSource = map.getSource('thermal-tiles') as GeoJSONSource | undefined;
         const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
 
@@ -698,6 +731,10 @@ export function ThermalMap({
 
         if (regionSource) {
           regionSource.setData((regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC);
+        }
+
+        if (captureSource) {
+          captureSource.setData((captureExtent ?? EMPTY_FC) as unknown as GeoJSONFC);
         }
 
         if (thermalSource) {
@@ -725,7 +762,7 @@ export function ThermalMap({
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [mapReady, spatialField, analysisAoi, regionBoundary, regionMask]);
+  }, [mapReady, spatialField, analysisAoi, regionBoundary, regionMask, captureExtent]);
 
   // ─────────────────────────────────────────────────────────────────────
   // Draggable AOI handle (Section 4 — the AOI moves as ONE object)

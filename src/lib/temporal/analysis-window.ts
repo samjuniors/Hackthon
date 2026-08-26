@@ -1,28 +1,23 @@
 /**
  * Analysis Temporal Model — client-safe types + helpers.
  *
- * Replaces the previous duration-only UX with an explicit WHEN:
- *   Date (YYYY-MM-DD) + Start (HH:MM) + End (HH:MM) + Time Mode + Duration.
+ * Explicit WHEN: Date (YYYY-MM-DD) + Start (HH:MM) + End (HH:MM) + Evaluation
+ * Window mode + derived Duration.
  *
- * The duration is DERIVED from start/end (not the only temporal input) per
- * product spec Section 4. Time modes (Section 5): Single Hour, Range of
- * Hours, Single Day. Default = Range of Hours (the hackathon's preferred
- * WHERE + WHEN workflow).
+ * EVALUATION WINDOW (not provider "Time Mode"): the UI never claims a provider
+ * filter_type. The VERIFIED wire contract is that every evaluated hour is sent
+ * to FortyGuard as a single-hour request (filter_type: 1). A "Time range" is
+ * therefore evaluated as a SEQUENCE of hourly provider requests. "Single Day"
+ * was removed: its 14-hour span predictably violates the engine's +12h
+ * forecast horizon, so it is not offered until provider support is verified.
  *
  * This module is pure + client-safe — no zod, no fetch, no process.env.
  * Server-side local→UTC conversion lives in ./server-conversion.ts and is
  * performed at the adapter boundary (never by the AI).
  */
 
-/** Time mode selector mapped to FortyGuard filter_type semantics. */
-export type AnalysisTimeMode = 'single-hour' | 'range-of-hours' | 'single-day';
-
-/** Maps a UI time mode to the FortyGuard date_time.filter_type value. */
-export const TIME_MODE_FILTER_TYPE: Record<AnalysisTimeMode, 1 | 2 | 3> = {
-  'single-hour': 1,
-  'range-of-hours': 2,
-  'single-day': 3,
-};
+/** Evaluation-window mode (UI concept — NOT a provider filter_type). */
+export type AnalysisTimeMode = 'single-hour' | 'range-of-hours';
 
 export const TIME_MODE_OPTIONS: ReadonlyArray<{
   value: AnalysisTimeMode;
@@ -31,18 +26,13 @@ export const TIME_MODE_OPTIONS: ReadonlyArray<{
 }> = [
   {
     value: 'single-hour',
-    label: 'Single Hour',
-    description: 'One hour snapshot — evaluates that exact hour.',
+    label: 'Single hour',
+    description: 'One hour snapshot — evaluates that exact hour (1 FortyGuard hourly request).',
   },
   {
     value: 'range-of-hours',
-    label: 'Range of Hours',
-    description: 'A start-to-end range — evaluates every hour in the window.',
-  },
-  {
-    value: 'single-day',
-    label: 'Single Day',
-    description: 'A full day — finds the best operating window within it.',
+    label: 'Time range',
+    description: 'A start-to-end range — evaluated as a sequence of hourly FortyGuard requests (one request per hour).',
   },
 ];
 
@@ -56,19 +46,19 @@ export interface AnalysisTemporalInput {
   date: string;
   /** HH:MM (24h, local). */
   startTime: string;
-  /** HH:MM (24h, local). For single-day mode, this is the day's end bound. */
+  /** HH:MM (24h, local). Derived (start + 1h) for single-hour mode. */
   endTime: string;
   timeMode: AnalysisTimeMode;
-  /**
-   * For single-day mode, the operating-window length the engine should find
-   * within the day (2h/3h/4h). For single-hour and range-of-hours modes this
-   * is ignored — duration is fully derived from start/end.
-   */
-  dayWindowHours?: 2 | 3 | 4;
 }
 
 export const DEFAULT_TIME_MODE: AnalysisTimeMode = 'range-of-hours';
-export const DEFAULT_DAY_WINDOW_HOURS: 2 | 3 | 4 = 3;
+
+/**
+ * Timezone the DEMO fixture capture is anchored in. The capture's request
+ * hour is stored as a UTC instant, so DEMO times are displayed in UTC —
+ * never silently re-anchored to a local timezone.
+ */
+export const FIXTURE_TIMEZONE = 'UTC' as const;
 
 /**
  * Produce today's date in YYYY-MM-DD form for the given IANA timezone.
@@ -99,7 +89,6 @@ export function defaultTemporalInput(timezone?: string): AnalysisTemporalInput {
     startTime: '05:00',
     endTime: '08:00',
     timeMode: DEFAULT_TIME_MODE,
-    dayWindowHours: DEFAULT_DAY_WINDOW_HOURS,
   };
 }
 
@@ -107,11 +96,9 @@ export function defaultTemporalInput(timezone?: string): AnalysisTemporalInput {
  * Derive the engine's `durationHours` from the temporal input.
  * - single-hour     → 1
  * - range-of-hours  → (end - start) in hours
- * - single-day      → dayWindowHours (the window length to find within the day)
  */
 export function deriveDurationHours(input: AnalysisTemporalInput): number {
   if (input.timeMode === 'single-hour') return 1;
-  if (input.timeMode === 'single-day') return input.dayWindowHours ?? DEFAULT_DAY_WINDOW_HOURS;
   return hoursBetween(input.startTime, input.endTime);
 }
 
@@ -127,9 +114,8 @@ export function hoursBetween(start: string, end: string): number {
 }
 
 /**
- * Resolve the effective local start/end times for a given time mode.
+ * Resolve the effective local start/end times for a given evaluation window.
  * - single-hour → start = picked hour, end = start + 1h
- * - single-day → 06:00 to 20:00 (sensible daytime window the engine evaluates)
  * - range-of-hours → as picked
  */
 export function effectiveTimeBounds(
@@ -138,8 +124,6 @@ export function effectiveTimeBounds(
   switch (input.timeMode) {
     case 'single-hour':
       return { start: input.startTime, end: addHour(input.startTime, 1) };
-    case 'single-day':
-      return { start: '06:00', end: '20:00' };
     case 'range-of-hours':
     default:
       return { start: input.startTime, end: input.endTime };
@@ -235,32 +219,29 @@ export function isValidTimeStr(s: string): boolean {
 }
 
 /**
- * DEMO fixture temporal metadata. The fixture captures 12 hourly snapshots
- * starting 2026-08-21T08:00:00Z (04:00 EDT). These are EXPLICIT temporal
- * provenance — we never label DEMO data as "Today".
+ * DEMO fixture temporal metadata — the REAL capture contains ONE hourly
+ * snapshot: the hour its provider request asked for (2026-08-14 12:00 UTC,
+ * filter_type 1). We never fabricate additional hours from the single
+ * snapshot, and we never label DEMO data as "Today".
  */
 export const FIXTURE_TEMPORAL_METADATA = {
-  firstSnapshotIso: '2026-08-21T08:00:00.000Z',
-  lastSnapshotIso: '2026-08-21T19:00:00.000Z',
-  fixtureTimezone: 'America/New_York',
-  snapshotCount: 12,
-  captureLabel: 'August 21, 2026 · 04:00–15:00 EDT (captured FortyGuard)',
+  firstSnapshotIso: '2026-08-14T12:00:00.000Z',
+  lastSnapshotIso: '2026-08-14T12:00:00.000Z',
+  fixtureTimezone: FIXTURE_TIMEZONE,
+  snapshotCount: 1,
+  captureLabel: 'August 14, 2026 · 12:00 UTC (captured FortyGuard — one-hour snapshot)',
 };
 
 /**
- * Build a temporal input aligned to the DEMO fixture's captured window.
+ * Build a temporal input aligned to the DEMO fixture's captured hour.
  * Used when the user is in DEMO mode so the displayed WHEN matches the
- * fixture data (no silent "Today" claim).
- *
- * Fixture first 3 snapshots: 08:00Z, 09:00Z, 10:00Z = 04:00, 05:00, 06:00 EDT.
- * Default Range of Hours = 04:00–07:00 EDT (maps to first 3 fixture hours).
+ * captured data (no silent "Today" claim, no fabricated hours).
  */
 export function buildFixtureTemporalInput(): AnalysisTemporalInput {
   return {
-    date: '2026-08-21',
-    startTime: '04:00',
-    endTime: '07:00',
-    timeMode: 'range-of-hours',
-    dayWindowHours: 3,
+    date: '2026-08-14',
+    startTime: '12:00',
+    endTime: '13:00',
+    timeMode: 'single-hour',
   };
 }

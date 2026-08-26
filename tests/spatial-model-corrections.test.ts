@@ -315,7 +315,7 @@ describe('§16.11 — demo Manhattan candidates appear only for the Manhattan fi
     expect(data.error.code).toBe('OUTSIDE_COVERAGE');
   });
 
-  it('FIXTURE at Manhattan uses the three ACTUAL captured sites (LOC-A/B/C)', async () => {
+  it('FIXTURE at Manhattan uses the three DEMO CANDIDATES (LOC-A/B/C) against the real capture', async () => {
     const res = await decisionPOST(makeRequest({
       latitude: 40.7120,
       longitude: -74.0080,
@@ -323,8 +323,12 @@ describe('§16.11 — demo Manhattan candidates appear only for the Manhattan fi
     }));
     expect(res.status).toBe(200);
     const data = await res.json();
-    const ids = data.spatialDecision.rankedLocations.map((r: { locationId: string }) => r.locationId);
-    expect(ids).toEqual(['LOC-A', 'LOC-B', 'LOC-C']);
+    const ids: string[] = data.spatialDecision.rankedLocations.map((r: { locationId: string }) => r.locationId);
+    expect(ids.sort()).toEqual(['LOC-A', 'LOC-B', 'LOC-C']);
+    // With the REAL captured temperatures, Battery Park (31.6584°C) is the
+    // coolest of the three captured cells and ranks first.
+    expect(data.spatialDecision.recommendedLocation.locationId).toBe('LOC-A');
+    expect(data.spatialDecision.recommendedLocation.exposureScore).toBeCloseTo(31.6584, 1);
   });
 });
 
@@ -486,35 +490,43 @@ describe('§16.6-8 — real geocoding search', () => {
 
 import { FortyGuardAdapter } from '@/lib/fortyguard/adapter';
 
-const FIXTURE_FIRST_HOUR_TEMPS = [28.5, 29.1, 30.6];
+import capturedDemoFixture from './fixtures/heatmap_captured_demo.json';
+import rawCapture from './fixtures/heatmap_probe_candidate_aoi.json';
 
-describe('§16.12 — DEMO never generates synthetic thermal temperatures', () => {
-  it('FIXTURE returns EXACTLY the captured cells for each hour — regardless of AOI shape/size', async () => {
+const CAPTURED_HOUR = '2026-08-14T12:00:00.000Z';
+
+describe('§16.12 — DEMO never generates synthetic thermal temperatures (REAL capture)', () => {
+  it('FIXTURE returns EXACTLY the 425 captured provider cells — regardless of AOI shape/size', async () => {
     const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
-    const timestamps = [
-      '2026-08-21T08:00:00.000Z',
-      '2026-08-21T09:00:00.000Z',
-    ];
     const snapshots = await adapter.getHourlyHeatmapSnapshots(
       { latitude: 40.712, longitude: -74.006 },
-      timestamps,
+      [CAPTURED_HOUR],
       createAoiFromSpan({ latitude: 40.712, longitude: -74.006 }, 5000, 'circle'), // big circle AOI
-      { granularity: 100, analysisAreaShape: 'circle' },
+      { granularity: 60, analysisAreaShape: 'circle' }, // mismatched granularity is ignored in DEMO
     );
 
-    for (const ts of timestamps) {
-      const fc = snapshots.get(ts)!;
-      // EXACTLY the 3 captured cells — never a subdivided/dense synthetic grid
-      expect(fc.features.length).toBe(3);
-      const temps = fc.features.map((f) => Number(f.properties?.average_temperature));
-      if (ts === timestamps[0]) {
-        expect(temps).toEqual(FIXTURE_FIRST_HOUR_TEMPS); // captured values, unmodified
-      }
-      // Captured tile geometry is verbatim (first cell starts at the captured corner)
-      const firstRing = (fc.features[0].geometry as { coordinates: number[][][] }).coordinates[0];
-      expect(firstRing[0][0]).toBeCloseTo(-74.010, 6);
-      expect(firstRing[0][1]).toBeCloseTo(40.709, 6);
+    const fc = snapshots.get(CAPTURED_HOUR)!;
+    // EXACTLY the 425 captured cells — never a subdivided/dense synthetic grid
+    expect(fc.features.length).toBe(425);
+
+    // Every cell is VERBATIM from the raw provider response (deep equality on
+    // properties AND geometry — no re-temperaturization, no subdivision).
+    const rawFeatures = (rawCapture as { data: { result: { map_data: { features: unknown[] } } } })
+      .data.result.map_data.features;
+    expect(fc.features.length).toBe(rawFeatures.length);
+    for (let i = 0; i < rawFeatures.length; i++) {
+      expect(fc.features[i].properties).toEqual((rawFeatures[i] as { properties: unknown }).properties);
+      expect(fc.features[i].geometry).toEqual((rawFeatures[i] as { geometry: unknown }).geometry);
     }
+
+    // The fixture normalization also preserves the cells verbatim.
+    const fixtureFeatures = capturedDemoFixture.hourlySnapshots[0].aoi.features;
+    expect(fixtureFeatures.length).toBe(425);
+  });
+
+  it('DEMO granularity metadata is the capture\'s ACTUAL 100m — never the user-selected value', () => {
+    expect(capturedDemoFixture.granularity).toBe(100);
+    expect(capturedDemoFixture.captureMetadata.requestBody.granularity).toBe(100);
   });
 });
 

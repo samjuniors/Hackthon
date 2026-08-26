@@ -3,40 +3,53 @@ import { FortyGuardAdapter } from '@/lib/fortyguard/adapter';
 import { BaselineSpatialThermalEvaluator } from '@/lib/decision-engine/evaluator';
 import { findTileForPoint } from '@/lib/spatial/mapper';
 import type { LocationPoint, NormalizedThermalObservation, CandidateWindow, PolygonAOI } from '@/types/domain';
-import hourlyFixtureData from './fixtures/heatmap_hourly_fixture.json';
+import capturedDemoData from './fixtures/heatmap_captured_demo.json';
 
-describe('Milestone 5 — Empirical Evidence Lock Test Suite', () => {
-  const candidateLocations: Array<{
-    locationId: string;
-    name: string;
-    coords: LocationPoint;
-    expectedTileId: string;
-  }> = [
-    {
-      locationId: 'LOC-A',
-      name: 'Battery Park Greenway',
-      coords: { latitude: 40.7120, longitude: -74.0080 },
-      expectedTileId: 'tile-11',
-    },
-    {
-      locationId: 'LOC-B',
-      name: 'City Hall Civic Center',
-      coords: { latitude: 40.7120, longitude: -73.9980 },
-      expectedTileId: 'tile-12',
-    },
-    {
-      locationId: 'LOC-C',
-      name: 'Chinatown / Bowery Staging',
-      coords: { latitude: 40.7120, longitude: -73.9880 },
-      expectedTileId: 'tile-13',
-    },
-  ];
+/**
+ * Milestone 5 — Empirical Evidence Lock Test Suite (REAL capture edition).
+ *
+ * The DEMO fixture is a VERBATIM extraction of a genuine FortyGuard
+ * /v1/heatmap response (tests/fixtures/heatmap_probe_candidate_aoi.json —
+ * 425 provider cells, 100m granularity, hour 2026-08-14T12:00Z). These tests
+ * lock the fact that the DEMO pipeline resolves the three DEMO CANDIDATES
+ * into REAL provider cells with REAL provider temperatures — never fabricated
+ * values, never additional hours.
+ */
 
-  it('1. Verifies exact coordinate containment to 3 distinct tile IDs (no boundary ambiguity)', () => {
-    const firstAoi = hourlyFixtureData.hourlySnapshots[0].aoi as unknown as PolygonAOI;
+const CAPTURED_HOUR = '2026-08-14T12:00:00.000Z';
 
-    const resolvedTiles = candidateLocations.map((loc) => {
-      const tile = findTileForPoint(loc.coords, firstAoi);
+const demoCandidates: Array<{
+  locationId: string;
+  name: string;
+  coords: LocationPoint;
+  expectedTileId: string;
+}> = [
+  {
+    locationId: 'LOC-A',
+    name: 'Battery Park Greenway',
+    coords: { latitude: 40.7120, longitude: -74.0080 },
+    expectedTileId: '162',
+  },
+  {
+    locationId: 'LOC-B',
+    name: 'City Hall Civic Center',
+    coords: { latitude: 40.7120, longitude: -73.9980 },
+    expectedTileId: '171',
+  },
+  {
+    locationId: 'LOC-C',
+    name: 'Chinatown / Bowery Staging',
+    coords: { latitude: 40.7120, longitude: -73.9880 },
+    expectedTileId: '179',
+  },
+];
+
+const capturedAoi = capturedDemoData.hourlySnapshots[0].aoi as unknown as PolygonAOI;
+
+describe('Milestone 5 — Empirical Evidence Lock Test Suite (real captured provider data)', () => {
+  it('1. Verifies exact coordinate containment to 3 distinct REAL provider tile IDs (no boundary ambiguity)', () => {
+    const resolvedTiles = demoCandidates.map((loc) => {
+      const tile = findTileForPoint(loc.coords, capturedAoi);
       return {
         locationId: loc.locationId,
         tileId: tile.tileId,
@@ -44,90 +57,96 @@ describe('Milestone 5 — Empirical Evidence Lock Test Suite', () => {
       };
     });
 
-    // Verify 3 distinct tile IDs
+    // Verify 3 distinct REAL provider tile ids (integers from the capture)
     const tileIds = new Set(resolvedTiles.map((t) => t.tileId));
     expect(tileIds.size).toBe(3);
 
-    expect(resolvedTiles[0].tileId).toBe('tile-11');
-    expect(resolvedTiles[1].tileId).toBe('tile-12');
-    expect(resolvedTiles[2].tileId).toBe('tile-13');
+    expect(resolvedTiles[0].tileId).toBe('162');
+    expect(resolvedTiles[1].tileId).toBe('171');
+    expect(resolvedTiles[2].tileId).toBe('179');
   });
 
-  it('2. Exactly reproduces reported 08:00–10:00 UTC Modeled Thermal Exposure scores and deltas', async () => {
+  it('2. Exactly reproduces the captured provider temperatures at the captured hour', async () => {
     const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
     const snapshots = await adapter.getHourlyHeatmapSnapshots(
-      candidateLocations[0].coords,
-      ['2026-08-21T08:00:00.000Z', '2026-08-21T09:00:00.000Z']
+      demoCandidates[0].coords,
+      [CAPTURED_HOUR]
     );
+    const aoi = snapshots.get(CAPTURED_HOUR)!;
 
     const evaluator = new BaselineSpatialThermalEvaluator();
     const window: CandidateWindow = {
       windowId: 'w-test',
-      startTime: '2026-08-21T08:00:00.000Z',
-      endTime: '2026-08-21T10:00:00.000Z',
-      durationHours: 2,
+      startTime: CAPTURED_HOUR,
+      endTime: '2026-08-14T13:00:00.000Z',
+      durationHours: 1,
     };
 
-    const locationScores = candidateLocations.map((loc) => {
-      const obsList: NormalizedThermalObservation[] = ['2026-08-21T08:00:00.000Z', '2026-08-21T09:00:00.000Z'].map((ts) => {
-        const aoi = snapshots.get(ts);
-        if (!aoi) throw new Error(`Missing snapshot at ${ts}`);
-        return adapter.normalizePointObservation(aoi, loc.coords, ts, '/v1/heatmap', 'DERIVED');
-      });
-
-      const result = evaluator.evaluate(obsList, window);
+    const locationScores = demoCandidates.map((loc) => {
+      const obs: NormalizedThermalObservation = adapter.normalizePointObservation(
+        aoi,
+        loc.coords,
+        CAPTURED_HOUR,
+        '/v1/heatmap',
+        'DERIVED'
+      );
+      const result = evaluator.evaluate([obs], window);
       return {
         locationId: loc.locationId,
-        name: loc.name,
-        tileId: obsList[0].selectedTileId,
+        tileId: obs.selectedTileId,
+        temperature: obs.metrics.temperatureCelsius,
         exposureScore: result.score,
       };
     });
 
-    // Exact verification of reported scores
-    expect(locationScores[0].locationId).toBe('LOC-A');
-    expect(locationScores[0].exposureScore).toBe(29.15); // (28.5 + 29.8) / 2
+    // The single-hour exposure score IS the captured provider temperature
+    // (mean over one observation of genuine provider values, rounded to 2dp
+    // by the deterministic engine).
+    for (const s of locationScores) {
+      expect(s.exposureScore).toBeCloseTo(s.temperature, 1);
+    }
 
-    expect(locationScores[1].locationId).toBe('LOC-B');
-    expect(locationScores[1].exposureScore).toBe(29.75); // (29.1 + 30.4) / 2
-
-    expect(locationScores[2].locationId).toBe('LOC-C');
-    expect(locationScores[2].exposureScore).toBe(31.35); // (30.6 + 32.1) / 2
-
-    // Verify deltas
-    const bestScore = locationScores[0].exposureScore;
-    const deltaB = Number((locationScores[1].exposureScore - bestScore).toFixed(2));
-    const deltaC = Number((locationScores[2].exposureScore - bestScore).toFixed(2));
-
-    expect(deltaB).toBe(0.60);
-    expect(deltaC).toBe(2.20);
+    // Real captured provider temperatures (verbatim from the capture):
+    // tile 162 → 31.6584, tile 171 → 32.1247, tile 179 → 32.1156
+    expect(locationScores[0].temperature).toBeCloseTo(31.6584, 4);
+    expect(locationScores[1].temperature).toBeCloseTo(32.1247, 4);
+    expect(locationScores[2].temperature).toBeCloseTo(32.1156, 4);
   });
 
-  it('3. Verifies full hourly temperature sequence across 08:00–14:00 UTC without data gaps', async () => {
+  it('3. Verifies the fixture contains ONLY the single captured hour — no fabricated hourly series', async () => {
     const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
-    const timestamps = [
-      '2026-08-21T08:00:00.000Z',
-      '2026-08-21T09:00:00.000Z',
-      '2026-08-21T10:00:00.000Z',
-      '2026-08-21T11:00:00.000Z',
-      '2026-08-21T12:00:00.000Z',
-      '2026-08-21T13:00:00.000Z',
-    ];
 
-    const snapshots = await adapter.getHourlyHeatmapSnapshots(candidateLocations[0].coords, timestamps);
-    expect(snapshots.size).toBe(6);
+    // The captured hour resolves.
+    const snapshots = await adapter.getHourlyHeatmapSnapshots(
+      demoCandidates[0].coords,
+      [CAPTURED_HOUR]
+    );
+    expect(snapshots.size).toBe(1);
+    expect((snapshots.get(CAPTURED_HOUR) as PolygonAOI).features.length).toBe(425);
 
-    for (const ts of timestamps) {
-      const aoi = snapshots.get(ts);
-      if (!aoi) throw new Error(`Missing snapshot at ${ts}`);
-      const obsA = adapter.normalizePointObservation(aoi, candidateLocations[0].coords, ts);
-      const obsB = adapter.normalizePointObservation(aoi, candidateLocations[1].coords, ts);
-      const obsC = adapter.normalizePointObservation(aoi, candidateLocations[2].coords, ts);
+    // Any OTHER hour is honestly rejected — the capture has no data for it
+    // and the adapter never fabricates one.
+    await expect(
+      adapter.getHourlyHeatmapSnapshots(demoCandidates[0].coords, ['2026-08-14T13:00:00.000Z'])
+    ).rejects.toThrow(/no capture exists|never fabricates/i);
+    await expect(
+      adapter.getHourlyHeatmapSnapshots(demoCandidates[0].coords, ['2026-08-21T08:00:00.000Z'])
+    ).rejects.toThrow(/no capture exists|never fabricates/i);
+  });
 
-      // Verify spatial ordering: LOC-A < LOC-B < LOC-C throughout
-      expect(obsA.metrics.temperatureCelsius).toBeLessThan(obsB.metrics.temperatureCelsius);
-      expect(obsB.metrics.temperatureCelsius).toBeLessThan(obsC.metrics.temperatureCelsius);
+  it('4. Verifies every observation derives from a REAL captured cell (tile id + geometry exist in the capture)', () => {
+    const capturedIds = new Set(
+      capturedAoi.features.map((f) => String(f.properties?.tile_id))
+    );
+
+    for (const cand of demoCandidates) {
+      const tile = findTileForPoint(cand.coords, capturedAoi);
+      expect(capturedIds.has(tile.tileId as string)).toBe(true);
+      // The resolved tile geometry IS a verbatim provider polygon.
+      const providerFeature = capturedAoi.features.find(
+        (f) => String(f.properties?.tile_id) === tile.tileId
+      );
+      expect(providerFeature?.geometry).toEqual(tile.geometry);
     }
   });
 });
-

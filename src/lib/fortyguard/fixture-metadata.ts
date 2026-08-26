@@ -1,35 +1,65 @@
 /**
  * Fixture capture metadata — honest provenance for DEMO mode.
  *
- * The captured Manhattan fixture (`tests/fixtures/heatmap_hourly_fixture.json`)
- * records the granularity it was ACTUALLY captured at. The UI displays THIS
- * value in DEMO mode; a user-selected 80m/100m resolution is never claimed for
- * data that was not captured at that resolution.
+ * The DEMO fixture (`tests/fixtures/heatmap_captured_demo.json`) is a VERBATIM
+ * extraction of a real captured FortyGuard /v1/heatmap response (built by
+ * `scripts/build-demo-fixture.mjs` from `tests/fixtures/heatmap_probe_candidate_aoi.json`).
+ * It records the granularity, hours, and geometry the provider ACTUALLY
+ * returned — the UI displays THESE values in DEMO mode; a user-selected
+ * 60m/80m resolution is never claimed for data that was not captured at that
+ * resolution.
  */
-import hourlyFixtureData from '../../../tests/fixtures/heatmap_hourly_fixture.json';
+import capturedDemoData from '../../../tests/fixtures/heatmap_captured_demo.json';
 import type { PolygonAOI } from '@/types/domain';
 
-/** Granularity (thermal cell size in metres) of the captured fixture. */
-export const hourlyFixtureGranularity: number =
-  Number((hourlyFixtureData as { granularity?: number }).granularity) || 60;
+interface FixtureCaptureMetadata {
+  activityId: string;
+  capturedAt: string;
+  probeFile: string;
+  requestFile: string;
+  requestBody: {
+    polygon_aoi: PolygonAOI;
+    date_time: { start_date: string; start_time?: string; filter_type: number };
+    granularity: number;
+  };
+  featureCount: number;
+  responseStatsKeys: string[];
+}
 
-/** Number of hourly snapshots in the captured fixture. */
+interface CapturedDemoFixture {
+  granularity?: number;
+  captureMetadata?: FixtureCaptureMetadata;
+  hourlySnapshots?: Array<{ timestamp: string; aoi?: PolygonAOI }>;
+}
+
+const fixture = capturedDemoData as unknown as CapturedDemoFixture;
+
+/** Granularity (thermal cell size in metres) of the REAL captured fixture. */
+export const hourlyFixtureGranularity: number = Number(fixture.granularity) || 100;
+
+/** Number of hourly snapshots in the REAL captured fixture (one hour only). */
 export const hourlyFixtureSnapshotCount: number =
-  Array.isArray((hourlyFixtureData as { hourlySnapshots?: unknown[] }).hourlySnapshots)
-    ? (hourlyFixtureData as { hourlySnapshots: unknown[] }).hourlySnapshots.length
-    : 0;
+  Array.isArray(fixture.hourlySnapshots) ? fixture.hourlySnapshots.length : 0;
+
+/** Capture provenance of the DEMO fixture (activity id, request body, wall-time). */
+export function getFixtureCaptureMetadata(): FixtureCaptureMetadata | null {
+  return fixture.captureMetadata ?? null;
+}
+
+/** The single captured hour (ISO UTC) — the only hour DEMO can evaluate. */
+export function getFixtureCapturedHourIso(): string | null {
+  const first = fixture.hourlySnapshots?.[0];
+  return first?.timestamp ?? null;
+}
 
 /**
  * The geographic extent the fixture ACTUALLY captured: the union bounding box
- * of the captured thermal cells across all snapshots. This is the honest
- * analysis extent for DEMO mode — the captured Manhattan sites are validated
- * against THIS extent (not the user's visual AOI, which is a nominal request
- * parameter the fixture cannot honor).
+ * of the captured thermal cells. This is the honest analysis extent for DEMO
+ * mode — the DEMO candidates are validated against THIS extent (not the user's
+ * visual AOI, which is a nominal request parameter the fixture cannot honor).
  */
 export function getFixtureExtentAoi(): PolygonAOI | null {
-  const snapshots = (hourlyFixtureData as {
-    hourlySnapshots?: Array<{ aoi?: PolygonAOI }>;
-  }).hourlySnapshots;
+  const snapshots = fixture.hourlySnapshots;
   if (!snapshots || snapshots.length === 0) return null;
 
   let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
@@ -69,5 +99,25 @@ export function getFixtureExtentAoi(): PolygonAOI | null {
         },
       },
     ],
+  };
+}
+
+/**
+ * Numeric bounds of the captured extent (client-mirrorable constants live in
+ * fixture-display.ts; a test asserts the two stay identical).
+ */
+export function getFixtureExtentBounds(): {
+  minLng: number; maxLng: number; minLat: number; maxLat: number;
+} | null {
+  const extent = getFixtureExtentAoi();
+  if (!extent) return null;
+  const ring = (extent.features[0].geometry as { coordinates: number[][][] }).coordinates[0];
+  const lngs = ring.map((c) => c[0]);
+  const lats = ring.map((c) => c[1]);
+  return {
+    minLng: Math.min(...lngs),
+    maxLng: Math.max(...lngs),
+    minLat: Math.min(...lats),
+    maxLat: Math.max(...lats),
   };
 }

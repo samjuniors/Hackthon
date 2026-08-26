@@ -94,13 +94,14 @@ describe('Location Selection & Decision Synchronization (Source-of-Truth)', () =
   });
 
   it('7. Decision API in FIXTURE mode succeeds for valid Manhattan coordinates', async () => {
+    // No durationHours override: the DEMO capture is a ONE-hour snapshot, so
+    // the engine constraints derive from the captured hour (1h).
     const req = new Request('http://localhost:3000/api/decision', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         latitude: 40.7120,
         longitude: -74.0080,
-        durationHours: 3,
         mode: 'FIXTURE',
       }),
     });

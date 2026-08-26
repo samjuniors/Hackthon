@@ -1,10 +1,10 @@
 import type { AnalysisTemporalInput } from './analysis-window';
 import {
-  TIME_MODE_FILTER_TYPE,
   effectiveTimeBounds,
   deriveDurationHours,
   FIXTURE_TEMPORAL_METADATA,
 } from './analysis-window';
+import { ValidationError } from '@/types/errors';
 
 /**
  * Server-side local→UTC conversion for the analysis temporal input.
@@ -17,13 +17,17 @@ import {
  * Intl/Date APIs — deterministic, never AI.
  */
 
-/** FortyGuard date_time block (matches the adapter's request schema). */
-export interface FortyGuardDateTime {
-  start_date: string; // YYYY-MM-DD
-  start_time?: string; // HH:MM
-  end_time?: string; // HH:MM
-  end_date?: string; // YYYY-MM-DD
-  filter_type: 1 | 2 | 3;
+/**
+ * The date_time block of a SINGLE-HOURLY FortyGuard /v1/heatmap request.
+ *
+ * This is the VERIFIED wire contract: every evaluated hour is sent as its own
+ * request with `filter_type: 1` and UTC date/hour strings. filter_type 2/3
+ * are NOT sent by this application — nothing may claim otherwise.
+ */
+export interface FortyGuardHourlyRequestDateTime {
+  start_date: string; // YYYY-MM-DD (UTC)
+  start_time: string; // HH:MM (UTC)
+  filter_type: 1;
 }
 
 /** Engine constraints (ISO UTC) derived from the temporal input. */
@@ -95,8 +99,8 @@ export function buildEngineConstraints(
 ): EngineTemporalConstraints {
   const { start, end } = effectiveTimeBounds(input);
   const allowedStart = localToUtcIso(input.date, start, timezone);
-  // For single-day mode, the end bound is 20:00 of the same date.
-  // For single-hour, end = start + 1h (still same date unless wrapping).
+  // End is start + 1h for single-hour mode (same date unless it wraps past
+  // midnight); as picked for range-of-hours mode.
   const endOnDate = end <= start
     ? addDay(input.date, 1) // wrapped past midnight
     : input.date;
@@ -109,46 +113,25 @@ export function buildEngineConstraints(
 }
 
 /**
- * Build the FortyGuard date_time block from the temporal input.
- * - single-hour (filter_type=1)  → start_date + start_time
- * - range-of-hours (filter_type=2) → start_date + start_time + end_time
- * - single-day (filter_type=3)  → start_date + end_date (same day)
+ * Build the date_time block for ONE hourly FortyGuard request from an ISO UTC
+ * timestamp — the exact block the adapter transmits on the wire.
  *
- * Times are LOCAL to the location's timezone. The adapter sends these strings
- * to FortyGuard verbatim — FortyGuard interprets them in the AOI's local
- * timezone. We do NOT pre-convert to UTC for FortyGuard (the API contract
- * expects local wall-clock strings anchored to the AOI).
+ * Single source of truth: the adapter uses this to build each request, and
+ * the decision route uses it to record temporal provenance, so the recorded
+ * provenance can never drift from the actual request payload.
  */
-export function buildFortyGuardDateTime(
-  input: AnalysisTemporalInput
-): FortyGuardDateTime {
-  const { start, end } = effectiveTimeBounds(input);
-  const filterType = TIME_MODE_FILTER_TYPE[input.timeMode];
-  const endOnDate = end <= start ? addDay(input.date, 1) : input.date;
-
-  switch (input.timeMode) {
-    case 'single-hour':
-      return {
-        start_date: input.date,
-        start_time: start,
-        filter_type: 1,
-      };
-    case 'single-day':
-      return {
-        start_date: input.date,
-        end_date: input.date,
-        filter_type: 3,
-      };
-    case 'range-of-hours':
-    default:
-      return {
-        start_date: input.date,
-        start_time: start,
-        end_time: end,
-        end_date: endOnDate !== input.date ? endOnDate : undefined,
-        filter_type: 2,
-      };
+export function buildHourlyRequestDateTime(
+  timestamp: string
+): FortyGuardHourlyRequestDateTime {
+  const d = new Date(timestamp);
+  if (Number.isNaN(d.getTime())) {
+    throw new ValidationError(`Invalid hourly timestamp: ${timestamp}`);
   }
+  return {
+    start_date: d.toISOString().slice(0, 10),
+    start_time: `${String(d.getUTCHours()).padStart(2, '0')}:00`,
+    filter_type: 1,
+  };
 }
 
 /** Add N days to a YYYY-MM-DD string (returns YYYY-MM-DD). */
@@ -162,8 +145,8 @@ export function addDay(dateStr: string, days: number): string {
 /**
  * Build hourly UTC timestamps between [allowedStart, allowedEnd) stepping 1h.
  * The engine evaluates a candidate observation per hourly timestamp so it can
- * rank operating windows. This is independent of the user's selected
- * filter_type — the engine always needs hourly resolution for windowing.
+ * rank operating windows. Every one of these hours is sent to FortyGuard as
+ * its own single-hour request (filter_type: 1).
  */
 export function buildHourlyTimestamps(
   allowedStart: string,

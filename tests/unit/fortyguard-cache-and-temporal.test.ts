@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildHeatmapCacheKey } from '@/lib/fortyguard/adapter';
-import { localToUtcIso, buildFortyGuardDateTime } from '@/lib/temporal/server-conversion';
+import { localToUtcIso, buildHourlyRequestDateTime } from '@/lib/temporal/server-conversion';
 
 const baseBody = {
   polygon_aoi: {
@@ -66,15 +66,19 @@ describe('adapter-boundary temporal conversion (never the AI)', () => {
     expect(localToUtcIso('2026-08-26', '13:00', 'Asia/Tokyo')).toBe('2026-08-26T04:00:00.000Z');
   });
 
-  it('builds the verified FortyGuard date_time blocks per filter_type', () => {
-    expect(
-      buildFortyGuardDateTime({ date: '2026-08-26', startTime: '05:00', endTime: '08:00', timeMode: 'range-of-hours' })
-    ).toEqual({ start_date: '2026-08-26', start_time: '05:00', end_time: '08:00', filter_type: 2 });
-    expect(
-      buildFortyGuardDateTime({ date: '2026-08-26', startTime: '13:00', endTime: '14:00', timeMode: 'single-hour' })
-    ).toEqual({ start_date: '2026-08-26', start_time: '13:00', filter_type: 1 });
-    expect(
-      buildFortyGuardDateTime({ date: '2026-08-26', startTime: '06:00', endTime: '20:00', timeMode: 'single-day' })
-    ).toEqual({ start_date: '2026-08-26', end_date: '2026-08-26', filter_type: 3 });
+  it('builds the VERIFIED hourly request date_time block — always filter_type: 1 (UTC)', () => {
+    // The verified wire contract: every evaluated hour is its own single-hour
+    // request. filter_type 2/3 are never claimed or built.
+    expect(buildHourlyRequestDateTime('2026-08-26T12:00:00.000Z')).toEqual({
+      start_date: '2026-08-26',
+      start_time: '12:00',
+      filter_type: 1,
+    });
+    expect(buildHourlyRequestDateTime('2026-08-27T00:30:00.000Z')).toEqual({
+      start_date: '2026-08-27',
+      start_time: '00:00',
+      filter_type: 1,
+    });
+    expect(buildHourlyRequestDateTime('2026-08-14T12:00:00.000Z').filter_type).toBe(1);
   });
 });

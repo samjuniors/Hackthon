@@ -47,7 +47,12 @@ import {
 } from '@/lib/spatial/aoi';
 import { getRegionBoundaryPolygon, getInvertedMaskPolygon } from '@/lib/spatial/region-boundaries';
 import { cameraForResultType, type SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
-import { FIXTURE_DISPLAY_GRANULARITY, CAPTURED_DEMO_SITES } from '@/lib/fortyguard/fixture-display';
+import {
+  FIXTURE_DISPLAY_GRANULARITY,
+  DEMO_CANDIDATE_SITES,
+  FIXTURE_EXTENT_AOI,
+  doesAoiIntersectFixtureExtent,
+} from '@/lib/fortyguard/fixture-display';
 import {
   type AnalysisTemporalInput,
   defaultTemporalInput,
@@ -55,6 +60,7 @@ import {
   deriveDurationHours,
   isValidDateStr,
   isValidTimeStr,
+  FIXTURE_TIMEZONE,
 } from '@/lib/temporal/analysis-window';
 
 // Dynamically import MapLibre map component to bypass SSR canvas requirement
@@ -362,6 +368,20 @@ export default function WorkspacePage() {
       }
     }
 
+    // DEMO capture-extent gate (P2): DEMO replays ONE fixed captured field.
+    // If the AOI was dragged outside the captured extent, no provider data can
+    // exist for it — we do NOT invent thermal data and do NOT call the API.
+    if (dataSourceMode === 'FIXTURE' && !doesAoiIntersectFixtureExtent(aoi)) {
+      setLoading(false);
+      setErrorDetails({
+        code: 'AOI_OUTSIDE_DEMO_CAPTURE',
+        message: 'The selected analysis area is outside the captured DEMO dataset. DEMO uses one fixed captured FortyGuard field — moving the AOI does not produce new provider data.',
+        recoverySuggestion: 'Drag the analysis area back inside the captured-field boundary (dashed outline), or switch to LIVE mode to request fresh FortyGuard data.',
+        category: 'COVERAGE',
+      });
+      return;
+    }
+
     try {
       const body: Record<string, unknown> = {
         latitude: loc.latitude,
@@ -493,7 +513,9 @@ export default function WorkspacePage() {
       setTemporalInput(fixtureTemporal);
       temporalInputRef.current = fixtureTemporal;
       const aoi = createAoiFromSpan(nextCenter, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
-      runDecisionPipeline(loc, aoi, fixtureTemporal, loc.timezone || 'UTC', 'FIXTURE');
+      // DEMO times are UTC-anchored (the capture's request hour) — never
+      // silently re-anchored to the selected location's timezone.
+      runDecisionPipeline(loc, aoi, fixtureTemporal, FIXTURE_TIMEZONE, 'FIXTURE');
     } else {
       // LIVE: require explicit Generate (never silently spend credits)
       const liveDefault = defaultTemporalInput(loc.timezone);
@@ -531,7 +553,7 @@ export default function WorkspacePage() {
         selectedLocationRef.current,
         aoi,
         temporalInputRef.current,
-        selectedLocationRef.current.timezone || 'UTC',
+        FIXTURE_TIMEZONE,
         'FIXTURE'
       );
     }
@@ -602,7 +624,7 @@ export default function WorkspacePage() {
       METROPOLITAN_LOCATIONS[0],
       aoi,
       fixtureTemporal,
-      METROPOLITAN_LOCATIONS[0].timezone || 'America/New_York',
+      FIXTURE_TIMEZONE,
       'FIXTURE'
     );
 
@@ -671,7 +693,7 @@ export default function WorkspacePage() {
     if (newMode === 'FIXTURE') {
       // DEMO is free (captured fixture) — auto-run for instant feedback.
       const aoi = createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
-      runDecisionPipeline(loc, aoi, newTemporal, loc.timezone || 'UTC', 'FIXTURE');
+      runDecisionPipeline(loc, aoi, newTemporal, FIXTURE_TIMEZONE, 'FIXTURE');
     }
     // LIVE: require explicit Generate — never auto-spend provider credits.
      
@@ -705,7 +727,7 @@ export default function WorkspacePage() {
         selectedLocationRef.current,
         aoi,
         temporalInputRef.current,
-        selectedLocationRef.current.timezone || 'UTC',
+        FIXTURE_TIMEZONE,
         'FIXTURE'
       );
     }
@@ -724,10 +746,11 @@ export default function WorkspacePage() {
   const aiProvider = aiHealth?.provider;
 
   // Candidates to display on the map + evaluate:
-  //   FIXTURE → the three ACTUAL captured Manhattan demo sites.
+  //   FIXTURE → the three DEMO CANDIDATES (application-defined points
+  //             evaluated against the captured field — not captured sites).
   //   LIVE    → the user's real candidate sites only.
   const displayCandidates: CandidateLocation[] = mode === 'FIXTURE'
-    ? CAPTURED_DEMO_SITES
+    ? DEMO_CANDIDATE_SITES
     : candidateSites.sites.map((s) => ({
         locationId: s.locationId,
         name: s.name,
@@ -737,6 +760,11 @@ export default function WorkspacePage() {
   // Resolution display (Section 2): DEMO shows the fixture's ACTUAL captured
   // granularity; LIVE shows the provider granularity that will be sent.
   const resolutionDisplay = mode === 'FIXTURE' ? FIXTURE_DISPLAY_GRANULARITY : prefs.analysisResolution;
+
+  // Display timezone: DEMO is UTC-anchored (the capture's request hour is a
+  // UTC instant) — displaying it in the selected location's timezone would
+  // MISLABEL the captured wall-clock. LIVE uses the location's timezone.
+  const displayTimezone = mode === 'FIXTURE' ? FIXTURE_TIMEZONE : (selectedLocation.timezone || 'UTC');
 
   const handleSelectScenario = useCallback((scenarioId: string) => {
     setSelectedScenarioId(scenarioId);
@@ -890,7 +918,7 @@ export default function WorkspacePage() {
               selectedLocation={selectedLocation}
               analysisCenter={aoiCenter}
               temporalInput={temporalInput}
-              timezone={selectedLocation.timezone}
+              timezone={displayTimezone}
               rankedCandidates={spatialDecision?.rankedLocations.map((r) => ({
                 locationId: r.locationId,
                 name: r.name,
@@ -920,6 +948,7 @@ export default function WorkspacePage() {
                 onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
                 cameraBehavior={cameraBehavior}
                 cameraNonce={cameraNonce}
+                captureExtent={mode === 'FIXTURE' ? FIXTURE_EXTENT_AOI : undefined}
               />
             </ThermalMapCanvas>
 
@@ -928,7 +957,7 @@ export default function WorkspacePage() {
               <RecommendedOperation
                 jointDecision={jointDecision}
                 unit={unit}
-                timezone={selectedLocation.timezone}
+                timezone={displayTimezone}
                 mode={mode}
                 temporalInput={temporalInput}
               />
@@ -939,7 +968,7 @@ export default function WorkspacePage() {
               <TopCandidates
                 jointDecision={jointDecision}
                 unit={unit}
-                timezone={selectedLocation.timezone}
+                timezone={displayTimezone}
               />
             )}
 
@@ -950,7 +979,7 @@ export default function WorkspacePage() {
                 selectedScenarioId={selectedScenarioId}
                 onSelectScenario={handleSelectScenario}
                 unit={unit}
-                timezone={selectedLocation.timezone}
+                timezone={displayTimezone}
               />
             )}
 
@@ -959,7 +988,7 @@ export default function WorkspacePage() {
               <GroundedExplanation
                 explanation={explanation}
                 unit={unit}
-                timezone={selectedLocation.timezone}
+                timezone={displayTimezone}
                 explaining={explaining}
                 onRefresh={handleRefreshExplanation}
               />

@@ -23,17 +23,19 @@ import {
   mapErrorToProductionDetails,
 } from '@/types/errors';
 import { isLocationCoveredByFixture } from '@/lib/location/search';
-import { isPointInAoi } from '@/lib/spatial/aoi';
-import { getFixtureExtentAoi } from '@/lib/fortyguard/fixture-metadata';
+import { isPointInAoi, aoiBboxesIntersect } from '@/lib/spatial/aoi';
+import {
+  getFixtureExtentAoi,
+  getFixtureCaptureMetadata,
+} from '@/lib/fortyguard/fixture-metadata';
 import { z } from 'zod';
 import {
   buildEngineConstraints,
-  buildHourlyTimestamps,
-  buildFortyGuardDateTime,
+  buildHourlyRequestDateTime,
   getFixtureTemporalMetadata,
 } from '@/lib/temporal/server-conversion';
 import type { AnalysisTemporalInput } from '@/lib/temporal/analysis-window';
-import { FIXTURE_TEMPORAL_METADATA, buildFixtureTemporalInput } from '@/lib/temporal/analysis-window';
+import { buildFixtureTemporalInput, FIXTURE_TIMEZONE } from '@/lib/temporal/analysis-window';
 
 const CandidateSchema = z.object({
   locationId: z.string().min(1),
@@ -64,8 +66,7 @@ const TemporalInputSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
   startTime: z.string().regex(/^\d{2}:\d{2}$/, 'startTime must be HH:MM'),
   endTime: z.string().regex(/^\d{2}:\d{2}$/, 'endTime must be HH:MM'),
-  timeMode: z.enum(['single-hour', 'range-of-hours', 'single-day']),
-  dayWindowHours: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional(),
+  timeMode: z.enum(['single-hour', 'range-of-hours']),
 });
 
 const DecisionRequestSchema = z.object({
@@ -98,16 +99,16 @@ const DecisionRequestSchema = z.object({
 });
 
 /**
- * The three ACTUAL sites captured in the Manhattan fixture dataset.
- * Used in FIXTURE mode ONLY — the route rejects any FIXTURE request outside
- * the Manhattan fixture bounds above, so these sites always correspond to the
- * captured thermal cells (they sit inside the fixture's 3-tile strip).
+ * The three DEMO CANDIDATE sites (Lower Manhattan).
  *
-* PROVENANCE RULE (Section 8): geographic offsets are NOT operational sites.
- * No synthetic offset-site generation exists anymore (removed).
- * LIVE mode REQUIRES user-supplied candidate sites.
+ * PROVENANCE — these are APPLICATION-DEFINED candidate points, not provider
+ * observations. They are evaluated against the genuine captured FortyGuard
+ * field; the capture does NOT prove FortyGuard "captured these sites".
+ * All three coordinates lie inside the captured thermal cells (enforced by
+ * tests). No synthetic offset-site generation exists (removed); LIVE mode
+ * REQUIRES user-supplied candidate sites.
  */
-const CAPTURED_DEMO_CANDIDATES: CandidateLocation[] = [
+const DEMO_CANDIDATES: CandidateLocation[] = [
   {
     locationId: 'LOC-A',
     name: 'Battery Park Greenway (Waterfront)',
@@ -193,7 +194,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const timezone = reqTimezone || (mode === 'FIXTURE' ? 'America/New_York' : 'UTC');
+    const timezone = reqTimezone || (mode === 'FIXTURE' ? FIXTURE_TIMEZONE : 'UTC');
     const { allowedStart: tAllowedStart, allowedEnd: tAllowedEnd, durationHours: tDurationHours } =
       buildEngineConstraints(temporalInput, timezone);
 
@@ -235,8 +236,8 @@ export async function POST(request: Request) {
           success: false,
           error: {
             code: 'OUTSIDE_COVERAGE',
-            message: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) is outside the verified Manhattan fixture bounds. Switch to LIVE mode to evaluate any location globally.`,
-            recoverySuggestion: 'Switch to LIVE mode or select a captured Manhattan demo site.',
+            message: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) is outside the captured DEMO thermal field (Lower Manhattan). Switch to LIVE mode to analyse any location in real time.`,
+            recoverySuggestion: 'Switch to LIVE mode or select a DEMO candidate site inside the captured field.',
             category: 'COVERAGE',
           } as const,
         },
@@ -248,10 +249,31 @@ export async function POST(request: Request) {
       | import('@/types/domain').PolygonAOI
       | undefined;
 
+    // DEMO capture-extent gate: the captured field is FIXED. If the user's
+    // AOI does not intersect the captured extent, the DEMO dataset cannot
+    // cover it — we do NOT invent thermal data and do NOT call FortyGuard.
+    if (mode === 'FIXTURE') {
+      const captureExtent = getFixtureExtentAoi();
+      if (captureExtent && canonicalAoi && !aoiBboxesIntersect(canonicalAoi, captureExtent)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'AOI_OUTSIDE_DEMO_CAPTURE',
+              message: 'The selected analysis area is outside the captured DEMO dataset. DEMO uses one fixed captured FortyGuard field — moving the AOI does not produce new provider data.',
+              recoverySuggestion: 'Drag the analysis area back inside the captured-field boundary (dashed outline), or switch to LIVE mode to request fresh FortyGuard data.',
+              category: 'COVERAGE',
+            } as const,
+          },
+          { status: 422 }
+        );
+      }
+    }
+
     // ── Candidate resolution (Section 8 — NO synthetic generation) ──
-    // FIXTURE: the three ACTUAL captured Manhattan sites (the route already
-    //   restricted FIXTURE to the fixture bounds, so these always represent
-    //   the captured data).
+    // FIXTURE: the three DEMO CANDIDATES (application-defined points inside
+    //   the captured field — the route already restricted FIXTURE to the
+    //   captured extent, so these always lie inside real captured cells).
     // LIVE: user-supplied sites are REQUIRED. Empty set → actionable error.
     const candidatesToEvaluate: CandidateLocation[] = reqCandidates && reqCandidates.length > 0
       ? reqCandidates.map((c) => ({
@@ -260,7 +282,7 @@ export async function POST(request: Request) {
           location: { latitude: c.latitude, longitude: c.longitude },
         }))
       : mode === 'FIXTURE'
-        ? CAPTURED_DEMO_CANDIDATES
+        ? DEMO_CANDIDATES
         : [];
 
     if (candidatesToEvaluate.length === 0) {
@@ -423,16 +445,35 @@ export async function POST(request: Request) {
           }
         : undefined,
       // Echo the temporal provenance so the client can display the exact
-      // date/time the heatmap represents (Section 8 + 9).
+      // requests that were (or were not) sent to the provider.
+      // HONESTY RULE: this records the ACTUAL wire behavior — every evaluated
+      // hour is its own filter_type:1 hourly request (LIVE), or NO live
+      // request at all (FIXTURE replay). It NEVER claims filter_type 2/3.
       temporalProvenance: {
         input: temporalInput,
         allowedStartUtc: allowedStart,
         allowedEndUtc: allowedEnd,
         durationHours,
         timezone,
-        fortyGuardDateTime: buildFortyGuardDateTime(temporalInput),
         isFixtureCapture: mode === 'FIXTURE',
-        fixtureMetadata: mode === 'FIXTURE' ? getFixtureTemporalMetadata() : undefined,
+        fixtureMetadata: mode === 'FIXTURE'
+          ? { ...getFixtureTemporalMetadata(), capture: getFixtureCaptureMetadata() }
+          : undefined,
+        providerRequests: mode === 'LIVE'
+          ? {
+              strategy: 'EVALUATED_AS_HOURLY_REQUESTS' as const,
+              filterType: 1 as const,
+              hourlyRequestCount: hourlyTimestamps.length,
+              description: `Evaluated as ${hourlyTimestamps.length} hourly FortyGuard /v1/heatmap requests (filter_type: 1 each).`,
+              requests: hourlyTimestamps.map((ts) => buildHourlyRequestDateTime(ts)),
+            }
+          : {
+              strategy: 'FIXTURE_REPLAY_NO_LIVE_REQUEST' as const,
+              filterType: null,
+              hourlyRequestCount: 0,
+              description: 'DEMO replays the captured FortyGuard response — no live provider request was made.',
+              requests: [],
+            },
       },
     });
   } catch (error) {

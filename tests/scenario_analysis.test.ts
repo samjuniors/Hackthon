@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { FortyGuardAdapter } from '@/lib/fortyguard/adapter';
 import { evaluateWhatIfScenarios } from '@/lib/decision-engine/evaluator';
+import { buildEngineTestObservations } from './helpers/engine-test-observations';
 import type {
   CandidateLocation,
   DecisionConstraints,
@@ -42,24 +42,15 @@ describe('Milestone 7 — What-If Constraint Sensitivity Analysis Suite', () => 
     '2026-08-21T13:00:00.000Z',
   ];
 
-  async function loadTestObservations(): Promise<Map<string, NormalizedThermalObservation[]>> {
-    const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
-    const snapshots = await adapter.getHourlyHeatmapSnapshots(candidateLocations[0].location, timestamps6h);
-
-    const obsMap = new Map<string, NormalizedThermalObservation[]>();
-    for (const cand of candidateLocations) {
-      const list = timestamps6h.map((ts) => {
-        const aoi = snapshots.get(ts);
-        if (!aoi) throw new Error(`Missing snapshot for ${ts}`);
-        return adapter.normalizePointObservation(aoi, cand.location, ts, '/v1/heatmap', 'DERIVED');
-      });
-      obsMap.set(cand.locationId, list);
-    }
-    return obsMap;
+  // Engine math is verified against EXPLICIT SYNTHETIC TEST INPUTS (see
+  // tests/helpers/engine-test-observations.ts) — never the DEMO capture (which
+  // is a single real hour) and never fabricated provider data.
+  function loadTestObservations(): Map<string, NormalizedThermalObservation[]> {
+    return buildEngineTestObservations(candidateLocations, timestamps6h);
   }
 
   it('1. Evaluates baseline plan P0 matching the global unconstrained optimum (LOC-A @ 08:00–10:00 UTC = 29.15°C)', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const result = evaluateWhatIfScenarios(candidateLocations, obsMap, baselineConstraints);
 
     expect(result.baselinePlan.location.locationId).toBe('LOC-A');
@@ -69,7 +60,7 @@ describe('Milestone 7 — What-If Constraint Sensitivity Analysis Suite', () => 
   });
 
   it('2. Scenario 1 (TEMPORAL_SHIFT): Imposing 10:00 UTC start shifts window and computes exact +2.95°C constraint cost', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const result = evaluateWhatIfScenarios(candidateLocations, obsMap, baselineConstraints);
 
     const sc1 = result.scenarios.find((s) => s.constraintType === 'TEMPORAL_SHIFT');
@@ -88,7 +79,7 @@ describe('Milestone 7 — What-If Constraint Sensitivity Analysis Suite', () => 
   });
 
   it('3. Scenario 2 (LOCATION_LOCK): Locking to Chinatown (LOC-C) shifts location and computes exact +2.20°C constraint cost', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const result = evaluateWhatIfScenarios(candidateLocations, obsMap, baselineConstraints);
 
     const sc2 = result.scenarios.find((s) => s.constraintType === 'LOCATION_LOCK');
@@ -107,7 +98,7 @@ describe('Milestone 7 — What-If Constraint Sensitivity Analysis Suite', () => 
   });
 
   it('4. Scenario 3 (DURATION_EXPANSION): Expanding to 4 Hours alters duration and computes exact +1.48°C constraint cost', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     const result = evaluateWhatIfScenarios(candidateLocations, obsMap, baselineConstraints);
 
     const sc3 = result.scenarios.find((s) => s.constraintType === 'DURATION_EXPANSION');
@@ -126,7 +117,7 @@ describe('Milestone 7 — What-If Constraint Sensitivity Analysis Suite', () => 
   });
 
   it('5. Infeasible constraint handling produces status INFEASIBLE with explanation and null cost', async () => {
-    const obsMap = await loadTestObservations();
+    const obsMap = loadTestObservations();
     // Constraints where duration exceeds the total allowable window
     const impossibleConstraints: DecisionConstraints = {
       allowedStart: '2026-08-21T08:00:00.000Z',

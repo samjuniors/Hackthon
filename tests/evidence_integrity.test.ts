@@ -11,40 +11,43 @@ describe('M4.1 Evidence Integrity & Parity Test Suite', () => {
   const nycCenter: LocationPoint = { latitude: 40.7128, longitude: -74.006 };
   const baseTime = '2026-08-21T08:00:00.000Z';
 
-  it('1. No fabricated hourly observations are generated — values match genuine fixture/API data without mathematical curve mutations', async () => {
+  it('1. No fabricated hourly observations are generated — values match the REAL captured provider data verbatim', async () => {
     const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
+    // The capture contains exactly ONE hour: 2026-08-14T12:00Z.
     const snapshots = await adapter.getHourlyHeatmapSnapshots(nycCenter, [
-      '2026-08-21T08:00:00.000Z',
-      '2026-08-21T09:00:00.000Z',
-      '2026-08-21T10:00:00.000Z',
+      '2026-08-14T12:00:00.000Z',
     ]);
 
-    const aoi8 = snapshots.get('2026-08-21T08:00:00.000Z');
-    const aoi9 = snapshots.get('2026-08-21T09:00:00.000Z');
-    const aoi10 = snapshots.get('2026-08-21T10:00:00.000Z');
+    const aoi = snapshots.get('2026-08-14T12:00:00.000Z');
+    expect(aoi).toBeDefined();
+    if (!aoi) throw new Error('Snapshot missing');
 
-    expect(aoi8).toBeDefined();
-    expect(aoi9).toBeDefined();
-    expect(aoi10).toBeDefined();
+    // Verbatim provider temperatures at the three DEMO candidates + the
+    // nominal center (values from the captured provider cells):
+    const points: Array<[LocationPoint, number]> = [
+      [{ latitude: 40.7120, longitude: -74.0080 }, 31.6584], // LOC-A (tile 162)
+      [{ latitude: 40.7120, longitude: -73.9980 }, 32.1247], // LOC-B (tile 171)
+      [{ latitude: 40.7120, longitude: -73.9880 }, 32.1156], // LOC-C (tile 179)
+      [nycCenter, 31.749],                                    // nominal center (tile 186)
+    ];
+    for (const [pt, expectedTemp] of points) {
+      const obs = adapter.normalizePointObservation(aoi, pt, '2026-08-14T12:00:00.000Z');
+      expect(obs.metrics.temperatureCelsius).toBeCloseTo(expectedTemp, 4);
+    }
 
-    if (!aoi8 || !aoi9 || !aoi10) throw new Error('Snapshots missing');
-
-    const obs8 = adapter.normalizePointObservation(aoi8, nycCenter, '2026-08-21T08:00:00.000Z');
-    const obs9 = adapter.normalizePointObservation(aoi9, nycCenter, '2026-08-21T09:00:00.000Z');
-    const obs10 = adapter.normalizePointObservation(aoi10, nycCenter, '2026-08-21T10:00:00.000Z');
-
-    // Values in fixture: 28.5, 29.8, 31.2
-    expect(obs8.metrics.temperatureCelsius).toBe(28.5);
-    expect(obs9.metrics.temperatureCelsius).toBe(29.8);
-    expect(obs10.metrics.temperatureCelsius).toBe(31.2);
+    // The capture's own hour labels: DEMO never fabricates additional hours —
+    // any other hour is honestly rejected.
+    await expect(
+      adapter.getHourlyHeatmapSnapshots(nycCenter, ['2026-08-14T13:00:00.000Z'])
+    ).rejects.toThrow(IncompleteTemporalCoverageError);
   });
 
   it('2. Missing hourly coverage produces IncompleteTemporalCoverageError (no fabricated missing hours)', async () => {
     const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
-    // Request a timestamp outside fixture coverage
+    // Request a timestamp outside the single captured hour
     await expect(
       adapter.getHourlyHeatmapSnapshots(nycCenter, [
-        '2026-08-21T08:00:00.000Z',
+        '2026-08-14T12:00:00.000Z',
         '2026-08-22T04:00:00.000Z', // Missing
       ])
     ).rejects.toThrow(IncompleteTemporalCoverageError);
@@ -72,30 +75,26 @@ describe('M4.1 Evidence Integrity & Parity Test Suite', () => {
   it('4. Fixture mode is explicitly identified on observations and DecisionResult', async () => {
     const adapter = new FortyGuardAdapter({ mode: 'FIXTURE' });
     const snapshots = await adapter.getHourlyHeatmapSnapshots(nycCenter, [
-      '2026-08-21T08:00:00.000Z',
-      '2026-08-21T09:00:00.000Z',
+      '2026-08-14T12:00:00.000Z',
     ]);
 
-    const aoi8 = snapshots.get('2026-08-21T08:00:00.000Z');
-    const aoi9 = snapshots.get('2026-08-21T09:00:00.000Z');
-    if (!aoi8 || !aoi9) throw new Error('Snapshots missing');
+    const aoi = snapshots.get('2026-08-14T12:00:00.000Z');
+    if (!aoi) throw new Error('Snapshot missing');
 
     const obs: NormalizedThermalObservation[] = [
-      adapter.normalizePointObservation(aoi8, nycCenter, '2026-08-21T08:00:00.000Z', '/v1/heatmap', 'DERIVED'),
-      adapter.normalizePointObservation(aoi9, nycCenter, '2026-08-21T09:00:00.000Z', '/v1/heatmap', 'PREDICTED'),
+      adapter.normalizePointObservation(aoi, nycCenter, '2026-08-14T12:00:00.000Z', '/v1/heatmap', 'DERIVED'),
     ];
 
     expect(obs[0].dataSource).toBe('FIXTURE');
-    expect(obs[1].dataSource).toBe('FIXTURE');
 
     const constraints: DecisionConstraints = {
-      allowedStart: '2026-08-21T08:00:00.000Z',
-      allowedEnd: '2026-08-21T10:00:00.000Z',
+      allowedStart: '2026-08-14T12:00:00.000Z',
+      allowedEnd: '2026-08-14T13:00:00.000Z',
       durationHours: 1,
       dataResolutionHours: 1,
     };
 
-    const decision = evaluateCandidateWindows(nycCenter, obs, constraints, baseTime);
+    const decision = evaluateCandidateWindows(nycCenter, obs, constraints, '2026-08-14T12:00:00.000Z');
 
     expect(decision.dataSource).toBe('FIXTURE');
     expect(decision.evidenceBundle.dataSource).toBe('FIXTURE');

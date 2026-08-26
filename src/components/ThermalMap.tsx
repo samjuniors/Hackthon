@@ -220,11 +220,14 @@ export function ThermalMap({
         map.setPaintProperty('aoi-fill', 'fill-opacity', isDark ? 0.12 : 0.08);
       }
       if (map.getLayer('region-boundary-outline')) {
-        map.setPaintProperty('region-boundary-outline', 'line-color', isDark ? '#fb7185' : '#be123c');
+        map.setPaintProperty('region-boundary-outline', 'line-color', isDark ? '#38bdf8' : '#0284c7');
+      }
+      if (map.getLayer('region-boundary-glow')) {
+        map.setPaintProperty('region-boundary-glow', 'line-color', isDark ? '#00d4ff' : '#0284c7');
       }
       if (map.getLayer('region-boundary-fill')) {
-        map.setPaintProperty('region-boundary-fill', 'fill-color', isDark ? '#f43f5e' : '#be123c');
-        map.setPaintProperty('region-boundary-fill', 'fill-opacity', isDark ? 0.16 : 0.10);
+        map.setPaintProperty('region-boundary-fill', 'fill-color', isDark ? '#00d4ff' : '#0284c7');
+        map.setPaintProperty('region-boundary-fill', 'fill-opacity', isDark ? 0.08 : 0.04);
       }
       map.triggerRepaint();
     } catch {
@@ -266,7 +269,6 @@ export function ThermalMap({
       container: mapContainerRef.current,
       style: {
         version: 8,
-        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
         sources: {
           'carto-base-dark': {
             type: 'raster',
@@ -292,23 +294,25 @@ export function ThermalMap({
           },
           'region-mask': {
             type: 'geojson',
-            data: EMPTY_FC,
+            data: (regionMask ?? EMPTY_FC) as unknown as GeoJSONFC,
           },
           'region-boundary': {
             type: 'geojson',
-            data: EMPTY_FC,
+            data: (regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC,
           },
           'analysis-aoi': {
             type: 'geojson',
-            data: EMPTY_FC,
+            data: (analysisAoi ?? EMPTY_FC) as unknown as GeoJSONFC,
           },
           'thermal-tiles': {
             type: 'geojson',
-            data: EMPTY_FC,
+            data: (spatialField && hasRenderableTemperatureData(spatialField)
+              ? spatialField
+              : EMPTY_FC) as unknown as GeoJSONFC,
           },
         },
         layers: [
-          // 1. Basemap (Dark & Light)
+          // 1. Basemap Base Tiles (Dark & Light)
           {
             id: 'carto-base-dark-layer',
             type: 'raster',
@@ -327,49 +331,42 @@ export function ThermalMap({
             paint: { 'raster-opacity': isDark ? 0 : 0.95 },
             layout: { visibility: isDark ? 'none' : 'visible' },
           },
-          // 2. Spotlight Mask — Dims the entire world OUTSIDE the selected state region
+          // 2. Basemap Reference Labels (Dark & Light)
+          {
+            id: 'carto-labels-dark-layer',
+            type: 'raster',
+            source: 'carto-labels-dark',
+            paint: { 'raster-opacity': 0.92 },
+            layout: { visibility: isDark ? 'visible' : 'none' },
+          },
+          {
+            id: 'carto-labels-light-layer',
+            type: 'raster',
+            source: 'carto-labels-light',
+            paint: { 'raster-opacity': 1.0 },
+            layout: { visibility: isDark ? 'none' : 'visible' },
+          },
+          // 3. Spotlight Mask — Dims the entire world OUTSIDE the selected territory
           {
             id: 'region-mask-fill',
             type: 'fill',
             source: 'region-mask',
             paint: {
               'fill-color': isDark ? '#000000' : '#0f172a',
-              'fill-opacity': isDark ? 0.55 : 0.40,
+              'fill-opacity': isDark ? 0.52 : 0.40,
             },
           },
-          // 3. Geographical State/Region Boundary (Context Only)
+          // 4. Geographical / Municipal Borough Boundary (Context Only)
           {
             id: 'region-boundary-fill',
             type: 'fill',
             source: 'region-boundary',
             paint: {
-              'fill-color': isDark ? '#f43f5e' : '#be123c',
-              'fill-opacity': isDark ? 0.18 : 0.12,
+              'fill-color': isDark ? '#00d4ff' : '#0284c7',
+              'fill-opacity': isDark ? 0.08 : 0.04,
             },
           },
-          {
-            id: 'region-boundary-glow',
-            type: 'line',
-            source: 'region-boundary',
-            paint: {
-              'line-color': isDark ? '#fb7185' : '#e11d48',
-              'line-width': 10,
-              'line-opacity': 0.7,
-              'line-blur': 4,
-            },
-          },
-          {
-            id: 'region-boundary-outline',
-            type: 'line',
-            source: 'region-boundary',
-            paint: {
-              'line-color': isDark ? '#fb7185' : '#e11d48',
-              'line-width': 4,
-              'line-opacity': 1.0,
-              'line-dasharray': [3, 2],
-            },
-          },
-          // 4. Local AOI interior tint
+          // 5. Local AOI interior tint
           {
             id: 'aoi-fill',
             type: 'fill',
@@ -379,7 +376,7 @@ export function ThermalMap({
               'fill-opacity': isDark ? 0.12 : 0.08,
             },
           },
-          // 5. FortyGuard Thermal field polygons (HERO Layer)
+          // 6. FortyGuard Thermal field polygons (HERO Layer)
           {
             id: 'thermal-tiles-fill',
             type: 'fill',
@@ -421,7 +418,30 @@ export function ThermalMap({
               'line-opacity': 0.95,
             },
           },
-          // 6. Canonical Analysis AOI boundary outline & glow (Crisp Red/Crimson)
+          // 7. Regional Territory Dotted Outline (Cyan Dotted Line matching user's sketch)
+          {
+            id: 'region-boundary-glow',
+            type: 'line',
+            source: 'region-boundary',
+            paint: {
+              'line-color': isDark ? '#00d4ff' : '#0284c7',
+              'line-width': 12,
+              'line-opacity': 0.85,
+              'line-blur': 4,
+            },
+          },
+          {
+            id: 'region-boundary-outline',
+            type: 'line',
+            source: 'region-boundary',
+            paint: {
+              'line-color': isDark ? '#00d4ff' : '#0284c7',
+              'line-width': 4.5,
+              'line-opacity': 1.0,
+              'line-dasharray': [3, 2],
+            },
+          },
+          // 8. Canonical Analysis AOI boundary outline & glow (Crisp Red/Crimson)
           {
             id: 'aoi-glow',
             type: 'line',
@@ -443,21 +463,6 @@ export function ThermalMap({
               'line-opacity': 1.0,
             },
           },
-          // 7. Labels
-          {
-            id: 'carto-labels-dark-layer',
-            type: 'raster',
-            source: 'carto-labels-dark',
-            paint: { 'raster-opacity': 0.92 },
-            layout: { visibility: isDark ? 'visible' : 'none' },
-          },
-          {
-            id: 'carto-labels-light-layer',
-            type: 'raster',
-            source: 'carto-labels-light',
-            paint: { 'raster-opacity': 1.0 },
-            layout: { visibility: isDark ? 'none' : 'visible' },
-          },
         ],
       },
       center: [centerLng, centerLat],
@@ -474,14 +479,25 @@ export function ThermalMap({
       setMapReady(true);
       map.resize();
       applyThemeToMap(theme === 'dark');
+      try {
+        const maskSource = map.getSource('region-mask') as GeoJSONSource | undefined;
+        const regionSource = map.getSource('region-boundary') as GeoJSONSource | undefined;
+        const thermalSource = map.getSource('thermal-tiles') as GeoJSONSource | undefined;
+        const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
+
+        if (maskSource) maskSource.setData((regionMask ?? EMPTY_FC) as unknown as GeoJSONFC);
+        if (regionSource) regionSource.setData((regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC);
+        if (thermalSource && spatialField && hasRenderableTemperatureData(spatialField)) {
+          thermalSource.setData(spatialField as unknown as GeoJSONFC);
+        }
+        if (aoiSource) aoiSource.setData((analysisAoi ?? EMPTY_FC) as unknown as GeoJSONFC);
+      } catch {
+        /* safe */
+      }
     };
 
-    if (map.isStyleLoaded()) {
-      markReady();
-    } else {
-      map.once('load', markReady);
-      setTimeout(markReady, 400);
-    }
+    map.on('load', markReady);
+    map.on('styledata', markReady);
 
     // Auto-resize observer on container
     let ro: ResizeObserver | null = null;

@@ -66,6 +66,11 @@ export interface NamedLocation {
   timezone?: string;
   isDemoOnly?: boolean;
   description?: string;
+  /**
+   * Result type from real geocoding — drives camera behavior:
+   * state → fit region; city/neighborhood → fit local; street/address/poi → zoom to point.
+   */
+  resultType?: 'state' | 'city' | 'neighborhood' | 'street' | 'address' | 'poi' | 'zip' | 'region';
 }
 
 export interface ProductionErrorDetails {

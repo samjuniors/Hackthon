@@ -1,124 +1,106 @@
 import { describe, it, expect } from 'vitest';
+import { createAoiFromSpan, isPointInAoi } from '@/lib/spatial/aoi';
+import { getFixtureExtentAoi } from '@/lib/fortyguard/fixture-metadata';
+import type { CandidateLocation, LocationPoint } from '@/types/domain';
 
-interface LocationPoint { latitude: number; longitude: number; }
-interface CandidateLocation {
-  locationId: string;
-  name: string;
-  location: LocationPoint;
-}
+/**
+ * Geographic Candidate Resolution — POST-correction semantics.
+ *
+ * The old suite asserted synthetic SITE-N/SITE-CENTER/SITE-W generation.
+ * That behavior was REMOVED (Section 8 of the spatial-model corrections):
+ *   - FIXTURE mode uses ONLY the three ACTUAL sites captured in the
+ *     Manhattan fixture (LOC-A/B/C) and only for Manhattan-bounded requests.
+ *   - LIVE mode requires explicit user-supplied candidates — never generates.
+ */
 
-const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
-  { locationId: 'LOC-A', name: 'Battery Park Greenway', location: { latitude: 40.7120, longitude: -74.0080 } },
-  { locationId: 'LOC-B', name: 'City Hall Civic Center', location: { latitude: 40.7120, longitude: -73.9980 } },
-  { locationId: 'LOC-C', name: 'Chinatown / Bowery',    location: { latitude: 40.7120, longitude: -73.9880 } },
+// Mirror of the route's CAPTURED_DEMO_CANDIDATES (the genuine fixture sites)
+const CAPTURED_DEMO_CANDIDATES: CandidateLocation[] = [
+  { locationId: 'LOC-A', name: 'Battery Park Greenway (Waterfront)', location: { latitude: 40.7120, longitude: -74.0080 } },
+  { locationId: 'LOC-B', name: 'City Hall Civic Center (Mid-Density)', location: { latitude: 40.7120, longitude: -73.9980 } },
+  { locationId: 'LOC-C', name: 'Chinatown / Bowery Staging (Asphalt Canyon)', location: { latitude: 40.7120, longitude: -73.9880 } },
 ];
 
-function generateLiveCandidates(center: LocationPoint): CandidateLocation[] {
-  const dLat = 400 / 111320;
-  const candidateOffset = dLat * 0.25;
-  return [
-    { locationId: 'SITE-N',      name: 'Site North',    location: { latitude: center.latitude + candidateOffset, longitude: center.longitude } },
-    { locationId: 'SITE-CENTER', name: 'Site Center',   location: { latitude: center.latitude,                    longitude: center.longitude } },
-    { locationId: 'SITE-S',      name: 'Site South',    location: { latitude: center.latitude - candidateOffset, longitude: center.longitude } },
-  ];
-}
+/** The authoritative captured fixture extent (union bbox of the captured tiles). */
+const FIXTURE_EXTENT = getFixtureExtentAoi()!;
 
-function resolveCandidates(mode: 'LIVE' | 'FIXTURE', center: LocationPoint, explicit?: CandidateLocation[]): CandidateLocation[] {
+function resolveCandidates(
+  mode: 'LIVE' | 'FIXTURE',
+  isWithinFixtureBounds: boolean,
+  explicit?: CandidateLocation[]
+): CandidateLocation[] {
   if (explicit && explicit.length > 0) return explicit;
-  return mode === 'LIVE' ? generateLiveCandidates(center) : DEFAULT_CANDIDATE_LOCATIONS;
+  if (mode === 'FIXTURE') {
+    // Only valid when the request is inside the fixture bounds — the route
+    // rejects out-of-bounds FIXTURE requests with 404 before reaching here.
+    if (!isWithinFixtureBounds) return [];
+    return CAPTURED_DEMO_CANDIDATES;
+  }
+  return []; // LIVE never generates — empty means CANDIDATES_REQUIRED
 }
 
-function isWithinBoundingAOI(point: LocationPoint, center: LocationPoint): boolean {
-  const dLat = 400 / 111320;
-  const dLon = 400 / (111320 * Math.cos((center.latitude * Math.PI) / 180));
-  return Math.abs(point.latitude - center.latitude) <= dLat && Math.abs(point.longitude - center.longitude) <= dLon;
-}
+const LA: LocationPoint = { latitude: 34.0522, longitude: -118.2437 };
+const SF: LocationPoint = { latitude: 37.7749, longitude: -122.4194 };
+const SD: LocationPoint = { latitude: 32.7157, longitude: -117.1611 };
+const MANHATTAN_DEMO: LocationPoint = { latitude: 40.7120, longitude: -74.0080 };
 
-const MANHATTAN_LAT = 40.7120;
-const LA = { latitude: 34.0522, longitude: -118.2437 };
-const SF = { latitude: 37.7749, longitude: -122.4194 };
-const SD = { latitude: 32.7157, longitude: -117.1611 };
-const EXPLICIT: CandidateLocation[] = [{ locationId: 'CUSTOM-1', name: 'Custom', location: { latitude: 51.5, longitude: -0.1 } }];
+describe('Geographic Candidate Resolution (genuine sites only)', () => {
 
-describe('Geographic Candidate Resolution', () => {
-
-  describe('FIXTURE mode', () => {
-    it('returns Manhattan defaults regardless of input location', () => {
-      const c = resolveCandidates('FIXTURE', LA);
+  describe('FIXTURE mode — captured Manhattan sites', () => {
+    it('returns the three ACTUAL captured sites for in-bounds requests', () => {
+      const c = resolveCandidates('FIXTURE', true);
       expect(c).toHaveLength(3);
-      expect(c.every(x => Math.abs(x.location.latitude - MANHATTAN_LAT) < 0.001)).toBe(true);
+      expect(c.map((x) => x.locationId)).toEqual(['LOC-A', 'LOC-B', 'LOC-C']);
+      // Genuine site names — no "Site North/Center/South" fabrications
+      expect(c.every((x) => !/Site (North|Center|South|West)/.test(x.name))).toBe(true);
     });
-    it('locationIds are LOC-A, LOC-B, LOC-C', () => {
-      expect(resolveCandidates('FIXTURE', SF).map(x => x.locationId)).toEqual(['LOC-A', 'LOC-B', 'LOC-C']);
+
+    it('captured sites all lie inside the CAPTURED fixture extent', () => {
+      for (const site of CAPTURED_DEMO_CANDIDATES) {
+        expect(isPointInAoi(site.location, FIXTURE_EXTENT)).toBe(true);
+      }
     });
-    it('does not produce CA-adjacent candidates in FIXTURE mode', () => {
-      expect(resolveCandidates('FIXTURE', SD).every(x => Math.abs(x.location.latitude - SD.latitude) > 5)).toBe(true);
+
+    it('returns NO Manhattan sites for out-of-bounds FIXTURE requests (LA/SF/SD rejected upstream)', () => {
+      expect(resolveCandidates('FIXTURE', false)).toEqual([]);
+    });
+
+    it('captured sites are NOT repositioned around arbitrary selections', () => {
+      // Unlike the removed generator, the captured sites NEVER move toward
+      // LA/SF/SD — their coordinates are the immutable fixture capture.
+      const c = resolveCandidates('FIXTURE', true);
+      for (const site of c) {
+        expect(Math.abs(site.location.latitude - LA.latitude)).toBeGreaterThan(5);
+        expect(Math.abs(site.location.latitude - SF.latitude)).toBeGreaterThan(2);
+        expect(Math.abs(site.location.latitude - SD.latitude)).toBeGreaterThan(7);
+      }
     });
   });
 
-  describe('LIVE mode', () => {
-    it('generates 3 candidates for Los Angeles', () => {
-      expect(resolveCandidates('LIVE', LA)).toHaveLength(3);
+  describe('LIVE mode — user-supplied sites only', () => {
+    it('generates NOTHING when the user has not supplied candidates', () => {
+      expect(resolveCandidates('LIVE', true)).toEqual([]);
+      expect(resolveCandidates('LIVE', false)).toEqual([]);
     });
-    it('candidates are near LA not Manhattan', () => {
-      const c = resolveCandidates('LIVE', LA);
-      expect(c.every(x => Math.abs(x.location.latitude - LA.latitude) < 0.1)).toBe(true);
-      expect(c.every(x => Math.abs(x.location.longitude - LA.longitude) < 0.1)).toBe(true);
-    });
-    it('no Manhattan coordinates in LA LIVE set', () => {
-      expect(resolveCandidates('LIVE', LA).some(x => Math.abs(x.location.latitude - MANHATTAN_LAT) < 0.01)).toBe(false);
-    });
-    it('LA candidates within FortyGuard AOI polygon', () => {
-      for (const c of resolveCandidates('LIVE', LA)) expect(isWithinBoundingAOI(c.location, LA)).toBe(true);
-    });
-    it('SF candidates within FortyGuard AOI polygon', () => {
-      for (const c of resolveCandidates('LIVE', SF)) expect(isWithinBoundingAOI(c.location, SF)).toBe(true);
-    });
-    it('SD candidates within FortyGuard AOI polygon', () => {
-      for (const c of resolveCandidates('LIVE', SD)) expect(isWithinBoundingAOI(c.location, SD)).toBe(true);
-    });
-    it('locationIds are SITE-N, SITE-CENTER, SITE-S', () => {
-      expect(resolveCandidates('LIVE', LA).map(x => x.locationId)).toEqual(['SITE-N', 'SITE-CENTER', 'SITE-S']);
-    });
-    it('SITE-N is north of center, SITE-S is south', () => {
-      const [n, ctr, s] = resolveCandidates('LIVE', LA);
-      expect(n.location.latitude).toBeGreaterThan(ctr.location.latitude);
-      expect(s.location.latitude).toBeLessThan(ctr.location.latitude);
-    });
-    it('SITE-CENTER is at exact user location', () => {
-      const found = resolveCandidates('LIVE', LA).find(x => x.locationId === 'SITE-CENTER');
-      expect(found).toBeTruthy();
-      if (!found) return;
-      expect(found.location.latitude).toBe(LA.latitude);
-      expect(found.location.longitude).toBe(LA.longitude);
-    });
-    it('all longitudes match center (N-S axis only)', () => {
-      expect(resolveCandidates('LIVE', SF).every(x => x.location.longitude === SF.longitude)).toBe(true);
-    });
-  });
 
-  describe('Explicit candidates override', () => {
-    it('LIVE mode respects explicit candidates', () => {
-      const c = resolveCandidates('LIVE', LA, EXPLICIT);
+    it('no synthetic locationIds can appear (SITE-W/SITE-CENTER/SITE-N removed)', () => {
+      const explicit: CandidateLocation[] = [
+        { locationId: 'SITE-01', name: 'Oakland Operations Yard', location: LA },
+      ];
+      const c = resolveCandidates('LIVE', false, explicit);
       expect(c).toHaveLength(1);
-      expect(c[0].locationId).toBe('CUSTOM-1');
+      expect(c[0].locationId).toBe('SITE-01');
+      expect(c.map((x) => x.locationId)).not.toContain('SITE-W');
+      expect(c.map((x) => x.locationId)).not.toContain('SITE-CENTER');
+      expect(c.map((x) => x.locationId)).not.toContain('SITE-N');
     });
-    it('FIXTURE mode respects explicit candidates', () => {
-      const c = resolveCandidates('FIXTURE', LA, EXPLICIT);
-      expect(c).toHaveLength(1);
-      expect(c[0].locationId).toBe('CUSTOM-1');
-    });
-  });
 
-  describe('Offset math', () => {
-    it('north offset is ~100m (0.25 x 400m, kept away from AOI edge)', () => {
-      const [n, ctr] = resolveCandidates('LIVE', LA);
-      const m = Math.abs(n.location.latitude - ctr.location.latitude) * 111320;
-      expect(m).toBeCloseTo(100, 0);
-    });
-    it('all 3 candidates have distinct coordinates', () => {
-      const coords = new Set(resolveCandidates('LIVE', LA).map(x => `${x.location.latitude},${x.location.longitude}`));
-      expect(coords.size).toBe(3);
+    it('explicit LIVE candidates are used verbatim (never moved/clamped)', () => {
+      const custom: CandidateLocation[] = [
+        { locationId: 'CUSTOM-1', name: '12th Street staging area', location: { latitude: 37.8012, longitude: -122.2713 } },
+      ];
+      const c = resolveCandidates('LIVE', true, custom);
+      expect(c[0].location.latitude).toBe(37.8012);
+      expect(c[0].location.longitude).toBe(-122.2713);
     });
   });
 });

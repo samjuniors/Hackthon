@@ -23,6 +23,8 @@ import {
   mapErrorToProductionDetails,
 } from '@/types/errors';
 import { isLocationCoveredByFixture } from '@/lib/location/search';
+import { isPointInAoi } from '@/lib/spatial/aoi';
+import { getFixtureExtentAoi } from '@/lib/fortyguard/fixture-metadata';
 import { z } from 'zod';
 import {
   buildEngineConstraints,
@@ -95,7 +97,17 @@ const DecisionRequestSchema = z.object({
   timezone: z.string().optional(),
 });
 
-const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
+/**
+ * The three ACTUAL sites captured in the Manhattan fixture dataset.
+ * Used in FIXTURE mode ONLY — the route rejects any FIXTURE request outside
+ * the Manhattan fixture bounds above, so these sites always correspond to the
+ * captured thermal cells (they sit inside the fixture's 3-tile strip).
+ *
+* PROVENANCE RULE (Section 8): geographic offsets are NOT operational sites.
+ * No synthetic offset-site generation exists anymore (removed).
+ * LIVE mode REQUIRES user-supplied candidate sites.
+ */
+const CAPTURED_DEMO_CANDIDATES: CandidateLocation[] = [
   {
     locationId: 'LOC-A',
     name: 'Battery Park Greenway (Waterfront)',
@@ -112,62 +124,6 @@ const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
     location: { latitude: 40.7120, longitude: -73.9880 },
   },
 ];
-
-/**
- * Generate geo-adjacent candidates around a user-selected location scaled to the analysis AOI.
- * Candidates stay well inside the requested AOI radius/half-side (at ~40% radius offset);
- * returned FortyGuard polygons remain authoritative and normalizePointObservation() validates containment.
- */
-function generateCandidatesForAOI(
-  center: LocationPoint,
-  halfSideMetres = 400,
-  isManhattan = false
-): CandidateLocation[] {
-  const METRES_PER_DEG_LAT = 111320;
-  const metresPerDegLon = METRES_PER_DEG_LAT * Math.cos((center.latitude * Math.PI) / 180);
-  const offset = Math.max(60, halfSideMetres * 0.40);
-
-  const dLat = offset / METRES_PER_DEG_LAT;
-  const dLon = offset / metresPerDegLon;
-
-  if (isManhattan) {
-    return [
-      {
-        locationId: 'LOC-A',
-        name: 'Battery Park Greenway (Waterfront)',
-        location: { latitude: center.latitude, longitude: Number((center.longitude - dLon).toFixed(6)) },
-      },
-      {
-        locationId: 'LOC-B',
-        name: 'City Hall Civic Center (Mid-Density)',
-        location: { latitude: center.latitude, longitude: Number(center.longitude.toFixed(6)) },
-      },
-      {
-        locationId: 'LOC-C',
-        name: 'Chinatown / Bowery Staging (Asphalt Canyon)',
-        location: { latitude: Number((center.latitude + dLat * 0.7).toFixed(6)), longitude: Number((center.longitude + dLon * 0.7).toFixed(6)) },
-      },
-    ];
-  }
-
-  return [
-    {
-      locationId: 'SITE-W',
-      name: 'Site West (Waterfront / Green Corridor)',
-      location: { latitude: center.latitude, longitude: Number((center.longitude - dLon).toFixed(6)) },
-    },
-    {
-      locationId: 'SITE-CENTER',
-      name: 'Site Center (Operating Base)',
-      location: { latitude: center.latitude, longitude: Number(center.longitude.toFixed(6)) },
-    },
-    {
-      locationId: 'SITE-N',
-      name: 'Site North (Urban Core)',
-      location: { latitude: Number((center.latitude + dLat).toFixed(6)), longitude: center.longitude },
-    },
-  ];
-}
 
 export async function POST(request: Request) {
   try {
@@ -292,19 +248,62 @@ export async function POST(request: Request) {
       | import('@/types/domain').PolygonAOI
       | undefined;
 
-    const aoiProps = (canonicalAoi?.features[0]?.properties ?? {}) as {
-      radiusMetres?: number;
-      halfSideMetres?: number;
-    };
-    const aoiHalfSide = Number(aoiProps.radiusMetres ?? aoiProps.halfSideMetres ?? 400);
-
+    // ── Candidate resolution (Section 8 — NO synthetic generation) ──
+    // FIXTURE: the three ACTUAL captured Manhattan sites (the route already
+    //   restricted FIXTURE to the fixture bounds, so these always represent
+    //   the captured data).
+    // LIVE: user-supplied sites are REQUIRED. Empty set → actionable error.
     const candidatesToEvaluate: CandidateLocation[] = reqCandidates && reqCandidates.length > 0
       ? reqCandidates.map((c) => ({
           locationId: c.locationId,
           name: c.name,
           location: { latitude: c.latitude, longitude: c.longitude },
         }))
-      : generateCandidatesForAOI({ latitude, longitude }, aoiHalfSide, isManhattan && mode === 'FIXTURE');
+      : mode === 'FIXTURE'
+        ? CAPTURED_DEMO_CANDIDATES
+        : [];
+
+    if (candidatesToEvaluate.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'CANDIDATES_REQUIRED',
+            message: 'No candidate sites provided. LIVE mode never fabricates candidate sites — add at least one candidate site inside the analysis area.',
+            recoverySuggestion: 'Use "+ Add site" to place candidate sites inside the analysis area (search an address or click the map), then Generate again.',
+            category: 'VALIDATION',
+          } as const,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate every candidate lies INSIDE the authoritative analysis extent
+    // (Section 9). Never silently move, clamp, or replace an out-of-area
+    // candidate.
+    //   - LIVE: the authoritative extent is the user's canonical AOI (what
+    //     FortyGuard is asked for).
+    //   - FIXTURE: the authoritative extent is the CAPTURED fixture strip
+    //     (the thermal data the demo actually contains).
+    const validationExtent = mode === 'FIXTURE' ? (getFixtureExtentAoi() ?? canonicalAoi) : canonicalAoi;
+    if (validationExtent) {
+      for (const cand of candidatesToEvaluate) {
+        if (!isPointInAoi(cand.location, validationExtent)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                code: 'CANDIDATE_OUTSIDE_AOI',
+                message: `Candidate site "${cand.name}" is outside the analysis area.`,
+                recoverySuggestion: 'Move the candidate inside the analysis area (or move/drag the AOI to cover it), then Generate again.',
+                category: 'VALIDATION',
+              } as const,
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
 
     const seenLocIds = new Set<string>();
     const seenCoords = new Set<string>();

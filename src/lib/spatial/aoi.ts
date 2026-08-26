@@ -19,6 +19,29 @@ import type { LocationPoint, PolygonAOI } from '@/types/domain';
 export type AnalysisAreaShape = 'polygon' | 'circle';
 
 /**
+ * AOI SIZE SEMANTICS (user-facing):
+ *   The user picks a SPAN — the visible size of the analysis area.
+ *     - polygon: the square's SIDE length (400 → 400m × 400m)
+ *     - circle: the DIAMETER (400 → 400m diameter circle)
+ *   Internally this converts to half-side / radius. Implementation terms
+ *   (halfSideMetres) are NEVER surfaced in the UI.
+ */
+export type AoiSizeMetres = 250 | 400 | 1000 | 2000 | 5000;
+
+/** User-selectable AOI span presets (side length / diameter in metres). */
+export const AOI_SPAN_PRESETS = [250, 400, 1000, 2000, 5000] as const;
+
+/** Convert a user-facing span to the polygon half-side (square: side / 2). */
+export function spanToHalfSide(spanMetres: number): number {
+  return spanMetres / 2;
+}
+
+/** Convert a user-facing span to the circle radius (diameter / 2). */
+export function spanToRadius(spanMetres: number): number {
+  return spanMetres / 2;
+}
+
+/**
  * FortyGuard documented AOI limit (square miles).
  * Source: FortyGuard API documentation — single heatmap request must not exceed 150 mi².
  * Enforced client-side; never silently shrunk.
@@ -99,6 +122,108 @@ export function createBoundingAOI(
 }
 
 /**
+ * Build the canonical Analysis AOI from a USER-FACING SPAN (Section 3).
+ *
+ * `spanMetres` is:
+ *   - For 'polygon' shape: the square's SIDE length (400 → 400m × 400m area).
+ *   - For 'circle' shape: the circle's DIAMETER (400 → 400m diameter circle).
+ *
+ * Converts internally to half-side / radius — implementation terminology is
+ * never exposed to the user.
+ */
+export function createAoiFromSpan(
+  center: LocationPoint,
+  spanMetres: number,
+  shape: AnalysisAreaShape = 'polygon',
+): PolygonAOI {
+  return createBoundingAOI(center, shape === 'circle' ? spanToRadius(spanMetres) : spanToHalfSide(spanMetres), shape);
+}
+
+/**
+ * Compute the geometric center of a canonical AOI (bbox center of its ring —
+ * exact for squares and 32-gon circle approximations).
+ */
+export function getAoiCenter(aoi: PolygonAOI): LocationPoint | null {
+  const feat = aoi.features[0];
+  const geom = feat?.geometry as { type: string; coordinates: number[][][] } | undefined;
+  if (!geom || !Array.isArray(geom.coordinates?.[0])) return null;
+  const ring = geom.coordinates[0];
+  if (ring.length < 3) return null;
+
+  let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  for (const [lng, lat] of ring) {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return { latitude: (minLat + maxLat) / 2, longitude: (minLng + maxLng) / 2 };
+}
+
+/**
+ * Move (translate) a canonical AOI to a new center WITHOUT distorting the
+ * shape (Section 4): every ring coordinate is shifted by the same
+ * (dLng, dLat) delta — a pure translation. Square stays square; circle stays
+ * circular; size is preserved to the coordinate digit.
+ *
+ * The returned geometry IS the canonical geometry — what you see on the map is
+ * exactly what gets sent to FortyGuard.
+ */
+export function moveAoiToCenter(
+  aoi: PolygonAOI,
+  newCenter: LocationPoint,
+): PolygonAOI {
+  const current = getAoiCenter(aoi);
+  if (!current) return aoi;
+
+  const dLng = newCenter.longitude - current.longitude;
+  const dLat = newCenter.latitude - current.latitude;
+
+  return {
+    type: 'FeatureCollection',
+    features: aoi.features.map((f) => {
+      const geom = f.geometry as { type: 'Polygon' | 'MultiPolygon'; coordinates: number[][][] };
+      return {
+        ...f,
+        properties: { ...f.properties, center: { latitude: newCenter.latitude, longitude: newCenter.longitude } },
+        geometry: {
+          ...geom,
+          coordinates: geom.coordinates.map((ring) =>
+            ring.map(([lng, lat]) => [lng + dLng, lat + dLat])
+          ),
+        },
+      };
+    }),
+  };
+}
+
+/**
+ * Point-in-AOI containment test (ray casting). Used to validate that a
+ * candidate site lies inside the analysis area BEFORE evaluation (Section 9).
+ * Never silently moves or clamps — callers surface the violation.
+ */
+export function isPointInAoi(
+  point: LocationPoint,
+  aoi: PolygonAOI,
+): boolean {
+  const feat = aoi.features[0];
+  const geom = feat?.geometry as { type: string; coordinates: number[][][] } | undefined;
+  if (!geom || !Array.isArray(geom.coordinates?.[0])) return false;
+  const ring = geom.coordinates[0];
+
+  const x = point.longitude;
+  const y = point.latitude;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = (yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/**
  * Estimate the planar area of an AOI in square miles.
  * For 'polygon' shape: (2 × halfSide)². For 'circle' shape: π × radius².
  * Used for the FortyGuard 150 mi² AOI limit validation only.
@@ -120,6 +245,16 @@ export function analyzeAoiAreaMi2(
     : (2 * sizeMetres) * (2 * sizeMetres);
 
   return { areaMi2: areaM2 * MI2_PER_M2, shape, sizeMetres };
+}
+
+/**
+ * User-facing span label for the AOI (Section 3).
+ *   polygon 400 → "400m × 400m" / 1000 → "1km × 1km"
+ *   circle  400 → "400m diameter" / 1000 → "1km diameter"
+ */
+export function aoiSpanLabel(spanMetres: number, shape: AnalysisAreaShape): string {
+  const size = spanMetres >= 1000 ? `${spanMetres / 1000}km` : `${spanMetres}m`;
+  return shape === 'circle' ? `${size} diameter` : `${size} × ${size}`;
 }
 
 /**

@@ -17,13 +17,28 @@ interface LocationSearchProps {
   mode: DataSourceMode;
   onSelectLocation: (loc: NamedLocation) => void;
   onSwitchToLive?: () => void;
+  /** Compact variant: search input + dropdown only (used for candidate-site search). */
+  compact?: boolean;
 }
+
+/** Human label for a geocode result type (camera semantics hint). */
+const RESULT_TYPE_LABEL: Record<string, string> = {
+  state: 'State',
+  region: 'Region',
+  city: 'City',
+  neighborhood: 'Neighborhood',
+  street: 'Street',
+  address: 'Address',
+  poi: 'Place',
+  zip: 'ZIP',
+};
 
 export function LocationSearch({
   selectedLocation,
   mode,
   onSelectLocation,
   onSwitchToLive,
+  compact = false,
 }: LocationSearchProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -118,6 +133,7 @@ export function LocationSearch({
 
   return (
     <div className="space-y-3">
+      {!compact && (
       <div className="flex items-center justify-between">
         <label htmlFor="location-search-input" className="text-xs font-bold text-text-primary flex items-center gap-1.5">
           <span>📍 Operating Location</span>
@@ -130,8 +146,10 @@ export function LocationSearch({
           {showCoords ? 'Hide Lat/Lon' : 'Coordinates'}
         </button>
       </div>
+      )}
 
       {/* Selected Location Card */}
+      {!compact && (
       <div className="bg-surface-deep p-3 rounded-xl border border-border space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -178,6 +196,7 @@ export function LocationSearch({
           </div>
         )}
       </div>
+      )}
 
       {/* Search Input Box with Relative Dropdown Wrapper */}
       <div className="relative" ref={wrapperRef}>
@@ -230,7 +249,7 @@ export function LocationSearch({
                   }
                 }
               }}
-              placeholder={isFixture ? 'Search Manhattan demo sites…' : 'Search metro area (e.g. Los Angeles)…'}
+              placeholder={compact ? 'Search a site or address…' : isFixture ? 'Search places, streets, addresses…' : 'Search any city, street, address, ZIP…'}
               className="w-full bg-surface-deep border border-border rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-dimmed focus:outline-none focus:border-accent-cyan font-sans transition-colors"
               data-testid="location-search-input"
             />
@@ -261,6 +280,7 @@ export function LocationSearch({
             title="Use current GPS location"
             className="px-3 text-xs border-border bg-surface-elevated text-text-secondary hover:text-accent-cyan hover:border-accent-cyan min-h-[36px] rounded-lg transition-colors"
             data-testid="gps-location-button"
+            style={compact ? { display: 'none' } : undefined}
           >
             {isLocating ? '📡 Locating…' : '📍 GPS'}
           </Button>
@@ -308,7 +328,18 @@ export function LocationSearch({
                     <div className="min-w-0">
                       <div className="font-bold truncate">{loc.name}</div>
                       <div className="text-[10px] text-text-muted truncate mt-0.5">
-                        {loc.description || loc.displayName}
+                        {loc.resultType && RESULT_TYPE_LABEL[loc.resultType] && (
+                          <span
+                            className="inline-block px-1 py-px rounded font-mono text-[8px] font-bold uppercase mr-1 border"
+                            style={{
+                              color: loc.resultType === 'state' || loc.resultType === 'region' ? '#e11d48' : 'var(--accent-cyan)',
+                              borderColor: loc.resultType === 'state' || loc.resultType === 'region' ? 'rgba(225,29,72,0.4)' : 'var(--accent-cyan)',
+                            }}
+                          >
+                            {RESULT_TYPE_LABEL[loc.resultType]}
+                          </span>
+                        )}
+                        {loc.city || loc.state || loc.country || loc.displayName}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -326,10 +357,11 @@ export function LocationSearch({
               })
             ) : (
               <div className="p-3.5 text-xs space-y-2 bg-surface-card" data-testid="location-search-empty-state">
-                <p className="text-text-primary font-bold">No matching supported metro area found.</p>
+                <p className="text-text-primary font-bold">No places found.</p>
                 <p className="text-[11px] text-text-muted leading-relaxed">
-                  Search supports curated US metropolitan operational hubs (NYC, LA, SF, San Diego, Chicago, Phoenix, Austin, Miami, etc.).
+                  Try a city (“Oakland, CA”), a street (“Broadway, Oakland”), an address (“1 Market St, San Francisco”), or a ZIP code.
                 </p>
+                {!compact && (
                 <div className="pt-1 flex items-center gap-2 flex-wrap">
                   <Button
                     type="button"
@@ -352,6 +384,7 @@ export function LocationSearch({
                     Enter Coordinates
                   </button>
                 </div>
+                )}
               </div>
             )}
           </div>
@@ -359,6 +392,7 @@ export function LocationSearch({
       </div>
 
       {/* Preset Location Chips */}
+      {!compact && (
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <label className="text-[11px] font-bold uppercase tracking-wider text-text-dimmed">
@@ -395,9 +429,10 @@ export function LocationSearch({
           })}
         </div>
       </div>
+      )}
 
       {/* Expandable Manual Coordinate Inputs */}
-      {showCoords && (
+      {showCoords && !compact && (
         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border">
           <div>
             <label htmlFor="manual-lat-input" className="text-[10px] font-mono text-text-muted block">Latitude</label>

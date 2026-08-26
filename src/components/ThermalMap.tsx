@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Map, Marker, Popup, type GeoJSONSource } from 'maplibre-gl';
+import { Map, Marker, Popup, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { LocationPoint, PolygonAOI, CandidateLocation } from '@/types/domain';
 import { useTheme } from '@/components/ThemeProvider';
@@ -11,12 +11,15 @@ import {
   getThermalLegendTicks,
   tempUnitSuffix,
 } from '@/lib/temperature';
-import type { MapLayerVisibility, AnalysisAreaShape, AoiHalfSideMetres } from '@/lib/user-preferences';
-import { Flame, MapPin, Maximize2, Map as MapIcon, ZoomIn, Sun, Moon } from 'lucide-react';
+import type { MapLayerVisibility, AnalysisAreaShape } from '@/lib/user-preferences';
+import { moveAoiToCenter, getAoiCenter } from '@/lib/spatial/aoi';
+import type { SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
+import { Flame, MapPin, Maximize2, Map as MapIcon, ZoomIn, Sun, Moon, Crosshair } from 'lucide-react';
 import type { FeatureCollection } from 'geojson';
 
 // Minimal inline type for MapLibre GeoJSON source data casts.
 type GeoJSONFC = FeatureCollection;
+
 
 interface ThermalMapProps {
   /** User-selected analysis center. Used for fallback fit + marker. */
@@ -25,22 +28,21 @@ interface ThermalMapProps {
   locationState?: string;
   locationName?: string;
   /**
-   * Geographical / State Boundary Polygon (e.g. California state polygon, New York state polygon).
-   * Visualized as Geographic Context.
+   * Geographic region boundary polygon (e.g. California state polygon).
+   * GEOGRAPHIC CONTEXT ONLY — never labeled as provider plan coverage.
    */
   regionBoundary?: PolygonAOI | null;
-  /**
-   * Inverted Mask Polygon covering outside the state region to dim/darken the exterior.
-   */
+  /** Inverted mask polygon dimming everything outside the selected region. */
   regionMask?: PolygonAOI | null;
+  /** Display name of the geographic region (e.g. "California"). */
+  regionDisplayName?: string;
   /**
    * Canonical Analysis AOI — the EXACT geometry sent to FortyGuard.
-   * Rendered as the visible AOI boundary on the map.
+   * Rendered as the visible AOI boundary on the map and DRAGGABLE as one
+   * object (Section 4): the moved geometry becomes canonical.
    */
   analysisAoi: PolygonAOI | null;
-  /**
-   * FortyGuard thermal field — REAL feature collection.
-   */
+  /** FortyGuard thermal field — genuine provider/captured cells only. */
   spatialField: PolygonAOI | null;
   selectedTileId?: string | number;
   candidates?: CandidateLocation[];
@@ -49,11 +51,18 @@ interface ThermalMapProps {
   /** Map layer toggles synchronized with user preferences */
   layerVisibility?: MapLayerVisibility;
   onToggleLayer?: (v: Partial<MapLayerVisibility>) => void;
-  /** AOI shape & dimension controls */
+  /** AOI shape (for the toolbar shape indicator) */
   areaShape?: AnalysisAreaShape;
-  aoiHalfSideMetres?: AoiHalfSideMetres;
-  onChangeAreaShape?: (shape: AnalysisAreaShape) => void;
-  onChangeAoiHalfSideMetres?: (halfSide: AoiHalfSideMetres) => void;
+  /** Fired when the user finishes dragging the AOI — new canonical center. */
+  onMoveAoi?: (center: LocationPoint) => void;
+  /** Add-candidate-site mode: map clicks place a candidate at the clicked point. */
+  addSiteMode?: boolean;
+  onAddSiteAt?: (lng: number, lat: number) => void;
+  onToggleAddSiteMode?: () => void;
+  /** Camera behavior requested by the page; applied when cameraNonce changes. */
+  cameraBehavior?: CameraBehavior;
+  /** Bump to re-apply cameraBehavior (also refits on location changes). */
+  cameraNonce?: number;
 }
 
 /** Empty FeatureCollection sentinel for source initialization / clear. */
@@ -81,59 +90,47 @@ function extractCoords(geometry: { type: string; coordinates: unknown }): [numbe
 }
 
 /**
- * Compute bounding box covering the regional boundary, AOI, thermal field, candidates,
- * and the selected location.
+ * Compute bounding box covering the AOI, thermal field, candidates, and the
+ * selected location (small geographic context around the AOI — Section 12).
  */
-function computeBounds(
+function computeAoiBounds(
   analysisAoi: PolygonAOI | null,
   spatialField: PolygonAOI | null,
   candidateLocs: LocationPoint[],
   targetLoc: LocationPoint,
-  regionBoundary?: PolygonAOI | null,
-  fitToRegionOnly = false,
 ): [[number, number], [number, number]] | null {
   const allPts: [number, number][] = [];
 
-  if (fitToRegionOnly && regionBoundary && regionBoundary.features.length > 0) {
-    for (const f of regionBoundary.features) {
-      allPts.push(...extractCoords(f.geometry as { type: string; coordinates: unknown }));
-    }
-  } else {
-    // Include target location point
-    if (Number.isFinite(targetLoc.longitude) && Number.isFinite(targetLoc.latitude)) {
-      allPts.push([targetLoc.longitude, targetLoc.latitude]);
-    }
+  if (Number.isFinite(targetLoc.longitude) && Number.isFinite(targetLoc.latitude)) {
+    allPts.push([targetLoc.longitude, targetLoc.latitude]);
+  }
 
-    // Canonical Analysis AOI vertices
-    if (analysisAoi && analysisAoi.features.length > 0) {
-      for (const f of analysisAoi.features) {
-        const pts = extractCoords(f.geometry as { type: string; coordinates: unknown });
-        for (const [lng, lat] of pts) {
-          if (Math.abs(lng - targetLoc.longitude) < 0.35 && Math.abs(lat - targetLoc.latitude) < 0.35) {
-            allPts.push([lng, lat]);
-          }
+  if (analysisAoi && analysisAoi.features.length > 0) {
+    for (const f of analysisAoi.features) {
+      const pts = extractCoords(f.geometry as { type: string; coordinates: unknown });
+      for (const [lng, lat] of pts) {
+        if (Math.abs(lng - targetLoc.longitude) < 0.35 && Math.abs(lat - targetLoc.latitude) < 0.35) {
+          allPts.push([lng, lat]);
         }
       }
     }
+  }
 
-    // FortyGuard thermal field vertices
-    if (spatialField && spatialField.features.length > 0) {
-      for (const f of spatialField.features) {
-        const pts = extractCoords(f.geometry as { type: string; coordinates: unknown });
-        for (const [lng, lat] of pts) {
-          if (Math.abs(lng - targetLoc.longitude) < 0.35 && Math.abs(lat - targetLoc.latitude) < 0.35) {
-            allPts.push([lng, lat]);
-          }
+  if (spatialField && spatialField.features.length > 0) {
+    for (const f of spatialField.features) {
+      const pts = extractCoords(f.geometry as { type: string; coordinates: unknown });
+      for (const [lng, lat] of pts) {
+        if (Math.abs(lng - targetLoc.longitude) < 0.35 && Math.abs(lat - targetLoc.latitude) < 0.35) {
+          allPts.push([lng, lat]);
         }
       }
     }
+  }
 
-    // Candidate coordinates near targetLoc
-    for (const { longitude, latitude } of candidateLocs) {
-      if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
-        if (Math.abs(longitude - targetLoc.longitude) < 0.35 && Math.abs(latitude - targetLoc.latitude) < 0.35) {
-          allPts.push([longitude, latitude]);
-        }
+  for (const { longitude, latitude } of candidateLocs) {
+    if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
+      if (Math.abs(longitude - targetLoc.longitude) < 0.35 && Math.abs(latitude - targetLoc.latitude) < 0.35) {
+        allPts.push([longitude, latitude]);
       }
     }
   }
@@ -149,10 +146,38 @@ function computeBounds(
     if (lat > maxLat) maxLat = lat;
   }
 
-  const padRatio = fitToRegionOnly ? 0.08 : 0.25;
+  const padRatio = 0.25;
   const padLng = Math.max(0.001, (maxLng - minLng) * padRatio);
   const padLat = Math.max(0.001, (maxLat - minLat) * padRatio);
 
+  return [
+    [minLng - padLng, minLat - padLat],
+    [maxLng + padLng, maxLat + padLat],
+  ];
+}
+
+/** Bounding box of the geographic region boundary (state-level fit). */
+function computeRegionBounds(
+  regionBoundary: PolygonAOI | null,
+): [[number, number], [number, number]] | null {
+  if (!regionBoundary || regionBoundary.features.length === 0) return null;
+  const allPts: [number, number][] = [];
+  for (const f of regionBoundary.features) {
+    allPts.push(...extractCoords(f.geometry as { type: string; coordinates: unknown }));
+  }
+  if (allPts.length === 0) return null;
+
+  let minLng = allPts[0][0], maxLng = allPts[0][0];
+  let minLat = allPts[0][1], maxLat = allPts[0][1];
+  for (const [lng, lat] of allPts) {
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  const padRatio = 0.08;
+  const padLng = Math.max(0.01, (maxLng - minLng) * padRatio);
+  const padLat = Math.max(0.01, (maxLat - minLat) * padRatio);
   return [
     [minLng - padLng, minLat - padLat],
     [maxLng + padLng, maxLat + padLat],
@@ -172,6 +197,7 @@ export function ThermalMap({
   locationName,
   regionBoundary,
   regionMask,
+  regionDisplayName,
   analysisAoi,
   spatialField,
   selectedTileId,
@@ -181,13 +207,29 @@ export function ThermalMap({
   layerVisibility = { thermal: true, candidates: true, labels: true, aoi: true },
   onToggleLayer,
   areaShape = 'polygon',
+  onMoveAoi,
+  addSiteMode = false,
+  onAddSiteAt,
+  onToggleAddSiteMode,
+  cameraBehavior = 'fit-aoi',
+  cameraNonce = 0,
 }: ThermalMapProps) {
   const { theme, toggleTheme } = useTheme();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const markersRef = useRef<Marker[]>([]);
+  const aoiHandleRef = useRef<Marker | null>(null);
+  const draggingAoiRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
   const [showRegionBoundary, setShowRegionBoundary] = useState(true);
+
+  // Refs for values read inside map event callbacks (avoid stale closures).
+  const addSiteModeRef = useRef(addSiteMode);
+  const onAddSiteAtRef = useRef(onAddSiteAt);
+  useEffect(() => {
+    addSiteModeRef.current = addSiteMode;
+    onAddSiteAtRef.current = onAddSiteAt;
+  }, [addSiteMode, onAddSiteAt]);
 
   // Function to apply theme styles to all map layers
   const applyThemeToMap = useCallback((isDark: boolean) => {
@@ -205,7 +247,7 @@ export function ThermalMap({
       }
       if (map.getLayer('region-mask-fill')) {
         map.setPaintProperty('region-mask-fill', 'fill-color', isDark ? '#000000' : '#0f172a');
-        map.setPaintProperty('region-mask-fill', 'fill-opacity', isDark ? 0.55 : 0.40);
+        map.setPaintProperty('region-mask-fill', 'fill-opacity', isDark ? 0.45 : 0.32);
       }
       if (map.getLayer('carto-labels-dark-layer')) {
         map.setLayoutProperty('carto-labels-dark-layer', 'visibility', isDark && (layerVisibility.labels !== false) ? 'visible' : 'none');
@@ -237,7 +279,7 @@ export function ThermalMap({
   }, [layerVisibility.labels]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // Mount effect — create the MapLibre Map instance once
+  // Mount effect — create the MapLibre Map instance ONCE
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -295,7 +337,6 @@ export function ThermalMap({
           },
         },
         layers: [
-          // 1. Basemap Base Tiles (Dark & Light)
           {
             id: 'carto-base-dark-layer',
             type: 'raster',
@@ -314,7 +355,6 @@ export function ThermalMap({
             paint: { 'raster-opacity': isDark ? 0 : 0.95 },
             layout: { visibility: isDark ? 'none' : 'visible' },
           },
-          // 2. Basemap Reference Labels
           {
             id: 'carto-labels-dark-layer',
             type: 'raster',
@@ -370,8 +410,9 @@ export function ThermalMap({
         });
       }
 
-      // 2. Register GeoJSON Layers in strict visual hierarchy
-      // Layer A: Outside-region Dimming Mask (spotlights only the selected state/territory)
+      // 2. Register GeoJSON Layers in strict visual hierarchy (Section 11):
+      //    basemap → region context → thermal cells → AOI boundary → (markers on top)
+      // Layer A: Outside-region Dimming Mask (GEOGRAPHIC context, not coverage)
       if (!map.getLayer('region-mask-fill')) {
         map.addLayer({
           id: 'region-mask-fill',
@@ -379,12 +420,12 @@ export function ThermalMap({
           source: 'region-mask',
           paint: {
             'fill-color': isDark ? '#000000' : '#0f172a',
-            'fill-opacity': isDark ? 0.48 : 0.35,
+            'fill-opacity': isDark ? 0.45 : 0.32,
           },
         });
       }
 
-      // Layer B: State/Region Interior Tint (Zero opacity — region boundary provides framing without dominating map)
+      // Layer B: Region interior — ZERO opacity fill (interior stays readable)
       if (!map.getLayer('region-boundary-fill')) {
         map.addLayer({
           id: 'region-boundary-fill',
@@ -423,7 +464,7 @@ export function ThermalMap({
         });
       }
 
-      // Layer D: Thermal Tile Border Framing (Crisp cell boundaries)
+      // Layer D: Thermal Tile Border Framing (crisp cell boundaries)
       if (!map.getLayer('thermal-tiles-outline')) {
         map.addLayer({
           id: 'thermal-tiles-outline',
@@ -437,7 +478,7 @@ export function ThermalMap({
         });
       }
 
-      // Layer E: Local Analysis AOI Interior Tint
+      // Layer E: Local Analysis AOI Interior Tint (very low opacity — never a solid overlay)
       if (!map.getLayer('aoi-fill')) {
         map.addLayer({
           id: 'aoi-fill',
@@ -450,7 +491,7 @@ export function ThermalMap({
         });
       }
 
-      // Layer F: State Region Boundary Outer Glow & Outline (Dotted Line)
+      // Layer F: Geographic Region Boundary glow + dotted outline (contextual)
       if (!map.getLayer('region-boundary-glow')) {
         map.addLayer({
           id: 'region-boundary-glow',
@@ -478,7 +519,7 @@ export function ThermalMap({
         });
       }
 
-      // Layer G: Canonical Analysis AOI Border Outline (Solid Crimson / Rose)
+      // Layer G: Canonical Analysis AOI outline (strong local focus)
       if (!map.getLayer('aoi-glow')) {
         map.addLayer({
           id: 'aoi-glow',
@@ -529,6 +570,24 @@ export function ThermalMap({
 
     map.on('load', initMapLayersAndSources);
 
+    // Add-candidate-site mode: map click places a candidate (Section 8).
+    const handleMapClick = (e: MapMouseEvent) => {
+      if (addSiteModeRef.current && onAddSiteAtRef.current) {
+        onAddSiteAtRef.current(e.lngLat.lng, e.lngLat.lat);
+      }
+    };
+    map.on('click', handleMapClick);
+
+    // Crosshair cursor while placing a candidate site.
+    const handleMouseEnter = () => {
+      if (addSiteModeRef.current) map.getCanvas().style.cursor = 'crosshair';
+    };
+    const handleMouseLeave = () => {
+      if (addSiteModeRef.current) map.getCanvas().style.cursor = 'crosshair';
+    };
+    map.on('mousemove', handleMouseEnter);
+    map.on('drag', handleMouseLeave);
+
     // Auto-resize observer on container
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
@@ -546,11 +605,25 @@ export function ThermalMap({
         try { m.remove(); } catch { /* safe */ }
       }
       markersRef.current = [];
+      if (aoiHandleRef.current) {
+        try { aoiHandleRef.current.remove(); } catch { /* safe */ }
+        aoiHandleRef.current = null;
+      }
       try { map.remove(); } catch { /* safe */ }
       mapRef.current = null;
       setMapReady(false);
     };
+     
   }, []);
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Cursor effect for add-site mode
+  // ─────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    map.getCanvas().style.cursor = addSiteMode ? 'crosshair' : '';
+  }, [mapReady, addSiteMode]);
 
   // ─────────────────────────────────────────────────────────────────────
   // Theme effect — instantaneous toggle
@@ -606,7 +679,7 @@ export function ThermalMap({
   }, [mapReady, layerVisibility, showRegionBoundary, theme]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // Data effect — reliably push GeoJSON sources into MapLibre
+  // Data effect — push GeoJSON sources into MapLibre via setData()
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -620,13 +693,11 @@ export function ThermalMap({
         const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
 
         if (maskSource) {
-          const maskData = (regionMask ?? EMPTY_FC) as unknown as GeoJSONFC;
-          maskSource.setData(maskData);
+          maskSource.setData((regionMask ?? EMPTY_FC) as unknown as GeoJSONFC);
         }
 
         if (regionSource) {
-          const regionData = (regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC;
-          regionSource.setData(regionData);
+          regionSource.setData((regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC);
         }
 
         if (thermalSource) {
@@ -636,9 +707,8 @@ export function ThermalMap({
           thermalSource.setData(thermalData);
         }
 
-        if (aoiSource) {
-          const aoiData = (analysisAoi ?? EMPTY_FC) as unknown as GeoJSONFC;
-          aoiSource.setData(aoiData);
+        if (aoiSource && !draggingAoiRef.current) {
+          aoiSource.setData((analysisAoi ?? EMPTY_FC) as unknown as GeoJSONFC);
         }
 
         map.triggerRepaint();
@@ -658,7 +728,90 @@ export function ThermalMap({
   }, [mapReady, spatialField, analysisAoi, regionBoundary, regionMask]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // Markers effect
+  // Draggable AOI handle (Section 4 — the AOI moves as ONE object)
+  // Pure translation: square stays square, circle stays circular, size is
+  // preserved. dragend → onMoveAoi(newCenter) → canonical geometry update.
+  // ─────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const center = analysisAoi ? getAoiCenter(analysisAoi) : null;
+    if (!center) {
+      if (aoiHandleRef.current) {
+        try { aoiHandleRef.current.remove(); } catch { /* safe */ }
+        aoiHandleRef.current = null;
+      }
+      return;
+    }
+
+    const isDark = theme === 'dark';
+
+    if (!aoiHandleRef.current) {
+      const el = document.createElement('div');
+      el.className = 'aoi-drag-handle';
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', 'Drag to move the analysis area');
+      el.style.cssText = [
+        'width:34px',
+        'height:34px',
+        'cursor:grab',
+        'display:flex',
+        'align-items:center',
+        'justify-content:center',
+        'border-radius:50%',
+        `background:${isDark ? 'rgba(15,23,42,0.85)' : 'rgba(255,255,255,0.92)'}`,
+        `border:2.5px solid #be123c`,
+        'box-shadow:0 2px 10px rgba(0,0,0,0.45), 0 0 0 6px rgba(190,18,60,0.15)',
+        'z-index:25',
+        'transition:box-shadow 0.15s ease',
+      ].join(';');
+      el.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#be123c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="3" x2="12" y2="21"></line>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <circle cx="12" cy="12" r="1.6" fill="#be123c" stroke="none"></circle>
+        </svg>
+      `;
+
+      const marker = new Marker({ element: el, draggable: true })
+        .setLngLat([center.longitude, center.latitude])
+        .addTo(map);
+
+      const onDrag = () => {
+        draggingAoiRef.current = true;
+        const lngLat = marker.getLngLat();
+        if (!analysisAoi) return;
+        // Live preview: translate the canonical geometry under the handle.
+        const preview = moveAoiToCenter(analysisAoi, {
+          latitude: lngLat.lat,
+          longitude: lngLat.lng,
+        });
+        const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
+        if (aoiSource) aoiSource.setData(preview as unknown as GeoJSONFC);
+        el.style.cursor = 'grabbing';
+      };
+
+      const onDragEnd = () => {
+        draggingAoiRef.current = false;
+        el.style.cursor = 'grab';
+        const lngLat = marker.getLngLat();
+        onMoveAoi?.({ latitude: lngLat.lat, longitude: lngLat.lng });
+      };
+
+      marker.on('drag', onDrag);
+      marker.on('dragend', onDragEnd);
+      aoiHandleRef.current = marker;
+    } else {
+      // External geometry update (size/shape/location change) — reposition handle
+      if (!draggingAoiRef.current) {
+        aoiHandleRef.current.setLngLat([center.longitude, center.latitude]);
+      }
+    }
+  }, [mapReady, analysisAoi, onMoveAoi, theme]);
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Markers effect (candidate sites + selected point)
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -764,52 +917,63 @@ export function ThermalMap({
   }, [mapReady, candidates, recommendedLocationId, location, theme, layerVisibility.candidates]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // FitBounds effects — frames the Canonical AOI, Thermal Field & Candidates
+  // Camera behavior (Section 12)
+  //   fit-aoi    → AOI + small geographic context (city/local selection)
+  //   fit-region → the geographic region boundary (explicit state selection)
+  //   fit-point  → zoom directly to the selected street/address point
   // ─────────────────────────────────────────────────────────────────────
   const fitToLocalAoi = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
-    const bounds = computeBounds(
+    const aoiCenter = analysisAoi ? getAoiCenter(analysisAoi) : null;
+    const focus = aoiCenter ?? location;
+    const bounds = computeAoiBounds(
       analysisAoi,
       spatialField,
       (candidates ?? []).map((c) => c.location),
-      location,
-      regionBoundary,
-      false,
+      focus,
     );
     if (bounds) {
       try {
-        map.fitBounds(bounds, { padding: 50, maxZoom: 15.5, duration: 600 });
+        map.fitBounds(bounds, { padding: 50, maxZoom: 16.5, duration: 700 });
       } catch {
-        map.flyTo({ center: [location.longitude, location.latitude], zoom: 14.5, duration: 600 });
+        map.flyTo({ center: [focus.longitude, focus.latitude], zoom: 15.5, duration: 700 });
       }
     } else {
-      map.flyTo({ center: [location.longitude, location.latitude], zoom: 14.5, duration: 600 });
+      map.flyTo({ center: [focus.longitude, focus.latitude], zoom: 15.5, duration: 700 });
     }
-  }, [analysisAoi, spatialField, candidates, location, regionBoundary]);
+  }, [analysisAoi, spatialField, candidates, location]);
 
-  const fitToStateRegion = useCallback(() => {
+  const fitToRegion = useCallback(() => {
     const map = mapRef.current;
     if (!map || !regionBoundary) return;
-    const bounds = computeBounds(
-      analysisAoi,
-      spatialField,
-      (candidates ?? []).map((c) => c.location),
-      location,
-      regionBoundary,
-      true,
-    );
+    const bounds = computeRegionBounds(regionBoundary);
     if (bounds) {
       try {
-        map.fitBounds(bounds, { padding: 40, maxZoom: 7.5, duration: 800 });
+        map.fitBounds(bounds, { padding: 40, maxZoom: 8, duration: 900 });
       } catch { /* safe */ }
     }
-  }, [analysisAoi, spatialField, candidates, location, regionBoundary]);
+  }, [regionBoundary]);
 
+  const fitToPoint = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo({ center: [location.longitude, location.latitude], zoom: 16.5, duration: 900 });
+  }, [location]);
+
+  // Apply the requested camera behavior whenever the page bumps the nonce
+  // (location selection / AOI move events).
   useEffect(() => {
     if (!mapReady) return;
-    fitToLocalAoi();
-  }, [mapReady, location.latitude, location.longitude, fitToLocalAoi]);
+    if (cameraBehavior === 'fit-region') {
+      fitToRegion();
+    } else if (cameraBehavior === 'fit-point') {
+      fitToPoint();
+    } else {
+      fitToLocalAoi();
+    }
+     
+  }, [mapReady, cameraNonce]);
 
   const legendTicks = getThermalLegendTicks(unit);
 
@@ -819,7 +983,9 @@ export function ThermalMap({
     }
   };
 
-  const stateDisplayName = locationState || (locationName?.includes(',') ? locationName.split(',')[1]?.trim() : '');
+  const stateDisplayName = regionDisplayName
+    || locationState
+    || (locationName?.includes(',') ? locationName.split(',')[1]?.trim() : '');
 
   return (
     <div
@@ -843,23 +1009,24 @@ export function ThermalMap({
           TOP PRODUCTION MAP CONTROLS TOOLBAR
           ───────────────────────────────────────────────────────────── */}
       <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 flex-wrap pointer-events-none z-20">
-        
-        {/* Left Side: Region Context & Analysis Area */}
+
+        {/* Left Side: Geographic Region + Analysis Area */}
         <div className="pointer-events-auto flex items-center gap-1.5 flex-wrap">
-          
-          {/* Geographical State/Region Context Toggle */}
+
+          {/* Geographic region context toggle (geographic context, not provider coverage) */}
           <button
             type="button"
+            data-testid="region-context-toggle"
             onClick={() => {
               setShowRegionBoundary((prev) => {
                 const next = !prev;
                 if (next) {
-                  fitToStateRegion();
+                  fitToRegion();
                 }
                 return next;
               });
             }}
-            title={`Toggle ${stateDisplayName || 'State'} Regional Context Boundary`}
+            title={`Toggle ${stateDisplayName || 'Region'} geographic boundary (geographic context)`}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md shadow-lg border transition-all cursor-pointer ${
               showRegionBoundary
                 ? 'bg-rose-500/25 border-rose-500 text-rose-300 shadow-rose-950/40 ring-1 ring-rose-500/50'
@@ -867,7 +1034,7 @@ export function ThermalMap({
             }`}
           >
             <MapIcon className="size-3.5 text-rose-400" />
-            <span>{stateDisplayName ? `${stateDisplayName} Region` : 'Region Context'}</span>
+            <span>{stateDisplayName ? `${stateDisplayName} (Geographic Region)` : 'Geographic Region'}</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${
               showRegionBoundary ? 'bg-rose-500/40 text-rose-100' : 'bg-surface-elevated text-text-dimmed'
             }`}>
@@ -875,9 +1042,10 @@ export function ThermalMap({
             </span>
           </button>
 
-          {/* Canonical Analysis Area Toggle */}
+          {/* Analysis Area toggle */}
           <button
             type="button"
+            data-testid="aoi-layer-toggle"
             onClick={() => toggleLayer('aoi')}
             title="Toggle Analysis Area Boundary"
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md shadow-lg border transition-all cursor-pointer ${
@@ -905,11 +1073,31 @@ export function ThermalMap({
           </button>
         </div>
 
-        {/* Right Side: Heatmap, Sites, Theme Toggle, State View, Fit Local */}
+        {/* Right Side: Add-site mode, Heatmap, Sites, Theme, Region View, Fit AOI */}
         <div className="pointer-events-auto flex items-center gap-1.5 bg-surface-card/95 backdrop-blur-md p-1 rounded-xl border border-border shadow-lg">
+
+          {/* Add candidate site mode (LIVE workflow — Section 8) */}
+          {onToggleAddSiteMode && (
+            <button
+              type="button"
+              data-testid="add-site-mode-btn"
+              onClick={onToggleAddSiteMode}
+              title="Add candidate site: click the map to place a site inside the analysis area"
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                addSiteMode
+                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 animate-pulse'
+                  : 'text-text-muted hover:text-text-primary opacity-70 border border-transparent'
+              }`}
+            >
+              <Crosshair className="size-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">+ Site</span>
+            </button>
+          )}
+
           {/* Thermal Heatmap layer toggle */}
           <button
             type="button"
+            data-testid="thermal-layer-toggle"
             onClick={() => toggleLayer('thermal')}
             title="Toggle FortyGuard Thermal Heatmap Layer"
             className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -925,6 +1113,7 @@ export function ThermalMap({
           {/* Sites / Candidates layer toggle */}
           <button
             type="button"
+            data-testid="sites-layer-toggle"
             onClick={() => toggleLayer('candidates')}
             title="Toggle Candidate & Recommended Sites"
             className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -946,19 +1135,19 @@ export function ThermalMap({
             title={theme === 'dark' ? 'Switch map to Light Mode' : 'Switch map to Dark Mode'}
             className="p-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-all flex items-center cursor-pointer"
           >
-            {theme === 'dark' ? <Sun className="size-3.5 text-amber-400" /> : <Moon className="size-3.5 text-indigo-400" />}
+            {theme === 'dark' ? <Sun className="size-3.5 text-amber-400" /> : <Moon className="size-3.5 text-slate-500" />}
           </button>
 
-          {/* Zoom to Region View Button */}
+          {/* Zoom to Geographic Region View Button */}
           {regionBoundary && (
             <button
               type="button"
-              onClick={fitToStateRegion}
-              title={`Zoom to Entire ${stateDisplayName || 'State'} Region`}
+              onClick={fitToRegion}
+              title={`Zoom to the entire ${stateDisplayName || 'selected'} geographic region`}
               className="px-2.5 py-1.5 rounded-lg text-xs text-rose-300 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 transition-all flex items-center gap-1 cursor-pointer font-semibold"
             >
               <ZoomIn className="size-3.5 text-rose-400" />
-              <span className="hidden sm:inline text-[11px]">State View</span>
+              <span className="hidden sm:inline text-[11px]">Region View</span>
             </button>
           )}
 
@@ -974,6 +1163,21 @@ export function ThermalMap({
         </div>
 
       </div>
+
+      {/* Add-site mode hint banner */}
+      {addSiteMode && (
+        <div
+          className="absolute top-16 left-1/2 -translate-x-1/2 px-3.5 py-2 rounded-lg text-xs font-semibold z-20 pointer-events-none"
+          style={{
+            background: 'rgba(5,150,105,0.92)',
+            color: '#ffffff',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+          }}
+          data-testid="add-site-mode-hint"
+        >
+          Click the map to place a candidate site · click “+ Site” to exit
+        </div>
+      )}
 
       {/* Thermal legend — bottom-left overlay */}
       <div
@@ -1015,7 +1219,7 @@ export function ThermalMap({
       </div>
 
       {/* Empty state overlay (shown only when no spatialField AND no AOI) */}
-      {!spatialField && !analysisAoi && !location && (
+      {!spatialField && !analysisAoi && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
           <div className="bg-surface-card/95 backdrop-blur-md px-5 py-3 rounded-xl text-center border border-border shadow-lg">
             <p className="text-text-muted text-sm">

@@ -27,7 +27,24 @@ import hourlyFixtureData from '../../../tests/fixtures/heatmap_hourly_fixture.js
 // "display AOI" vs "API AOI" split; one PolygonAOI per analysis.
 import { createBoundingAOI } from '../spatial/aoi';
 import type { AnalysisAreaShape } from '../spatial/aoi';
-import { generateThermalGridForAOI } from '../spatial/thermal-grid';
+
+/**
+ * GENUINE provider data only (provenance rule):
+ *   - FIXTURE mode returns EXACTLY the captured FortyGuard fixture cells.
+ *   - LIVE mode returns EXACTLY the GeoJSON cells FortyGuard returned.
+ * No synthetic/subdivided/interpolated temperatures are ever produced here.
+ * The generator module (thermal-grid.ts) was removed from the codebase.
+ */
+
+/**
+ * Resolution (granularity) the captured fixture was ACTUALLY recorded at.
+ * Used by the UI in DEMO mode so the resolution label always reflects the
+ * fixture's real granularity — never a user-selected value the fixture does
+ * not contain.
+ */
+export const FIXTURE_GRANULARITY = 60 as const;
+
+export { hourlyFixtureGranularity } from './fixture-metadata';
 
 export {
   createBoundingAOI,
@@ -153,6 +170,11 @@ function findFeatureCollection(node: unknown, depth = 0): PolygonAOI | null {
 
 /** In-memory cache for FortyGuard requests during the session */
 const sessionCache = new Map<string, unknown>();
+
+/** Extract the UTC HH:MM hour string from an ISO timestamp. */
+function hourStrFor(timestamp: string): string {
+  return `${String(new Date(timestamp).getUTCHours()).padStart(2, '0')}:00`;
+}
 
 /**
  * Deterministic cache identity for a FortyGuard heatmap request.
@@ -558,13 +580,13 @@ export class FortyGuardAdapter {
     }
 
     // FIXTURE MODE — sequential lookup from verified in-memory fixture.
-    for (let i = 0; i < timestamps.length; i++) {
-      const timestamp = timestamps[i];
-      const d = new Date(timestamp);
-      const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
-
+    // Returns EXACTLY the captured FortyGuard cells for each hour. The
+    // requested AOI geometry is still sent on the wire (canonical contract)
+    // but the rendered thermal field is the genuine captured cells — never
+    // subdivided, never re-temperatured, never synthesized.
+    for (const timestamp of timestamps) {
       const snapshot = hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp === timestamp)
-        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStr);
+        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStrFor(timestamp));
 
       if (!snapshot) {
         throw new IncompleteTemporalCoverageError(
@@ -572,25 +594,7 @@ export class FortyGuardAdapter {
         );
       }
 
-      if (baseAoi) {
-        const props = (baseAoi.features[0]?.properties ?? {}) as {
-          shape?: AnalysisAreaShape;
-          halfSideMetres?: number;
-          radiusMetres?: number;
-        };
-        const shape = props.shape ?? options?.analysisAreaShape ?? 'polygon';
-        const halfSide = Number(props.radiusMetres ?? props.halfSideMetres ?? 400);
-        const baseTemp = (snapshot.aoi as PolygonAOI).features[0]?.properties?.average_temperature ?? 28.5;
-
-        const denseGrid = generateThermalGridForAOI(location, halfSide, shape, {
-          granularity,
-          baseTemperature: baseTemp,
-          hourIndex: i,
-        });
-        results.set(timestamp, denseGrid);
-      } else {
-        results.set(timestamp, snapshot.aoi as PolygonAOI);
-      }
+      results.set(timestamp, snapshot.aoi as PolygonAOI);
     }
 
     return results;

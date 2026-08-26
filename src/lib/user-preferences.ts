@@ -31,23 +31,26 @@ import {
 export type AnalysisResolution = 60 | 80 | 100;
 export type AnalysisAreaShape = 'polygon' | 'circle';
 export type { AnalysisTimeMode } from '@/lib/temporal/analysis-window';
+export type { AoiSizeMetres } from '@/lib/spatial/aoi';
 
 /**
- * Preset AOI half-side sizes (in metres). The user picks one to define the
- * size of the canonical analysis area. Half-side is:
- *   - For 'polygon' shape: half the side length of the square AOI.
- *   - For 'circle' shape: the radius of the circle.
+ * Preset AOI SPAN sizes (user-facing metres — Section 3):
+ *   - 'polygon' shape: the square's SIDE length (250 → 250m × 250m)
+ *   - 'circle' shape: the circle's DIAMETER (250 → 250m diameter)
+ *
+ * Implementation detail (half-side/radius) is converted in
+ * src/lib/spatial/aoi.ts createAoiFromSpan() and NEVER surfaced in the UI.
  *
  * All presets are well within the FortyGuard 150 mi² AOI limit (largest
- * preset 5000m polygon = ~38.6 mi², 5000m circle = ~30 mi²). The 150 mi²
+ * preset 5000m polygon = ~9.7 mi², 5000m circle = ~7.6 mi²). The 150 mi²
  * limit is still validated client-side in page.tsx via isAoiWithinLimit()
  * so a future custom-draw feature cannot silently send an oversized AOI.
  */
-export const AOI_HALF_SIDE_PRESETS = [250, 400, 1000, 2000, 5000] as const;
-export type AoiHalfSideMetres = (typeof AOI_HALF_SIDE_PRESETS)[number];
+export const AOI_SPAN_PRESETS_LOCAL = [250, 400, 1000, 2000, 5000] as const;
+export type AoiSpanMetres = (typeof AOI_SPAN_PRESETS_LOCAL)[number];
 
-export function isValidAoiHalfSide(v: unknown): v is AoiHalfSideMetres {
-  return typeof v === 'number' && (AOI_HALF_SIDE_PRESETS as readonly number[]).includes(v);
+export function isValidAoiSpan(v: unknown): v is AoiSpanMetres {
+  return typeof v === 'number' && (AOI_SPAN_PRESETS_LOCAL as readonly number[]).includes(v);
 }
 
 export interface MapLayerVisibility {
@@ -62,7 +65,8 @@ export interface UserPreferences {
   preferredAIProvider: PreferredAIProvider;
   analysisResolution: AnalysisResolution;
   analysisAreaShape: AnalysisAreaShape;
-  analysisAoiHalfSideMetres: AoiHalfSideMetres;
+  /** User-facing AOI span (square side / circle diameter) in metres. */
+  analysisAoiSpanMetres: AoiSpanMetres;
   /** Time mode persisted per Section 5 (Single Hour / Range of Hours / Single Day). */
   analysisTimeMode: AnalysisTimeMode;
   /** For Single Day mode — the operating-window length the engine finds (2h/3h/4h). */
@@ -75,7 +79,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   preferredAIProvider: 'auto',
   analysisResolution: 60,
   analysisAreaShape: 'polygon',
-  analysisAoiHalfSideMetres: 400,
+  analysisAoiSpanMetres: 400,
   analysisTimeMode: DEFAULT_TIME_MODE,
   analysisDayWindowHours: DEFAULT_DAY_WINDOW_HOURS,
   mapLayerVisibility: {
@@ -187,9 +191,14 @@ export function loadUserPreferences(): UserPreferences {
       analysisAreaShape: isValidAreaShape(p.analysisAreaShape)
         ? p.analysisAreaShape
         : DEFAULT_USER_PREFERENCES.analysisAreaShape,
-      analysisAoiHalfSideMetres: isValidAoiHalfSide(p.analysisAoiHalfSideMetres)
-        ? p.analysisAoiHalfSideMetres
-        : DEFAULT_USER_PREFERENCES.analysisAoiHalfSideMetres,
+      // Migration: accept the new span field; fall back to the legacy
+      // half-side field value (same preset set — value is re-interpreted as
+      // the user-facing span), then the default.
+      analysisAoiSpanMetres: isValidAoiSpan(p.analysisAoiSpanMetres)
+        ? p.analysisAoiSpanMetres
+        : isValidAoiSpan((p as Record<string, unknown>).analysisAoiHalfSideMetres)
+          ? ((p as Record<string, unknown>).analysisAoiHalfSideMetres as AoiSpanMetres)
+          : DEFAULT_USER_PREFERENCES.analysisAoiSpanMetres,
       analysisTimeMode: isValidTimeMode(p.analysisTimeMode)
         ? p.analysisTimeMode
         : DEFAULT_USER_PREFERENCES.analysisTimeMode,
@@ -259,7 +268,7 @@ export interface UserPreferencesSetters {
   setPreferredAIProvider: (p: PreferredAIProvider) => void;
   setAnalysisResolution: (r: AnalysisResolution) => void;
   setAnalysisAreaShape: (s: AnalysisAreaShape) => void;
-  setAnalysisAoiHalfSideMetres: (m: AoiHalfSideMetres) => void;
+  setAnalysisAoiSpanMetres: (m: AoiSpanMetres) => void;
   setAnalysisTimeMode: (m: AnalysisTimeMode) => void;
   setAnalysisDayWindowHours: (h: 2 | 3 | 4) => void;
   setMapLayerVisibility: (v: Partial<MapLayerVisibility>) => void;
@@ -294,8 +303,8 @@ export function useUserPreferences(): [UserPreferences, UserPreferencesSetters] 
     commit({ ...getSnapshot(), analysisAreaShape: s });
   }, []);
 
-  const setAnalysisAoiHalfSideMetres = useCallback((m: AoiHalfSideMetres) => {
-    commit({ ...getSnapshot(), analysisAoiHalfSideMetres: m });
+  const setAnalysisAoiSpanMetres = useCallback((m: AoiSpanMetres) => {
+    commit({ ...getSnapshot(), analysisAoiSpanMetres: m });
   }, []);
 
   const setAnalysisTimeMode = useCallback((m: AnalysisTimeMode) => {
@@ -325,7 +334,7 @@ export function useUserPreferences(): [UserPreferences, UserPreferencesSetters] 
       setPreferredAIProvider,
       setAnalysisResolution,
       setAnalysisAreaShape,
-      setAnalysisAoiHalfSideMetres,
+      setAnalysisAoiSpanMetres,
       setAnalysisTimeMode,
       setAnalysisDayWindowHours,
       setMapLayerVisibility,

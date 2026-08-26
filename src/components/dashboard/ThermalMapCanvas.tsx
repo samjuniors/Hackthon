@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import type { NamedLocation, ProviderStatus, FortyGuardHealthResponse, AIHealthResponse } from '@/types/provider';
-import type { CandidateLocation, JointDecisionResult } from '@/types/domain';
+import type { CandidateLocation, JointDecisionResult, LocationPoint } from '@/types/domain';
 import type { AnalysisTemporalInput } from '@/lib/temporal/analysis-window';
 import { formatTemporalForHeader, FIXTURE_TEMPORAL_METADATA } from '@/lib/temporal/analysis-window';
 
@@ -11,9 +11,9 @@ interface ThermalMapCanvasProps {
   locationName: string;
   /** Optional subtitle timestamp for the base observation snapshot. */
   baseTimestamp?: string;
-  /** Number of FortyGuard thermal cells rendered (DEMO = 3, LIVE = whatever returns). */
+  /** Number of FortyGuard thermal cells rendered (genuine provider/captured cells only). */
   thermalCellCount?: number;
-  /** Resolution in metres (60 / 80 / 100). */
+  /** Thermal-cell resolution in metres (60/80/100) — provider granularity, NOT zoom. */
   resolution?: number;
   /** Data source mode for the provenance badge (LIVE · FortyGuard / DEMO · Captured FortyGuard). */
   mode?: 'LIVE' | 'FIXTURE';
@@ -24,7 +24,9 @@ interface ThermalMapCanvasProps {
   recommendedLocationId?: string;
   /** The selected analysis location object (used for the Selected Analysis Area line). */
   selectedLocation?: NamedLocation;
-  /** Explicit WHEN inputs (Section 4) — rendered in the header (Section 8). */
+  /** Current AOI center (movable — the displayed coordinates track it, Section 4). */
+  analysisCenter?: LocationPoint;
+  /** Explicit WHEN inputs — rendered in the header. */
   temporalInput?: AnalysisTemporalInput;
   /** IANA timezone of the selected location (for formatting + provenance). */
   timezone?: string;
@@ -55,6 +57,7 @@ export function ThermalMapCanvas({
   rankedCandidates,
   recommendedLocationId,
   selectedLocation,
+  analysisCenter,
   temporalInput,
   timezone,
   children,
@@ -101,8 +104,11 @@ export function ThermalMapCanvas({
               </span>
             )}
             {typeof resolution === 'number' && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono border border-border bg-surface-elevated text-text-muted">
-                {resolution}m res
+              <span
+                className="px-2 py-0.5 rounded text-[10px] font-mono border border-border bg-surface-elevated text-text-muted"
+                title="FortyGuard thermal-cell granularity (not map zoom)"
+              >
+                THERMAL CELL {resolution}m × {resolution}m
               </span>
             )}
             {/* Provenance indicator — LIVE · FortyGuard / DEMO · Captured FortyGuard */}
@@ -131,7 +137,7 @@ export function ThermalMapCanvas({
           {typeof resolution === 'number' && (
             <>
               {' · '}
-              <span className="text-text-muted">{resolution}m resolution</span>
+              <span className="text-text-muted">{resolution}m thermal-cell granularity{mode === 'FIXTURE' ? ' (captured fixture)' : ''}</span>
             </>
           )}
         </div>
@@ -178,9 +184,10 @@ export function ThermalMapCanvas({
               <div className="text-sm font-bold text-text-primary leading-tight">
                 {selectedLocation?.name ?? locationName.split(' (')[0]}
               </div>
-              {selectedLocation && (
+              {(analysisCenter ?? (selectedLocation ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude } : null)) && (
                 <div className="text-[10px] font-mono text-text-muted mt-0.5" data-testid="map-canvas-selected-coords">
-                  {selectedLocation.latitude.toFixed(4)}°, {selectedLocation.longitude.toFixed(4)}°
+                  {(analysisCenter ?? { latitude: selectedLocation!.latitude, longitude: selectedLocation!.longitude }).latitude.toFixed(4)}°, {(analysisCenter ?? { latitude: selectedLocation!.latitude, longitude: selectedLocation!.longitude }).longitude.toFixed(4)}°
+                  <span className="text-text-dimmed font-sans"> · AOI center</span>
                 </div>
               )}
             </div>

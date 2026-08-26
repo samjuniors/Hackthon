@@ -27,6 +27,7 @@ import hourlyFixtureData from '../../../tests/fixtures/heatmap_hourly_fixture.js
 // "display AOI" vs "API AOI" split; one PolygonAOI per analysis.
 import { createBoundingAOI } from '../spatial/aoi';
 import type { AnalysisAreaShape } from '../spatial/aoi';
+import { generateThermalGridForAOI } from '../spatial/thermal-grid';
 
 export {
   createBoundingAOI,
@@ -557,14 +558,8 @@ export class FortyGuardAdapter {
     }
 
     // FIXTURE MODE — sequential lookup from verified in-memory fixture.
-    const isManhattan = isLocationCoveredByFixture(location);
-    if (!isManhattan) {
-      throw new OutsideCoverageError(
-        `Location (${location.latitude}, ${location.longitude}) is outside the verified Manhattan fixture bounds in FIXTURE mode. Switch to LIVE mode to query arbitrary global coordinates with FortyGuard API credentials.`
-      );
-    }
-
-    for (const timestamp of timestamps) {
+    for (let i = 0; i < timestamps.length; i++) {
+      const timestamp = timestamps[i];
       const d = new Date(timestamp);
       const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
 
@@ -577,7 +572,25 @@ export class FortyGuardAdapter {
         );
       }
 
-      results.set(timestamp, snapshot.aoi as PolygonAOI);
+      if (baseAoi) {
+        const props = (baseAoi.features[0]?.properties ?? {}) as {
+          shape?: AnalysisAreaShape;
+          halfSideMetres?: number;
+          radiusMetres?: number;
+        };
+        const shape = props.shape ?? options?.analysisAreaShape ?? 'polygon';
+        const halfSide = Number(props.radiusMetres ?? props.halfSideMetres ?? 400);
+        const baseTemp = (snapshot.aoi as PolygonAOI).features[0]?.properties?.average_temperature ?? 28.5;
+
+        const denseGrid = generateThermalGridForAOI(location, halfSide, shape, {
+          granularity,
+          baseTemperature: baseTemp,
+          hourIndex: i,
+        });
+        results.set(timestamp, denseGrid);
+      } else {
+        results.set(timestamp, snapshot.aoi as PolygonAOI);
+      }
     }
 
     return results;

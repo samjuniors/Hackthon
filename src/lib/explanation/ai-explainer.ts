@@ -95,8 +95,11 @@ export async function explainDecision(
     return generateDeterministicExplanation(input, validation.reason || 'MOCK_VALIDATION_FAILED');
   }
 
-  if (options?.forceDeterministic) {
-    return generateDeterministicExplanation(input, 'FORCED_DETERMINISTIC');
+  if (options?.forceDeterministic || options?.apiKey === '' || options?.apiKey === 'none') {
+    return generateDeterministicExplanation(
+      input,
+      'LLM_API_KEY_NOT_CONFIGURED: Defaulting to deterministic rule-based explanation.'
+    );
   }
 
   const preferred = options?.preferredProvider ?? 'auto';

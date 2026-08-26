@@ -518,6 +518,13 @@ export default function WorkspacePage() {
     }
   }, [prefs.preferredAIProvider]);
 
+  // React to AOI shape, size, or resolution changes
+  useEffect(() => {
+    if (!didMountRef.current) return;
+    const loc = selectedLocationRef.current;
+    runDecisionPipeline(loc, temporalInputRef.current, loc.timezone || 'UTC', modeRef.current);
+  }, [prefs.analysisAreaShape, prefs.analysisAoiHalfSideMetres, prefs.analysisResolution, runDecisionPipeline]);
+
   // ───────────────────────────────────────────────────────────────────────────
   // Derived values
   // ───────────────────────────────────────────────────────────────────────────

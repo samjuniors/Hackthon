@@ -143,6 +143,7 @@ export function ControlRail({
             {(['polygon', 'circle'] as const).map((shape) => (
               <button
                 key={shape}
+                data-testid={`aoi-shape-${shape}`}
                 onClick={() => setters.setAnalysisAreaShape(shape)}
                 className={`min-h-[40px] rounded-lg text-xs font-semibold capitalize transition-all border ${
                   prefs.analysisAreaShape === shape
@@ -163,6 +164,7 @@ export function ControlRail({
               return (
                 <button
                   key={size}
+                  data-testid={`aoi-size-${size}`}
                   onClick={() => setters.setAnalysisAoiHalfSideMetres(size)}
                   className={`min-h-[36px] rounded-md text-[10px] font-mono font-bold transition-all border ${
                     active
@@ -175,6 +177,14 @@ export function ControlRail({
                 </button>
               );
             })}
+          </div>
+          <div className="mt-1.5 px-2 py-1 rounded bg-surface-deep/60 border border-border/50 text-[10px] font-mono text-text-muted flex items-center justify-between">
+            <span>Spatial Extent:</span>
+            <span className="text-accent-cyan font-bold">
+              {prefs.analysisAreaShape === 'circle'
+                ? `${prefs.analysisAoiHalfSideMetres >= 1000 ? `${prefs.analysisAoiHalfSideMetres / 1000}km` : `${prefs.analysisAoiHalfSideMetres}m`} radius`
+                : `${(prefs.analysisAoiHalfSideMetres * 2) >= 1000 ? `${(prefs.analysisAoiHalfSideMetres * 2) / 1000}km` : `${prefs.analysisAoiHalfSideMetres * 2}m`} × ${(prefs.analysisAoiHalfSideMetres * 2) >= 1000 ? `${(prefs.analysisAoiHalfSideMetres * 2) / 1000}km` : `${prefs.analysisAoiHalfSideMetres * 2}m`}`}
+            </span>
           </div>
         </div>
 

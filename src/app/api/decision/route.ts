@@ -114,28 +114,57 @@ const DEFAULT_CANDIDATE_LOCATIONS: CandidateLocation[] = [
 ];
 
 /**
- * Generate geo-adjacent candidates around a user-selected location for LIVE analysis.
- * Candidates stay well inside the requested 400m AOI; returned FortyGuard polygons remain
- * authoritative and normalizePointObservation() still rejects any point outside coverage.
+ * Generate geo-adjacent candidates around a user-selected location scaled to the analysis AOI.
+ * Candidates stay well inside the requested AOI radius/half-side (at ~40% radius offset);
+ * returned FortyGuard polygons remain authoritative and normalizePointObservation() validates containment.
  */
-function generateLiveCandidates(center: LocationPoint): CandidateLocation[] {
-  const dLat = 400 / 111320; // ~0.0036° per 400m
-  const candidateOffset = dLat * 0.25; // ~100m from center; avoids AOI-edge clipping
+function generateCandidatesForAOI(
+  center: LocationPoint,
+  halfSideMetres = 400,
+  isManhattan = false
+): CandidateLocation[] {
+  const METRES_PER_DEG_LAT = 111320;
+  const metresPerDegLon = METRES_PER_DEG_LAT * Math.cos((center.latitude * Math.PI) / 180);
+  const offset = Math.max(60, halfSideMetres * 0.40);
+
+  const dLat = offset / METRES_PER_DEG_LAT;
+  const dLon = offset / metresPerDegLon;
+
+  if (isManhattan) {
+    return [
+      {
+        locationId: 'LOC-A',
+        name: 'Battery Park Greenway (Waterfront)',
+        location: { latitude: center.latitude, longitude: Number((center.longitude - dLon).toFixed(6)) },
+      },
+      {
+        locationId: 'LOC-B',
+        name: 'City Hall Civic Center (Mid-Density)',
+        location: { latitude: center.latitude, longitude: Number(center.longitude.toFixed(6)) },
+      },
+      {
+        locationId: 'LOC-C',
+        name: 'Chinatown / Bowery Staging (Asphalt Canyon)',
+        location: { latitude: Number((center.latitude + dLat * 0.7).toFixed(6)), longitude: Number((center.longitude + dLon * 0.7).toFixed(6)) },
+      },
+    ];
+  }
+
   return [
     {
-      locationId: 'SITE-N',
-      name: 'Site North (~100m north)',
-      location: { latitude: center.latitude + candidateOffset, longitude: center.longitude },
+      locationId: 'SITE-W',
+      name: 'Site West (Waterfront / Green Corridor)',
+      location: { latitude: center.latitude, longitude: Number((center.longitude - dLon).toFixed(6)) },
     },
     {
       locationId: 'SITE-CENTER',
-      name: 'Site Center (Selected location)',
-      location: { latitude: center.latitude, longitude: center.longitude },
+      name: 'Site Center (Operating Base)',
+      location: { latitude: center.latitude, longitude: Number(center.longitude.toFixed(6)) },
     },
     {
-      locationId: 'SITE-S',
-      name: 'Site South (~100m south)',
-      location: { latitude: center.latitude - candidateOffset, longitude: center.longitude },
+      locationId: 'SITE-N',
+      name: 'Site North (Urban Core)',
+      location: { latitude: Number((center.latitude + dLat).toFixed(6)), longitude: center.longitude },
     },
   ];
 }
@@ -208,7 +237,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const timezone = reqTimezone || 'UTC';
+    const timezone = reqTimezone || (mode === 'FIXTURE' ? 'America/New_York' : 'UTC');
     const { allowedStart: tAllowedStart, allowedEnd: tAllowedEnd, durationHours: tDurationHours } =
       buildEngineConstraints(temporalInput, timezone);
 
@@ -244,15 +273,38 @@ export async function POST(request: Request) {
     }
 
     const isManhattan = isLocationCoveredByFixture(location);
+    if (mode === 'FIXTURE' && !isManhattan) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'OUTSIDE_COVERAGE',
+            message: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) is outside the verified Manhattan fixture bounds. Switch to LIVE mode to evaluate any location globally.`,
+            recoverySuggestion: 'Switch to LIVE mode or select a captured Manhattan demo site.',
+            category: 'COVERAGE',
+          } as const,
+        },
+        { status: 404 }
+      );
+    }
+
+    const canonicalAoi = reqAnalysisAoi as
+      | import('@/types/domain').PolygonAOI
+      | undefined;
+
+    const aoiProps = (canonicalAoi?.features[0]?.properties ?? {}) as {
+      radiusMetres?: number;
+      halfSideMetres?: number;
+    };
+    const aoiHalfSide = Number(aoiProps.radiusMetres ?? aoiProps.halfSideMetres ?? 400);
+
     const candidatesToEvaluate: CandidateLocation[] = reqCandidates && reqCandidates.length > 0
       ? reqCandidates.map((c) => ({
           locationId: c.locationId,
           name: c.name,
           location: { latitude: c.latitude, longitude: c.longitude },
         }))
-      : mode === 'LIVE' || !isManhattan
-        ? generateLiveCandidates({ latitude, longitude })
-        : DEFAULT_CANDIDATE_LOCATIONS;
+      : generateCandidatesForAOI({ latitude, longitude }, aoiHalfSide, isManhattan && mode === 'FIXTURE');
 
     const seenLocIds = new Set<string>();
     const seenCoords = new Set<string>();
@@ -268,14 +320,6 @@ export async function POST(request: Request) {
       }
       seenCoords.add(coordKey);
     }
-
-    // The canonical analysis AOI: if the client sent one, use it; otherwise the
-    // adapter builds its own 400m AOI from the location + shape. The contract
-    // is that the visible AOI on the map == the AOI sent to FortyGuard, so the
-    // recommended flow is for the client to always send `analysisAoi` explicitly.
-    const canonicalAoi = reqAnalysisAoi as
-      | import('@/types/domain').PolygonAOI
-      | undefined;
 
     const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps, canonicalAoi, {
       granularity: reqGranularity,

@@ -218,7 +218,7 @@ export function ThermalMap({
       }
       if (map.getLayer('aoi-fill')) {
         map.setPaintProperty('aoi-fill', 'fill-color', '#f43f5e');
-        map.setPaintProperty('aoi-fill', 'fill-opacity', isDark ? 0.12 : 0.08);
+        map.setPaintProperty('aoi-fill', 'fill-opacity', isDark ? 0.04 : 0.03);
       }
       if (map.getLayer('region-boundary-outline')) {
         map.setPaintProperty('region-boundary-outline', 'line-color', isDark ? '#fb7185' : '#be123c');
@@ -227,8 +227,8 @@ export function ThermalMap({
         map.setPaintProperty('region-boundary-glow', 'line-color', isDark ? '#fb7185' : '#e11d48');
       }
       if (map.getLayer('region-boundary-fill')) {
-        map.setPaintProperty('region-boundary-fill', 'fill-color', isDark ? '#f43f5e' : '#be123c');
-        map.setPaintProperty('region-boundary-fill', 'fill-opacity', isDark ? 0.14 : 0.08);
+        map.setPaintProperty('region-boundary-fill', 'fill-color', '#000000');
+        map.setPaintProperty('region-boundary-fill', 'fill-opacity', 0.0);
       }
       map.triggerRepaint();
     } catch {
@@ -384,15 +384,15 @@ export function ThermalMap({
         });
       }
 
-      // Layer B: State/Region Interior Tint
+      // Layer B: State/Region Interior Tint (Zero opacity — region boundary provides framing without dominating map)
       if (!map.getLayer('region-boundary-fill')) {
         map.addLayer({
           id: 'region-boundary-fill',
           type: 'fill',
           source: 'region-boundary',
           paint: {
-            'fill-color': isDark ? '#f43f5e' : '#be123c',
-            'fill-opacity': isDark ? 0.08 : 0.04,
+            'fill-color': '#000000',
+            'fill-opacity': 0.0,
           },
         });
       }
@@ -418,30 +418,21 @@ export function ThermalMap({
               37, '#e11d48',
               40, '#9333ea',
             ],
-            'fill-opacity': isDark ? 0.88 : 0.78,
+            'fill-opacity': isDark ? 0.82 : 0.74,
           },
         });
       }
 
-      // Layer D: Thermal Tile Border Framing
+      // Layer D: Thermal Tile Border Framing (Crisp cell boundaries)
       if (!map.getLayer('thermal-tiles-outline')) {
         map.addLayer({
           id: 'thermal-tiles-outline',
           type: 'line',
           source: 'thermal-tiles',
           paint: {
-            'line-color': [
-              'interpolate',
-              ['linear'],
-              ['get', 'average_temperature'],
-              18, '#0284c7',
-              25, '#047857',
-              30, '#ca8a04',
-              34, '#be123c',
-              40, '#6b21a8',
-            ],
-            'line-width': 2.5,
-            'line-opacity': 0.95,
+            'line-color': isDark ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.45)',
+            'line-width': 1.0,
+            'line-opacity': 0.85,
           },
         });
       }
@@ -454,7 +445,7 @@ export function ThermalMap({
           source: 'analysis-aoi',
           paint: {
             'fill-color': '#f43f5e',
-            'fill-opacity': isDark ? 0.12 : 0.08,
+            'fill-opacity': isDark ? 0.04 : 0.03,
           },
         });
       }

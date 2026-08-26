@@ -11,8 +11,7 @@ import {
   tempUnitSuffix,
 } from '@/lib/temperature';
 import type { MapLayerVisibility, AnalysisAreaShape, AoiHalfSideMetres } from '@/lib/user-preferences';
-import { AOI_HALF_SIDE_PRESETS } from '@/lib/user-preferences';
-import { Flame, MapPin, Tag, Box, Circle as CircleIcon, Maximize2, Map as MapIcon, Check, ZoomIn, Sun, Moon } from 'lucide-react';
+import { Flame, MapPin, Maximize2, Map as MapIcon, ZoomIn, Sun, Moon } from 'lucide-react';
 import type { FeatureCollection } from 'geojson';
 
 // Minimal inline type for MapLibre GeoJSON source data casts.
@@ -26,6 +25,7 @@ interface ThermalMapProps {
   locationName?: string;
   /**
    * Geographical / State Boundary Polygon (e.g. California state polygon, New York state polygon).
+   * Visualized as Geographic Context.
    */
   regionBoundary?: PolygonAOI | null;
   /**
@@ -51,8 +51,8 @@ interface ThermalMapProps {
   /** AOI shape & dimension controls */
   areaShape?: AnalysisAreaShape;
   aoiHalfSideMetres?: AoiHalfSideMetres;
-  onChangeAreaShape?: (s: AnalysisAreaShape) => void;
-  onChangeAoiHalfSideMetres?: (m: AoiHalfSideMetres) => void;
+  onChangeAreaShape?: (shape: AnalysisAreaShape) => void;
+  onChangeAoiHalfSideMetres?: (halfSide: AoiHalfSideMetres) => void;
 }
 
 /** Empty FeatureCollection sentinel for source initialization / clear. */
@@ -98,29 +98,29 @@ function computeBounds(
       allPts.push(...extractCoords(f.geometry as { type: string; coordinates: unknown }));
     }
   } else {
-    // Include the target location with local perimeter
+    // Include target location point
     if (Number.isFinite(targetLoc.longitude) && Number.isFinite(targetLoc.latitude)) {
       allPts.push([targetLoc.longitude, targetLoc.latitude]);
     }
 
-    // Local AOI vertices near targetLoc
+    // Canonical Analysis AOI vertices
     if (analysisAoi && analysisAoi.features.length > 0) {
       for (const f of analysisAoi.features) {
         const pts = extractCoords(f.geometry as { type: string; coordinates: unknown });
         for (const [lng, lat] of pts) {
-          if (Math.abs(lng - targetLoc.longitude) < 0.25 && Math.abs(lat - targetLoc.latitude) < 0.25) {
+          if (Math.abs(lng - targetLoc.longitude) < 0.35 && Math.abs(lat - targetLoc.latitude) < 0.35) {
             allPts.push([lng, lat]);
           }
         }
       }
     }
 
-    // Thermal field vertices near targetLoc
+    // FortyGuard thermal field vertices
     if (spatialField && spatialField.features.length > 0) {
       for (const f of spatialField.features) {
         const pts = extractCoords(f.geometry as { type: string; coordinates: unknown });
         for (const [lng, lat] of pts) {
-          if (Math.abs(lng - targetLoc.longitude) < 0.25 && Math.abs(lat - targetLoc.latitude) < 0.25) {
+          if (Math.abs(lng - targetLoc.longitude) < 0.35 && Math.abs(lat - targetLoc.latitude) < 0.35) {
             allPts.push([lng, lat]);
           }
         }
@@ -130,7 +130,7 @@ function computeBounds(
     // Candidate coordinates near targetLoc
     for (const { longitude, latitude } of candidateLocs) {
       if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
-        if (Math.abs(longitude - targetLoc.longitude) < 0.25 && Math.abs(latitude - targetLoc.latitude) < 0.25) {
+        if (Math.abs(longitude - targetLoc.longitude) < 0.35 && Math.abs(latitude - targetLoc.latitude) < 0.35) {
           allPts.push([longitude, latitude]);
         }
       }
@@ -148,9 +148,9 @@ function computeBounds(
     if (lat > maxLat) maxLat = lat;
   }
 
-  const padRatio = fitToRegionOnly ? 0.08 : 0.35;
-  const padLng = Math.max(0.0008, (maxLng - minLng) * padRatio);
-  const padLat = Math.max(0.0008, (maxLat - minLat) * padRatio);
+  const padRatio = fitToRegionOnly ? 0.08 : 0.25;
+  const padLng = Math.max(0.001, (maxLng - minLng) * padRatio);
+  const padLat = Math.max(0.001, (maxLat - minLat) * padRatio);
 
   return [
     [minLng - padLng, minLat - padLat],
@@ -180,16 +180,12 @@ export function ThermalMap({
   layerVisibility = { thermal: true, candidates: true, labels: true, aoi: true },
   onToggleLayer,
   areaShape = 'polygon',
-  aoiHalfSideMetres = 400,
-  onChangeAreaShape,
-  onChangeAoiHalfSideMetres,
 }: ThermalMapProps) {
   const { theme, toggleTheme } = useTheme();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const markersRef = useRef<Marker[]>([]);
   const [mapReady, setMapReady] = useState(false);
-  const [showSizeMenu, setShowSizeMenu] = useState(false);
   const [showRegionBoundary, setShowRegionBoundary] = useState(true);
 
   // Function to apply theme styles to all map layers
@@ -221,7 +217,7 @@ export function ThermalMap({
       }
       if (map.getLayer('aoi-fill')) {
         map.setPaintProperty('aoi-fill', 'fill-color', '#f43f5e');
-        map.setPaintProperty('aoi-fill', 'fill-opacity', isDark ? 0.16 : 0.10);
+        map.setPaintProperty('aoi-fill', 'fill-opacity', isDark ? 0.12 : 0.08);
       }
       if (map.getLayer('region-boundary-outline')) {
         map.setPaintProperty('region-boundary-outline', 'line-color', isDark ? '#fb7185' : '#be123c');
@@ -237,7 +233,7 @@ export function ThermalMap({
   }, [layerVisibility.labels]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // Mount effect — create the MapLibre Map
+  // Mount effect — create the MapLibre Map instance once
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -302,11 +298,11 @@ export function ThermalMap({
             type: 'geojson',
             data: EMPTY_FC,
           },
-          'thermal-tiles': {
+          'analysis-aoi': {
             type: 'geojson',
             data: EMPTY_FC,
           },
-          'analysis-aoi': {
+          'thermal-tiles': {
             type: 'geojson',
             data: EMPTY_FC,
           },
@@ -341,7 +337,7 @@ export function ThermalMap({
               'fill-opacity': isDark ? 0.55 : 0.40,
             },
           },
-          // 3. Geographical State/Region Boundary (Crimson / Ruby red highlight)
+          // 3. Geographical State/Region Boundary (Context Only)
           {
             id: 'region-boundary-fill',
             type: 'fill',
@@ -382,7 +378,7 @@ export function ThermalMap({
               'fill-opacity': isDark ? 0.12 : 0.08,
             },
           },
-          // 5. Thermal field polygons (HERO layer)
+          // 5. FortyGuard Thermal field polygons (HERO Layer)
           {
             id: 'thermal-tiles-fill',
             type: 'fill',
@@ -420,11 +416,11 @@ export function ThermalMap({
                 34, '#be123c',
                 40, '#6b21a8',
               ],
-              'line-width': 2,
+              'line-width': 2.5,
               'line-opacity': 0.95,
             },
           },
-          // 6. Local AOI Region boundary outline & glow (Red/Crimson)
+          // 6. Canonical Analysis AOI boundary outline & glow (Crisp Red/Crimson)
           {
             id: 'aoi-glow',
             type: 'line',
@@ -446,7 +442,7 @@ export function ThermalMap({
               'line-opacity': 1.0,
             },
           },
-          // 6. Labels
+          // 7. Labels
           {
             id: 'carto-labels-dark-layer',
             type: 'raster',
@@ -464,7 +460,7 @@ export function ThermalMap({
         ],
       },
       center: [centerLng, centerLat],
-      zoom: 13,
+      zoom: 14.5,
     });
 
     mapRef.current = map;
@@ -721,7 +717,7 @@ export function ThermalMap({
   }, [mapReady, candidates, recommendedLocationId, location, theme, layerVisibility.candidates]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // FitBounds effects
+  // FitBounds effects — frames the Canonical AOI, Thermal Field & Candidates
   // ─────────────────────────────────────────────────────────────────────
   const fitToLocalAoi = useCallback(() => {
     const map = mapRef.current;
@@ -736,12 +732,12 @@ export function ThermalMap({
     );
     if (bounds) {
       try {
-        map.fitBounds(bounds, { padding: 50, maxZoom: 15, duration: 600 });
+        map.fitBounds(bounds, { padding: 50, maxZoom: 15.5, duration: 600 });
       } catch {
-        map.flyTo({ center: [location.longitude, location.latitude], zoom: 13.5, duration: 600 });
+        map.flyTo({ center: [location.longitude, location.latitude], zoom: 14.5, duration: 600 });
       }
     } else {
-      map.flyTo({ center: [location.longitude, location.latitude], zoom: 13.5, duration: 600 });
+      map.flyTo({ center: [location.longitude, location.latitude], zoom: 14.5, duration: 600 });
     }
   }, [analysisAoi, spatialField, candidates, location, regionBoundary]);
 
@@ -797,36 +793,26 @@ export function ThermalMap({
       `}</style>
 
       {/* ─────────────────────────────────────────────────────────────
-          TOP INTERACTIVE LAYER & REGION TOOLBAR
+          TOP PRODUCTION MAP CONTROLS TOOLBAR
           ───────────────────────────────────────────────────────────── */}
       <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 flex-wrap pointer-events-none z-20">
         
-        {/* Left Side: Region Boundary & Local AOI controls */}
+        {/* Left Side: Region Context & Analysis Area */}
         <div className="pointer-events-auto flex items-center gap-1.5 flex-wrap">
           
-          {/* Geographical State/Region Boundary (Crimson highlight matching screenshot) */}
+          {/* Geographical State/Region Context Toggle */}
           <button
             type="button"
             onClick={() => setShowRegionBoundary((prev) => !prev)}
-            title={`Toggle ${stateDisplayName || 'State'} Regional Boundary Polygon`}
+            title={`Toggle ${stateDisplayName || 'State'} Regional Context Boundary`}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md shadow-lg border transition-all cursor-pointer ${
               showRegionBoundary
                 ? 'bg-rose-500/25 border-rose-500 text-rose-300 shadow-rose-950/40 ring-1 ring-rose-500/50'
                 : 'bg-surface-card/90 border-border text-text-muted hover:text-text-primary'
             }`}
           >
-            <span
-              className="inline-block flex-shrink-0 transition-all"
-              style={{
-                width: '10px',
-                height: '10px',
-                borderRadius: '2px',
-                border: `2px solid ${showRegionBoundary ? '#f43f5e' : 'currentColor'}`,
-                backgroundColor: showRegionBoundary ? 'rgba(244,63,94,0.5)' : 'transparent',
-              }}
-            />
             <MapIcon className="size-3.5 text-rose-400" />
-            <span>{stateDisplayName ? `${stateDisplayName} Region` : 'Territory Boundary'}</span>
+            <span>{stateDisplayName ? `${stateDisplayName} Region` : 'Region Context'}</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${
               showRegionBoundary ? 'bg-rose-500/40 text-rose-100' : 'bg-surface-elevated text-text-dimmed'
             }`}>
@@ -834,11 +820,11 @@ export function ThermalMap({
             </span>
           </button>
 
-          {/* AOI Local Boundary Toggle Button */}
+          {/* Canonical Analysis Area Toggle */}
           <button
             type="button"
             onClick={() => toggleLayer('aoi')}
-            title="Toggle Local Analysis Area AOI Boundary Polygon"
+            title="Toggle Analysis Area Boundary"
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md shadow-lg border transition-all cursor-pointer ${
               layerVisibility.aoi !== false
                 ? 'bg-rose-500/25 border-rose-500 text-rose-300 shadow-rose-950/40 ring-1 ring-rose-500/50'
@@ -851,140 +837,49 @@ export function ThermalMap({
                 width: '10px',
                 height: '10px',
                 borderRadius: areaShape === 'circle' ? '50%' : '2px',
-                border: `2px ${layerVisibility.aoi !== false ? 'solid #be123c' : 'dashed currentColor'}`,
+                border: `2px solid ${layerVisibility.aoi !== false ? '#be123c' : 'currentColor'}`,
                 backgroundColor: layerVisibility.aoi !== false ? 'rgba(244,63,94,0.5)' : 'transparent',
               }}
             />
-            <span>Red AOI Shape</span>
+            <span>Analysis Area</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold uppercase ${
               layerVisibility.aoi !== false ? 'bg-rose-500/40 text-rose-100' : 'bg-surface-elevated text-text-dimmed'
             }`}>
               {layerVisibility.aoi !== false ? 'ON' : 'OFF'}
             </span>
           </button>
-
-          {/* Quick Shape Switcher */}
-          {onChangeAreaShape && (
-            <div className="flex items-center bg-surface-card/95 backdrop-blur-md rounded-lg border border-border p-0.5 shadow-md">
-              <button
-                type="button"
-                onClick={() => onChangeAreaShape('polygon')}
-                title="Square Bounding Box"
-                className={`p-1.5 rounded-md text-xs transition-all flex items-center gap-1 cursor-pointer ${
-                  areaShape === 'polygon'
-                    ? 'bg-rose-600 text-white shadow-sm font-semibold'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                <Box className="size-3.5" />
-                <span className="hidden sm:inline text-[11px]">Square</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onChangeAreaShape('circle')}
-                title="Radial Circle"
-                className={`p-1.5 rounded-md text-xs transition-all flex items-center gap-1 cursor-pointer ${
-                  areaShape === 'circle'
-                    ? 'bg-rose-600 text-white shadow-sm font-semibold'
-                    : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                <CircleIcon className="size-3.5" />
-                <span className="hidden sm:inline text-[11px]">Circle</span>
-              </button>
-            </div>
-          )}
-
-          {/* Quick AOI Size Selector Dropdown / Pill */}
-          {onChangeAoiHalfSideMetres && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowSizeMenu((prev) => !prev)}
-                title="Change Analysis Area Radius/Dimension"
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-mono font-medium bg-surface-card/95 backdrop-blur-md border border-border shadow-md text-text-primary hover:border-rose-500/60 transition-all cursor-pointer"
-              >
-                <span className="text-text-dimmed">Span:</span>
-                <span className="text-rose-400 font-bold">
-                  {areaShape === 'circle' ? `r=${aoiHalfSideMetres}m` : `±${aoiHalfSideMetres}m`}
-                </span>
-                <span className="text-[10px] text-text-dimmed">▾</span>
-              </button>
-
-              {showSizeMenu && (
-                <div className="absolute top-full left-0 mt-1 bg-surface-card/95 backdrop-blur-md rounded-xl border border-border shadow-xl py-1 z-30 min-w-[130px]">
-                  <div className="px-2.5 py-1 text-[10px] font-bold text-text-dimmed uppercase tracking-wider border-b border-border mb-1">
-                    {areaShape === 'circle' ? 'Radius' : 'Half-side span'}
-                  </div>
-                  {AOI_HALF_SIDE_PRESETS.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => {
-                        onChangeAoiHalfSideMetres(m);
-                        setShowSizeMenu(false);
-                      }}
-                      className={`w-full px-2.5 py-1.5 text-xs text-left font-mono flex items-center justify-between transition-all cursor-pointer ${
-                        aoiHalfSideMetres === m
-                          ? 'bg-rose-500/15 text-rose-400 font-bold'
-                          : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
-                      }`}
-                    >
-                      <span>{m >= 1000 ? `${m / 1000} km` : `${m} m`}</span>
-                      {aoiHalfSideMetres === m && <Check className="size-3 text-rose-400" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* Right Side: Quick Layer Toggles & View Fits & Theme Switcher */}
+        {/* Right Side: Heatmap, Sites, Theme Toggle, State View, Fit Local */}
         <div className="pointer-events-auto flex items-center gap-1.5 bg-surface-card/95 backdrop-blur-md p-1 rounded-xl border border-border shadow-lg">
           {/* Thermal Heatmap layer toggle */}
           <button
             type="button"
             onClick={() => toggleLayer('thermal')}
-            title="Toggle Thermal Heatmap Layer"
-            className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+            title="Toggle FortyGuard Thermal Heatmap Layer"
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
               layerVisibility.thermal !== false
                 ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50'
                 : 'text-text-muted hover:text-text-primary opacity-60'
             }`}
           >
             <Flame className="size-3.5 text-amber-400" />
-            <span className="hidden md:inline text-[11px]">Heatmap</span>
+            <span>Heatmap</span>
           </button>
 
           {/* Sites / Candidates layer toggle */}
           <button
             type="button"
             onClick={() => toggleLayer('candidates')}
-            title="Toggle Candidate & Recommended Markers"
-            className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+            title="Toggle Candidate & Recommended Sites"
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
               layerVisibility.candidates !== false
                 ? 'bg-pink-500/25 text-pink-300 border border-pink-500/50'
                 : 'text-text-muted hover:text-text-primary opacity-60'
             }`}
           >
             <MapPin className="size-3.5 text-pink-400" />
-            <span className="hidden md:inline text-[11px]">Sites</span>
-          </button>
-
-          {/* Labels layer toggle */}
-          <button
-            type="button"
-            onClick={() => toggleLayer('labels')}
-            title="Toggle Map Street & City Labels"
-            className={`p-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-              layerVisibility.labels !== false
-                ? 'bg-slate-500/25 text-text-primary border border-border'
-                : 'text-text-muted hover:text-text-primary opacity-60'
-            }`}
-          >
-            <Tag className="size-3.5" />
-            <span className="hidden md:inline text-[11px]">Labels</span>
+            <span>Sites</span>
           </button>
 
           <div className="w-[1px] h-4 bg-border my-auto mx-0.5" />
@@ -1004,11 +899,11 @@ export function ThermalMap({
             <button
               type="button"
               onClick={fitToStateRegion}
-              title={`Zoom to Entire ${stateDisplayName || 'State'} Region Boundary`}
-              className="px-2 py-1 rounded-lg text-xs text-rose-300 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 transition-all flex items-center gap-1 cursor-pointer font-semibold"
+              title={`Zoom to Entire ${stateDisplayName || 'State'} Region`}
+              className="px-2.5 py-1.5 rounded-lg text-xs text-rose-300 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 transition-all flex items-center gap-1 cursor-pointer font-semibold"
             >
               <ZoomIn className="size-3.5 text-rose-400" />
-              <span className="hidden sm:inline text-[10px]">State View</span>
+              <span className="hidden sm:inline text-[11px]">State View</span>
             </button>
           )}
 
@@ -1016,7 +911,7 @@ export function ThermalMap({
           <button
             type="button"
             onClick={fitToLocalAoi}
-            title="Zoom to Local Analysis AOI"
+            title="Fit Viewport to Analysis Area"
             className="p-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-all flex items-center cursor-pointer"
           >
             <Maximize2 className="size-3.5" />

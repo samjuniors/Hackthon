@@ -362,12 +362,17 @@ export function LocationSearch({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <label className="text-[11px] font-bold uppercase tracking-wider text-text-dimmed">
-            Metropolitan Hubs
+            {isFixture ? 'Captured Demo Sites (Manhattan)' : 'Metropolitan Operational Hubs'}
           </label>
-          <span className="text-[10px] text-accent-cyan font-mono font-medium">1-Click Select</span>
+          <span className="text-[10px] text-accent-cyan font-mono font-medium">
+            {isFixture ? 'Offline Verified' : 'Live Queries'}
+          </span>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {METROPOLITAN_LOCATIONS.map((loc) => {
+          {(isFixture
+            ? METROPOLITAN_LOCATIONS.filter((l) => l.isDemoOnly)
+            : METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly)
+          ).map((loc) => {
             const isSelected = selectedLocation.id === loc.id;
             return (
               <button
@@ -377,7 +382,7 @@ export function LocationSearch({
                   setIsOpen(false);
                   onSelectLocation(loc);
                 }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
                   isSelected
                     ? 'bg-accent-cyan text-white shadow-md font-bold ring-1 ring-accent-cyan'
                     : 'bg-surface-deep border border-border text-text-secondary hover:border-accent-cyan/50 hover:text-text-primary hover:bg-surface-elevated'

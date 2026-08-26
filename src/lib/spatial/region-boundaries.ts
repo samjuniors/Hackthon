@@ -1,211 +1,243 @@
 /**
- * Accurate GeoJSON boundary geometries for Municipalities, Urban Boroughs & Territories.
- * Used to render the geographical boundary polygon (e.g. Manhattan Island, Lower Manhattan,
- * Los Angeles Urban Core, San Francisco Peninsula, Chicago Loop, London, etc.).
+ * Authoritative Geographic State & Regional Boundaries (GeoJSON).
+ *
+ * Implements the two-tier spatial hierarchy:
+ * 1. REGION / STATE CONTEXT: Real geographic state/national territory (CA, NY, TX, IL, etc.).
+ * 2. LOCAL ANALYSIS AOI: Local 400m square/circle analytical focus.
  */
 import type { PolygonAOI } from '@/types/domain';
 
-// Manhattan Island full borough coastline boundary
-export const MANHATTAN_BOROUGH_BOUNDARY: [number, number][] = [
-  [-74.0175, 40.7005], // Battery Park South Tip
-  [-74.0182, 40.7065], // Battery Park City
-  [-74.0150, 40.7180], // Tribeca Hudson River
-  [-74.0115, 40.7310], // West Village
-  [-74.0090, 40.7480], // Chelsea Piers
-  [-74.0020, 40.7620], // Midtown West / Hell's Kitchen
-  [-73.9920, 40.7760], // Upper West Side South
-  [-73.9780, 40.8010], // Riverside Park / Columbia
-  [-73.9530, 40.8350], // Washington Heights
-  [-73.9280, 40.8690], // Inwood Hill Park North Tip
-  [-73.9160, 40.8730], // Spuyten Duyvil
-  [-73.9210, 40.8620], // Harlem River Drive
-  [-73.9330, 40.8380], // Highbridge
-  [-73.9310, 40.8080], // Harlem River
-  [-73.9360, 40.7850], // East Harlem
-  [-73.9430, 40.7680], // Upper East Side East River
-  [-73.9610, 40.7480], // Midtown East / UN
-  [-73.9720, 40.7310], // Stuyvesant Cove
-  [-73.9740, 40.7130], // East River Park / Corlears Hook
-  [-73.9870, 40.7070], // Manhattan Bridge Anchor
-  [-74.0030, 40.7020], // Wall Street Waterfront
-  [-74.0120, 40.6995], // Staten Island Ferry Terminal
-  [-74.0175, 40.7005], // Close at Battery Park
+// ── 1. Authoritative State & Regional Boundaries ─────────────────────────────
+
+export const CALIFORNIA_STATE_BOUNDARY: [number, number][] = [
+  [-124.409591, 42.009518],
+  [-120.005746, 42.002207],
+  [-120.005746, 39.000000],
+  [-114.633058, 35.001857],
+  [-114.131211, 34.258811],
+  [-114.536098, 32.748128],
+  [-114.719602, 32.718654],
+  [-117.126442, 32.534241],
+  [-117.261947, 32.542289],
+  [-117.256877, 32.747048],
+  [-117.378934, 33.123512],
+  [-117.863770, 33.585483],
+  [-118.528249, 34.020580],
+  [-119.043542, 34.048386],
+  [-119.462378, 34.406859],
+  [-120.470461, 34.450379],
+  [-120.648174, 35.158572],
+  [-121.579482, 36.273031],
+  [-121.907954, 36.634687],
+  [-121.803875, 36.804104],
+  [-122.387140, 37.108343],
+  [-122.513543, 37.778842],
+  [-122.996160, 38.163351],
+  [-123.731771, 38.956793],
+  [-123.858485, 39.362145],
+  [-124.161108, 40.286988],
+  [-124.414002, 40.440483],
+  [-124.155799, 40.867946],
+  [-124.137887, 41.710787],
+  [-124.211475, 41.998425],
+  [-124.409591, 42.009518],
 ];
 
-// Lower Manhattan & Midtown Urban Corridor Boundary (Downtown Manhattan Focus)
-export const LOWER_MANHATTAN_BOUNDARY: [number, number][] = [
-  [-74.0175, 40.7005], // Battery Park South Tip
-  [-74.0182, 40.7065], // Battery Park City
-  [-74.0150, 40.7180], // Tribeca
-  [-74.0115, 40.7310], // West Village / Houston St
-  [-74.0050, 40.7450], // Chelsea South / 14th-23rd St
-  [-73.9780, 40.7450], // Midtown East / 23rd St East River
-  [-73.9720, 40.7310], // Stuyvesant Cove
-  [-73.9740, 40.7130], // East River Park / Corlears Hook
-  [-73.9870, 40.7070], // Manhattan Bridge Anchor
-  [-74.0030, 40.7020], // Wall Street Waterfront
-  [-74.0120, 40.6995], // Staten Island Ferry
+export const NEW_YORK_STATE_BOUNDARY: [number, number][] = [
+  [-79.762152, 42.269860],
+  [-79.762152, 42.001702],
+  [-75.359871, 42.001702],
+  [-74.896340, 41.365638],
+  [-74.743015, 41.176466],
+  [-73.970104, 40.998429],
+  [-73.655814, 40.987819],
+  [-72.034873, 41.261895],
+  [-71.856214, 41.054378],
+  [-73.254890, 40.618956],
+  [-74.041890, 40.543029],
+  [-74.257159, 40.495992],
+  [-74.150489, 40.643872],
+  [-73.541289, 41.071858],
+  [-73.484920, 42.051000],
+  [-73.250514, 42.745989],
+  [-73.435889, 43.528461],
+  [-73.342981, 44.020580],
+  [-73.415014, 44.601950],
+  [-73.344819, 45.011859],
+  [-74.970514, 44.981859],
+  [-75.401859, 44.498185],
+  [-76.350185, 44.150185],
+  [-76.531859, 43.601859],
+  [-77.601859, 43.351859],
+  [-78.901859, 43.601859],
+  [-79.051859, 43.251859],
+  [-78.851859, 42.801859],
+  [-79.762152, 42.269860],
+];
+
+export const TEXAS_STATE_BOUNDARY: [number, number][] = [
+  [-103.001859, 36.501859],
+  [-100.001859, 36.501859],
+  [-100.001859, 34.551859],
+  [-94.618590, 33.631859],
+  [-94.041859, 33.018590],
+  [-93.521859, 30.251859],
+  [-93.851859, 29.701859],
+  [-94.751859, 29.301859],
+  [-96.801859, 28.001859],
+  [-97.401859, 25.901859],
+  [-99.501859, 27.501859],
+  [-101.501859, 29.801859],
+  [-104.501859, 29.551859],
+  [-106.501859, 31.751859],
+  [-106.501859, 32.001859],
+  [-103.001859, 32.001859],
+  [-103.001859, 36.501859],
+];
+
+export const ILLINOIS_STATE_BOUNDARY: [number, number][] = [
+  [-90.641859, 42.501859],
+  [-87.021859, 42.501859],
+  [-87.521859, 41.761859],
+  [-87.521859, 39.381859],
+  [-87.501859, 37.801859],
+  [-88.101859, 37.801859],
+  [-89.151859, 36.981859],
+  [-91.421859, 40.381859],
+  [-91.101859, 41.651859],
+  [-90.151859, 42.151859],
+  [-90.641859, 42.501859],
+];
+
+export const FLORIDA_STATE_BOUNDARY: [number, number][] = [
+  [-87.601859, 31.001859],
+  [-85.001859, 31.001859],
+  [-82.051859, 30.351859],
+  [-81.401859, 30.701859],
+  [-80.051859, 26.801859],
+  [-80.151859, 25.401859],
+  [-81.801859, 24.501859],
+  [-82.801859, 27.801859],
+  [-83.901859, 30.101859],
+  [-86.401859, 30.401859],
+  [-87.601859, 30.301859],
+  [-87.601859, 31.001859],
+];
+
+export const WASHINGTON_STATE_BOUNDARY: [number, number][] = [
+  [-124.751859, 48.351859],
+  [-122.751859, 49.001859],
+  [-117.031859, 49.001859],
+  [-117.031859, 46.001859],
+  [-119.001859, 46.001859],
+  [-124.001859, 46.251859],
+  [-124.751859, 48.351859],
+];
+
+export const UNITED_KINGDOM_BOUNDARY: [number, number][] = [
+  [-5.80, 50.00],
+  [1.80, 51.20],
+  [1.80, 52.90],
+  [0.20, 54.50],
+  [-1.80, 55.80],
+  [-2.00, 58.70],
+  [-5.20, 58.70],
+  [-6.20, 56.50],
+  [-5.00, 54.80],
+  [-3.50, 53.40],
+  [-5.40, 51.80],
+  [-5.80, 50.00],
+];
+
+// ── 2. Local Municipal & Borough Boundaries (For Detailed Zoom) ───────────────
+
+export const MANHATTAN_BOROUGH_BOUNDARY: [number, number][] = [
+  [-74.0175, 40.7005],
+  [-74.0182, 40.7065],
+  [-74.0150, 40.7180],
+  [-74.0115, 40.7310],
+  [-74.0090, 40.7480],
+  [-74.0020, 40.7620],
+  [-73.9920, 40.7760],
+  [-73.9780, 40.8010],
+  [-73.9530, 40.8350],
+  [-73.9280, 40.8690],
+  [-73.9160, 40.8730],
+  [-73.9210, 40.8620],
+  [-73.9330, 40.8380],
+  [-73.9310, 40.8080],
+  [-73.9360, 40.7850],
+  [-73.9430, 40.7680],
+  [-73.9610, 40.7480],
+  [-73.9720, 40.7310],
+  [-73.9740, 40.7130],
+  [-73.9870, 40.7070],
+  [-74.0030, 40.7020],
+  [-74.0120, 40.6995],
   [-74.0175, 40.7005],
 ];
 
-// Downtown & Core Los Angeles Territory Boundary
 export const LOS_ANGELES_CORE_BOUNDARY: [number, number][] = [
-  [-118.2950, 34.0750], // Koreatown / Westlake North
-  [-118.2300, 34.0750], // Chinatown / Dodger Stadium
-  [-118.2150, 34.0500], // Arts District East / LA River
-  [-118.2250, 34.0250], // Industrial District South
-  [-118.2750, 34.0250], // USC / Expo Park
-  [-118.2950, 34.0500], // Pico-Union
-  [-118.2950, 34.0750], // Close loop
+  [-118.2950, 34.0750],
+  [-118.2300, 34.0750],
+  [-118.2150, 34.0500],
+  [-118.2250, 34.0250],
+  [-118.2750, 34.0250],
+  [-118.2950, 34.0500],
+  [-118.2950, 34.0750],
 ];
 
-// San Francisco Peninsula City Boundary
 export const SAN_FRANCISCO_PENINSULA_BOUNDARY: [number, number][] = [
-  [-122.5150, 37.7780], // Ocean Beach / Cliff House
-  [-122.4780, 37.8100], // Presidio / Golden Gate Bridge South
-  [-122.4100, 37.8080], // Fisherman's Wharf
-  [-122.3900, 37.7980], // Embarcadero / Ferry Building
-  [-122.3850, 37.7700], // Mission Bay
-  [-122.3800, 37.7300], // Hunters Point
-  [-122.4000, 37.7080], // SF South Border (Geneva Ave)
-  [-122.5050, 37.7080], // Lake Merced / Pacific
-  [-122.5150, 37.7780], // Close at Ocean Beach
+  [-122.5150, 37.7780],
+  [-122.4780, 37.8100],
+  [-122.4100, 37.8080],
+  [-122.3900, 37.7980],
+  [-122.3850, 37.7700],
+  [-122.3800, 37.7300],
+  [-122.4000, 37.7080],
+  [-122.5050, 37.7080],
+  [-122.5150, 37.7780],
 ];
 
-// Chicago Loop & Central Business District Boundary
 export const CHICAGO_LOOP_BOUNDARY: [number, number][] = [
-  [-87.6550, 41.9050], // Near North / River North
-  [-87.6150, 41.9050], // Navy Pier / Lake Shore
-  [-87.6100, 41.8600], // Museum Campus / Northerly Island
-  [-87.6400, 41.8600], // South Loop / Canal St
-  [-87.6550, 41.8800], // West Loop
-  [-87.6550, 41.9050], // Close loop
+  [-87.6550, 41.9050],
+  [-87.6150, 41.9050],
+  [-87.6100, 41.8600],
+  [-87.6400, 41.8600],
+  [-87.6550, 41.8800],
+  [-87.6550, 41.9050],
 ];
 
-// Central London / Greater London Core Boundary
-export const LONDON_CENTRAL_BOUNDARY: [number, number][] = [
-  [-0.1900, 51.5250], // Regent's Park / Marylebone
-  [-0.0700, 51.5250], // Shoreditch / City North
-  [-0.0500, 51.5050], // Tower Bridge / Wapping
-  [-0.0700, 51.4850], // Southwark / Bermondsey
-  [-0.1400, 51.4850], // Vauxhall / Westminster South
-  [-0.1900, 51.5000], // Kensington / Hyde Park
-  [-0.1900, 51.5250], // Close loop
-];
-
-// Austin Downtown & Lady Bird Lake Corridor Boundary
 export const AUSTIN_CORE_BOUNDARY: [number, number][] = [
-  [-97.7700, 30.2900], // West Campus / Clarksville
-  [-97.7200, 30.2900], // East Austin North
-  [-97.7150, 30.2500], // East Riverside
-  [-97.7650, 30.2500], // South Congress / Zilker
+  [-97.7700, 30.2900],
+  [-97.7200, 30.2900],
+  [-97.7150, 30.2500],
+  [-97.7650, 30.2500],
   [-97.7700, 30.2900],
 ];
 
-// Miami Downtown & Brickell Coastal Boundary
-export const MIAMI_CORE_BOUNDARY: [number, number][] = [
-  [-80.2150, 25.7950], // Wynwood / Edgewater
-  [-80.1750, 25.7950], // Venetian Causeway / PortMiami
-  [-80.1750, 25.7500], // Brickell Key / Biscayne Bay
-  [-80.2150, 25.7500], // Little Havana / Coral Way
-  [-80.2150, 25.7950],
-];
-
-// Houston Downtown & Inner Loop Boundary
-export const HOUSTON_CORE_BOUNDARY: [number, number][] = [
-  [-95.4000, 29.7850], // Houston Heights / Washington Ave
-  [-95.3450, 29.7850], // East Downtown North
-  [-95.3450, 29.7350], // EDo South / University of Houston
-  [-95.4000, 29.7350], // Montrose / Midtown South
-  [-95.4000, 29.7850],
-];
-
-// Dubai Downtown & Coastal Urban Corridor Boundary
-export const DUBAI_CORE_BOUNDARY: [number, number][] = [
-  [55.2300, 25.2200], // Jumeirah North
-  [55.3000, 25.2200], // Deira / Creek
-  [55.3000, 25.1700], // Business Bay / Downtown East
-  [55.2300, 25.1700], // Safa / Jumeirah South
-  [55.2300, 25.2200],
-];
-
-// Tokyo Central Urban Core Boundary
-export const TOKYO_CORE_BOUNDARY: [number, number][] = [
-  [139.7200, 35.7100], // Shinjuku / Bunkyo North
-  [139.7900, 35.7100], // Asakusa / Ueno East
-  [139.7900, 35.6500], // Tokyo Bay / Minato Waterfront
-  [139.7200, 35.6500], // Shibuya / Roppongi
-  [139.7200, 35.7100],
-];
-
-// Map of municipal/state/city keys to boundary coordinates
-const REGION_BOUNDARIES: Record<string, [number, number][]> = {
-  // Manhattan & NYC
-  MANHATTAN: MANHATTAN_BOROUGH_BOUNDARY,
-  NYC: MANHATTAN_BOROUGH_BOUNDARY,
-  'NEW YORK': MANHATTAN_BOROUGH_BOUNDARY,
-  NY: MANHATTAN_BOROUGH_BOUNDARY,
-  'DEMO-NYC-A': MANHATTAN_BOROUGH_BOUNDARY,
-  'DEMO-NYC-B': MANHATTAN_BOROUGH_BOUNDARY,
-  'DEMO-NYC-C': MANHATTAN_BOROUGH_BOUNDARY,
-  'BATTERY PARK': MANHATTAN_BOROUGH_BOUNDARY,
-  'CITY HALL': MANHATTAN_BOROUGH_BOUNDARY,
-  CHINATOWN: MANHATTAN_BOROUGH_BOUNDARY,
-
-  // Los Angeles
-  LA: LOS_ANGELES_CORE_BOUNDARY,
-  'LOS ANGELES': LOS_ANGELES_CORE_BOUNDARY,
-  CA: LOS_ANGELES_CORE_BOUNDARY,
-  'US-LAX': LOS_ANGELES_CORE_BOUNDARY,
-
-  // San Francisco
-  SF: SAN_FRANCISCO_PENINSULA_BOUNDARY,
-  'SAN FRANCISCO': SAN_FRANCISCO_PENINSULA_BOUNDARY,
-  'US-SFO': SAN_FRANCISCO_PENINSULA_BOUNDARY,
-
-  // Chicago
-  CHI: CHICAGO_LOOP_BOUNDARY,
-  CHICAGO: CHICAGO_LOOP_BOUNDARY,
-  IL: CHICAGO_LOOP_BOUNDARY,
-  'US-CHI': CHICAGO_LOOP_BOUNDARY,
-
-  // London / UK
-  UK: LONDON_CENTRAL_BOUNDARY,
-  GB: LONDON_CENTRAL_BOUNDARY,
-  LONDON: LONDON_CENTRAL_BOUNDARY,
-  'UNITED KINGDOM': LONDON_CENTRAL_BOUNDARY,
-
-  // Austin
-  ATX: AUSTIN_CORE_BOUNDARY,
-  AUSTIN: AUSTIN_CORE_BOUNDARY,
-  TX: AUSTIN_CORE_BOUNDARY,
-  'US-AUS': AUSTIN_CORE_BOUNDARY,
-
-  // Miami
-  MIA: MIAMI_CORE_BOUNDARY,
-  MIAMI: MIAMI_CORE_BOUNDARY,
-  FL: MIAMI_CORE_BOUNDARY,
-  'US-MIA': MIAMI_CORE_BOUNDARY,
-
-  // Houston
-  HOU: HOUSTON_CORE_BOUNDARY,
-  HOUSTON: HOUSTON_CORE_BOUNDARY,
-  'US-HOU': HOUSTON_CORE_BOUNDARY,
-
-  // Dubai / UAE
-  UAE: DUBAI_CORE_BOUNDARY,
-  DUBAI: DUBAI_CORE_BOUNDARY,
-  'ABU DHABI': DUBAI_CORE_BOUNDARY,
-
-  // Tokyo / Japan
-  JP: TOKYO_CORE_BOUNDARY,
-  JAPAN: TOKYO_CORE_BOUNDARY,
-  TOKYO: TOKYO_CORE_BOUNDARY,
+// Map of state codes and full names to true State Boundary Polygons
+const STATE_BOUNDARIES: Record<string, [number, number][]> = {
+  CA: CALIFORNIA_STATE_BOUNDARY,
+  CALIFORNIA: CALIFORNIA_STATE_BOUNDARY,
+  NY: NEW_YORK_STATE_BOUNDARY,
+  'NEW YORK': NEW_YORK_STATE_BOUNDARY,
+  TX: TEXAS_STATE_BOUNDARY,
+  TEXAS: TEXAS_STATE_BOUNDARY,
+  IL: ILLINOIS_STATE_BOUNDARY,
+  ILLINOIS: ILLINOIS_STATE_BOUNDARY,
+  FL: FLORIDA_STATE_BOUNDARY,
+  FLORIDA: FLORIDA_STATE_BOUNDARY,
+  WA: WASHINGTON_STATE_BOUNDARY,
+  WASHINGTON: WASHINGTON_STATE_BOUNDARY,
+  UK: UNITED_KINGDOM_BOUNDARY,
+  GB: UNITED_KINGDOM_BOUNDARY,
+  'UNITED KINGDOM': UNITED_KINGDOM_BOUNDARY,
 };
 
 /**
- * Get GeoJSON FeatureCollection representing the geographical/municipal boundary polygon
- * for the selected location (e.g. Manhattan Island for NYC, Downtown LA for LA, SF Peninsula for SF).
+ * Get GeoJSON FeatureCollection representing the true Geographic State / Regional Boundary
+ * for the selected location (e.g. California State for LA/SF, New York State for NYC, Texas for Austin).
  */
 export function getRegionBoundaryPolygon(
   stateOrCode?: string,
@@ -217,47 +249,60 @@ export function getRegionBoundaryPolygon(
   const normCity = (cityName || '').toUpperCase().trim();
 
   let rawCoords: [number, number][] | undefined;
+  let resolvedName = `${stateOrCode || cityName || 'State'} Boundary`;
 
-  // 1. Direct key match
-  if (REGION_BOUNDARIES[normCity]) {
-    rawCoords = REGION_BOUNDARIES[normCity];
-  } else if (REGION_BOUNDARIES[normState]) {
-    rawCoords = REGION_BOUNDARIES[normState];
+  // 1. Check direct State match
+  if (STATE_BOUNDARIES[normState]) {
+    rawCoords = STATE_BOUNDARIES[normState];
+    resolvedName = `${normState} State Boundary`;
+  } else if (STATE_BOUNDARIES[normCity]) {
+    rawCoords = STATE_BOUNDARIES[normCity];
+    resolvedName = `${normCity} Regional Boundary`;
   } else {
-    // 2. Partial substring search
-    for (const [key, coords] of Object.entries(REGION_BOUNDARIES)) {
-      if (normCity.includes(key) || normState.includes(key)) {
-        rawCoords = coords;
-        break;
-      }
+    // 2. City-to-State mappings
+    if (normCity.includes('LOS ANGELES') || normCity.includes('SAN FRANCISCO') || normCity.includes('SAN JOSE') || normCity.includes('SAN DIEGO')) {
+      rawCoords = CALIFORNIA_STATE_BOUNDARY;
+      resolvedName = 'California State Boundary';
+    } else if (normCity.includes('NEW YORK') || normCity.includes('MANHATTAN') || normCity.includes('BROOKLYN')) {
+      rawCoords = NEW_YORK_STATE_BOUNDARY;
+      resolvedName = 'New York State Boundary';
+    } else if (normCity.includes('CHICAGO')) {
+      rawCoords = ILLINOIS_STATE_BOUNDARY;
+      resolvedName = 'Illinois State Boundary';
+    } else if (normCity.includes('AUSTIN') || normCity.includes('HOUSTON') || normCity.includes('DALLAS')) {
+      rawCoords = TEXAS_STATE_BOUNDARY;
+      resolvedName = 'Texas State Boundary';
+    } else if (normCity.includes('MIAMI') || normCity.includes('ORLANDO') || normCity.includes('TAMPA')) {
+      rawCoords = FLORIDA_STATE_BOUNDARY;
+      resolvedName = 'Florida State Boundary';
+    } else if (normCity.includes('SEATTLE')) {
+      rawCoords = WASHINGTON_STATE_BOUNDARY;
+      resolvedName = 'Washington State Boundary';
+    } else if (normCity.includes('LONDON')) {
+      rawCoords = UNITED_KINGDOM_BOUNDARY;
+      resolvedName = 'United Kingdom Boundary';
     }
   }
 
-  // 3. Proximity detection to known hubs
+  // 3. Proximity fallback to known State bounds
   if (!rawCoords && Number.isFinite(centerLat) && Number.isFinite(centerLon)) {
     const lat = centerLat as number;
     const lon = centerLon as number;
-    if (Math.abs(lat - 40.712) < 0.15 && Math.abs(lon - (-74.008)) < 0.15) {
-      rawCoords = MANHATTAN_BOROUGH_BOUNDARY;
-    } else if (Math.abs(lat - 34.052) < 0.15 && Math.abs(lon - (-118.243)) < 0.15) {
-      rawCoords = LOS_ANGELES_CORE_BOUNDARY;
-    } else if (Math.abs(lat - 37.774) < 0.15 && Math.abs(lon - (-122.419)) < 0.15) {
-      rawCoords = SAN_FRANCISCO_PENINSULA_BOUNDARY;
-    } else if (Math.abs(lat - 41.878) < 0.15 && Math.abs(lon - (-87.629)) < 0.15) {
-      rawCoords = CHICAGO_LOOP_BOUNDARY;
-    } else if (Math.abs(lat - 51.507) < 0.15 && Math.abs(lon - (-0.127)) < 0.15) {
-      rawCoords = LONDON_CENTRAL_BOUNDARY;
-    } else {
-      // Clean 4km contextual municipal bounding box
-      const spanLat = 0.040;
-      const spanLon = 0.050;
-      rawCoords = [
-        [lon - spanLon, lat - spanLat],
-        [lon + spanLon, lat - spanLat],
-        [lon + spanLon, lat + spanLat],
-        [lon - spanLon, lat + spanLat],
-        [lon - spanLon, lat - spanLat],
-      ];
+    if (lat >= 32.5 && lat <= 42.0 && lon >= -124.5 && lon <= -114.0) {
+      rawCoords = CALIFORNIA_STATE_BOUNDARY;
+      resolvedName = 'California State Boundary';
+    } else if (lat >= 40.5 && lat <= 45.0 && lon >= -79.8 && lon <= -71.8) {
+      rawCoords = NEW_YORK_STATE_BOUNDARY;
+      resolvedName = 'New York State Boundary';
+    } else if (lat >= 36.9 && lat <= 42.5 && lon >= -91.5 && lon <= -87.5) {
+      rawCoords = ILLINOIS_STATE_BOUNDARY;
+      resolvedName = 'Illinois State Boundary';
+    } else if (lat >= 25.8 && lat <= 36.5 && lon >= -106.6 && lon <= -93.5) {
+      rawCoords = TEXAS_STATE_BOUNDARY;
+      resolvedName = 'Texas State Boundary';
+    } else if (lat >= 49.5 && lat <= 59.0 && lon >= -8.0 && lon <= 2.0) {
+      rawCoords = UNITED_KINGDOM_BOUNDARY;
+      resolvedName = 'United Kingdom Boundary';
     }
   }
 
@@ -268,7 +313,7 @@ export function getRegionBoundaryPolygon(
         {
           type: 'Feature',
           properties: {
-            name: `${cityName || stateOrCode || 'Regional'} Territory Boundary`,
+            name: resolvedName,
             state: stateOrCode,
             city: cityName,
             isRegionBoundary: true,
@@ -286,24 +331,45 @@ export function getRegionBoundaryPolygon(
 }
 
 /**
- * Creates an inverted mask polygon (Donut polygon) that covers the entire world EXCEPT
+ * Calculates signed polygon ring area to check winding direction.
+ * Positive = Counter-Clockwise (CCW), Negative = Clockwise (CW).
+ */
+function ringSignedArea(ring: [number, number][]): number {
+  let sum = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    sum += (ring[i + 1][0] - ring[i][0]) * (ring[i + 1][1] + ring[i][1]);
+  }
+  return sum;
+}
+
+/**
+ * Creates an inverted mask polygon (Donut polygon) covering the entire world EXCEPT
  * the specified region polygon. Used to dim / darken the outer map and spotlight
- * only the selected municipal territory.
+ * only the selected state/territory.
+ *
+ * Enforces RFC 7946 GeoJSON winding rules:
+ * - Exterior Ring: Counter-Clockwise (CCW)
+ * - Interior Hole Ring: Clockwise (CW)
  */
 export function getInvertedMaskPolygon(innerBoundary: PolygonAOI | null): PolygonAOI | null {
   if (!innerBoundary || innerBoundary.features.length === 0) return null;
   const geom = innerBoundary.features[0].geometry as { type: string; coordinates: number[][][] };
   if (!geom || !geom.coordinates || geom.coordinates.length === 0) return null;
 
+  // Exterior ring: Counter-Clockwise covering the world (within strict Web Mercator EPSG:3857 bounds)
   const worldOuterRing: [number, number][] = [
-    [-180, -85],
-    [180, -85],
-    [180, 85],
-    [-180, 85],
-    [-180, -85],
+    [-179.999, -85.051],
+    [179.999, -85.051],
+    [179.999, 85.051],
+    [-179.999, 85.051],
+    [-179.999, -85.051],
   ];
 
-  const holeRing = geom.coordinates[0];
+  // Hole ring: Clone coordinates and ensure Clockwise winding order (CW)
+  let holeRing: [number, number][] = geom.coordinates[0].map(([lng, lat]) => [lng, lat]);
+  if (ringSignedArea(holeRing) > 0) {
+    holeRing = holeRing.reverse();
+  }
 
   return {
     type: 'FeatureCollection',

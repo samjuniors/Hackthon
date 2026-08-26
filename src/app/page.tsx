@@ -422,52 +422,52 @@ export default function WorkspacePage() {
   // Effects
   // ───────────────────────────────────────────────────────────────────────────
 
-  // Initial mount: check health + run the initial DEMO pipeline.
+  // Initial mount: trigger DEMO decision pipeline immediately + check health in parallel.
   useEffect(() => {
     let isMounted = true;
-    Promise.all([
-      safeJsonFetch<{
-        success: boolean;
-        health: FortyGuardHealthResponse;
-        capability?: ProviderCapability | null;
-      }>('/api/health/fortyguard', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ mode: 'FIXTURE' }),
-      }).then(({ ok, data }) => {
-        if (isMounted && ok && data?.success && data.health) {
-          setFgHealth(data.health);
-          setFgStatus(data.health.connected ? 'CONNECTED' : 'ERROR');
-          if (data.capability) setCapability(data.capability);
-        }
-      }).catch(() => {}),
-      safeJsonFetch('/api/health/ai', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ preferredProvider: preferredProviderRef.current }),
-      }).then(({ ok, data }) => {
-        if (isMounted && ok && data?.success && (data as { health: AIHealthResponse }).health) {
-          const h = (data as { health: AIHealthResponse }).health;
-          setAiHealth(h);
-          setAiStatus(h.connected ? 'CONNECTED' : (h.configured ? 'ERROR' : 'UNKNOWN'));
-        }
-      }).catch(() => {}),
-    ]).then(() => {
-      if (isMounted) {
-        // Initial DEMO pipeline with the fixture capture temporal input.
-        const fixtureTemporal = buildFixtureTemporalInput();
-        setTemporalInput(fixtureTemporal);
-        temporalInputRef.current = fixtureTemporal;
-        runDecisionPipeline(
-          METROPOLITAN_LOCATIONS[0],
-          fixtureTemporal,
-          METROPOLITAN_LOCATIONS[0].timezone || 'America/New_York',
-          'FIXTURE'
-        );
+
+    // 1. Instantly fire the DEMO decision pipeline on initial mount (50ms response)
+    const fixtureTemporal = buildFixtureTemporalInput();
+    setTemporalInput(fixtureTemporal);
+    temporalInputRef.current = fixtureTemporal;
+    runDecisionPipeline(
+      METROPOLITAN_LOCATIONS[0],
+      fixtureTemporal,
+      METROPOLITAN_LOCATIONS[0].timezone || 'America/New_York',
+      'FIXTURE'
+    );
+
+    // 2. Run provider health checks in the background (non-blocking)
+    safeJsonFetch<{
+      success: boolean;
+      health: FortyGuardHealthResponse;
+      capability?: ProviderCapability | null;
+    }>('/api/health/fortyguard', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'FIXTURE' }),
+    }).then(({ ok, data }) => {
+      if (isMounted && ok && data?.success && data.health) {
+        setFgHealth(data.health);
+        setFgStatus(data.health.connected ? 'CONNECTED' : 'ERROR');
+        if (data.capability) setCapability(data.capability);
       }
-    });
+    }).catch(() => {});
+
+    safeJsonFetch('/api/health/ai', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ preferredProvider: preferredProviderRef.current }),
+    }).then(({ ok, data }) => {
+      if (isMounted && ok && data?.success && (data as { health: AIHealthResponse }).health) {
+        const h = (data as { health: AIHealthResponse }).health;
+        setAiHealth(h);
+        setAiStatus(h.connected ? 'CONNECTED' : (h.configured ? 'ERROR' : 'UNKNOWN'));
+      }
+    }).catch(() => {});
+
     return () => { isMounted = false; };
-  }, []);
+  }, [runDecisionPipeline]);
 
   // React to mode changes (from Settings drawer or "Switch to LIVE" button).
   useEffect(() => {

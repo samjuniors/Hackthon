@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MapLibre Standalone Test</title>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <style>
+    body { margin: 0; padding: 0; background: #000; }
+    #map { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      sources: {
+        'carto-dark': {
+          type: 'raster',
+          tiles: [
+            'https://a.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png'
+          ],
+          tileSize: 256
+        }
+      },
+      layers: [
+        {
+          id: 'carto-dark-layer',
+          type: 'raster',
+          source: 'carto-dark'
+        }
+      ]
+    },
+    center: [-74.008, 40.712],
+    zoom: 14
+  });
+
+  map.on('load', () => {
+    map.addSource('test-thermal', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { temp: 30 },
+            geometry: {
+              type: 'Polygon',
+              coordinates: [
+                [
+                  [-74.012, 40.709],
+                  [-74.002, 40.709],
+                  [-74.002, 40.715],
+                  [-74.012, 40.715],
+                  [-74.012, 40.709]
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    });
+
+    map.addLayer({
+      id: 'test-thermal-fill',
+      type: 'fill',
+      source: 'test-thermal',
+      paint: {
+        'fill-color': '#10b981',
+        'fill-opacity': 0.8
+      }
+    });
+
+    map.addLayer({
+      id: 'test-thermal-line',
+      type: 'line',
+      source: 'test-thermal',
+      paint: {
+        'line-color': '#ffffff',
+        'line-width': 3
+      }
+    });
+  });
+</script>
+</body>
+</html>

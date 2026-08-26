@@ -557,47 +557,27 @@ export class FortyGuardAdapter {
     }
 
     // FIXTURE MODE — sequential lookup from verified in-memory fixture.
-    // For NYC/Manhattan locations, uses exact captured fixture geometries.
-    // For other demo operational centers (LA, SF, Chicago, Austin), aligns the fixture
-    // tile grid to the target location while preserving exact captured thermal properties.
     const isManhattan = isLocationCoveredByFixture(location);
-    const FIXTURE_CENTER_LAT = 40.7120;
-    const FIXTURE_CENTER_LON = -73.9980;
+    if (!isManhattan) {
+      throw new OutsideCoverageError(
+        `Location (${location.latitude}, ${location.longitude}) is outside the verified Manhattan fixture bounds in FIXTURE mode. Switch to LIVE mode to query arbitrary global coordinates with FortyGuard API credentials.`
+      );
+    }
 
     for (const timestamp of timestamps) {
       const d = new Date(timestamp);
       const hourStr = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
 
       const snapshot = hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp === timestamp)
-        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStr)
-        || hourlyFixtureData.hourlySnapshots[0];
+        || hourlyFixtureData.hourlySnapshots.find((s) => s.timestamp.slice(11, 16) === hourStr);
 
-      if (isManhattan) {
-        results.set(timestamp, snapshot.aoi as PolygonAOI);
-      } else {
-        // Project the captured grid tiles around the selected target location
-        const dLat = location.latitude - FIXTURE_CENTER_LAT;
-        const dLon = location.longitude - FIXTURE_CENTER_LON;
-
-        const shiftedFeatures = (snapshot.aoi as PolygonAOI).features.map((f) => {
-          const geom = f.geometry as { type: string; coordinates: number[][][] };
-          const shiftedCoords = geom.coordinates.map((ring) =>
-            ring.map(([lng, lat]) => [lng + dLon, lat + dLat] as [number, number])
-          );
-          return {
-            ...f,
-            geometry: {
-              ...geom,
-              coordinates: shiftedCoords,
-            },
-          };
-        });
-
-        results.set(timestamp, {
-          type: 'FeatureCollection',
-          features: shiftedFeatures,
-        });
+      if (!snapshot) {
+        throw new IncompleteTemporalCoverageError(
+          `Timestamp ${timestamp} is not covered by the 12-hour Manhattan fixture.`
+        );
       }
+
+      results.set(timestamp, snapshot.aoi as PolygonAOI);
     }
 
     return results;
@@ -613,6 +593,11 @@ export class FortyGuardAdapter {
     sourceEndpoint = '/v1/heatmap',
     provenance: DataProvenance = 'DERIVED'
   ): NormalizedThermalObservation {
+    if (this.mode === 'FIXTURE' && !isLocationCoveredByFixture(location)) {
+      throw new OutsideCoverageError(
+        `Target location (${location.latitude}, ${location.longitude}) is outside the verified Manhattan fixture bounds in FIXTURE mode.`
+      );
+    }
     const tile: TileFeature = findTileForPoint(location, aoi);
 
     return {

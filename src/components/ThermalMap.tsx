@@ -197,6 +197,50 @@ function hasRenderableTemperatureData(aoi: PolygonAOI | null | undefined): boole
   );
 }
 
+/**
+ * Drag-affordance anchor for the AOI handle: the NORTH-EAST point of the AOI
+ * boundary — the exact NE corner vertex for squares, the 45° boundary point
+ * for circles.
+ *
+ * The handle previously sat at the AOI CENTER, where the recommended-site
+ * marker (40px, z-index 30) fully covered the 34px handle (z-index 25)
+ * whenever the winner candidate is the analysis center, making the AOI
+ * undraggable. Anchoring the handle at the NE boundary keeps the affordance
+ * reachable without touching any candidate marker. Dragging translates the
+ * WHOLE AOI by the handle's movement delta — the AOI center is NOT moved to
+ * the handle position, and the canonical geometry (shape/size) is unchanged.
+ */
+function getAoiHandleAnchor(aoi: PolygonAOI): LocationPoint | null {
+  const feat = aoi.features[0];
+  const geom = feat?.geometry as { type: string; coordinates: number[][][] } | undefined;
+  if (!feat || !geom || !Array.isArray(geom.coordinates?.[0])) return null;
+  const ring = geom.coordinates[0];
+  if (ring.length < 3) return null;
+
+  const center = getAoiCenter(aoi);
+  if (!center) return null;
+
+  let maxLng = -Infinity, maxLat = -Infinity;
+  for (const [lng, lat] of ring) {
+    if (lng > maxLng) maxLng = lng;
+    if (lat > maxLat) maxLat = lat;
+  }
+
+  const props = (feat.properties ?? {}) as { shape?: string };
+  if (props.shape === 'circle') {
+    // 45° point ON the circle (NE), derived from the ring's bbox radii.
+    const rLng = maxLng - center.longitude;
+    const rLat = maxLat - center.latitude;
+    return {
+      longitude: center.longitude + rLng * Math.SQRT1_2,
+      latitude: center.latitude + rLat * Math.SQRT1_2,
+    };
+  }
+
+  // Square: the exact NE corner vertex of the ring.
+  return { longitude: maxLng, latitude: maxLat };
+}
+
 export function ThermalMap({
   location,
   locationState,
@@ -227,6 +271,11 @@ export function ThermalMap({
   const markersRef = useRef<Marker[]>([]);
   const aoiHandleRef = useRef<Marker | null>(null);
   const draggingAoiRef = useRef(false);
+  // Latest AOI geometry + move callback for the handle's drag listeners. The
+  // listeners attach ONCE at marker creation — reading through refs keeps them
+  // free of stale closures as the AOI moves/resizes.
+  const aoiGeometryRef = useRef<{ aoi: PolygonAOI; center: LocationPoint } | null>(null);
+  const aoiMoveCallbackRef = useRef<((center: LocationPoint) => void) | undefined>(undefined);
   const [mapReady, setMapReady] = useState(false);
   const [showRegionBoundary, setShowRegionBoundary] = useState(true);
 
@@ -774,19 +823,32 @@ export function ThermalMap({
   // Draggable AOI handle (Section 4 — the AOI moves as ONE object)
   // Pure translation: square stays square, circle stays circular, size is
   // preserved. dragend → onMoveAoi(newCenter) → canonical geometry update.
+  //
+  // The handle is anchored at the AOI's NORTH-EAST boundary point (see
+  // getAoiHandleAnchor) — NOT the center. The recommended-site marker
+  // (40px, z-index 30) sits at the AOI center whenever the winner candidate
+  // is the analysis center and fully covered the previous center-anchored
+  // handle (34px, z-index 25), making the AOI undraggable. Dragging the
+  // corner handle translates the WHOLE AOI by the handle's movement delta:
+  // map AOI == canonical AOI == FortyGuard request AOI is preserved.
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
     const center = analysisAoi ? getAoiCenter(analysisAoi) : null;
-    if (!center) {
+    const anchor = analysisAoi ? getAoiHandleAnchor(analysisAoi) : null;
+    if (!analysisAoi || !center || !anchor) {
       if (aoiHandleRef.current) {
         try { aoiHandleRef.current.remove(); } catch { /* safe */ }
         aoiHandleRef.current = null;
       }
       return;
     }
+
+    // Keep the drag listeners on the latest geometry + callback.
+    aoiGeometryRef.current = { aoi: analysisAoi, center };
+    aoiMoveCallbackRef.current = onMoveAoi;
 
     const isDark = theme === 'dark';
 
@@ -818,18 +880,48 @@ export function ThermalMap({
       `;
 
       const marker = new Marker({ element: el, draggable: true })
-        .setLngLat([center.longitude, center.latitude])
+        .setLngLat([anchor.longitude, anchor.latitude])
         .addTo(map);
 
-      const onDrag = () => {
+      // Drag origin: handle position + AOI center at drag start. The AOI is
+      // translated by (handle − handleOrigin) — releasing the corner handle
+      // anywhere yields exactly the translation dragging the center would.
+      let dragOrigin: {
+        handleLng: number; handleLat: number;
+        centerLng: number; centerLat: number;
+      } | null = null;
+
+      const ensureDragOrigin = () => {
+        const state = aoiGeometryRef.current;
+        if (!state) return;
+        if (!dragOrigin) {
+          const ll = marker.getLngLat();
+          dragOrigin = {
+            handleLng: ll.lng,
+            handleLat: ll.lat,
+            centerLng: state.center.longitude,
+            centerLat: state.center.latitude,
+          };
+        }
         draggingAoiRef.current = true;
-        const lngLat = marker.getLngLat();
-        if (!analysisAoi) return;
+      };
+
+      const translatedCenter = (): LocationPoint | null => {
+        if (!dragOrigin) return null;
+        const ll = marker.getLngLat();
+        return {
+          longitude: dragOrigin.centerLng + (ll.lng - dragOrigin.handleLng),
+          latitude: dragOrigin.centerLat + (ll.lat - dragOrigin.handleLat),
+        };
+      };
+
+      const onDrag = () => {
+        ensureDragOrigin();
+        const state = aoiGeometryRef.current;
+        const newCenter = translatedCenter();
+        if (!state || !newCenter) return;
         // Live preview: translate the canonical geometry under the handle.
-        const preview = moveAoiToCenter(analysisAoi, {
-          latitude: lngLat.lat,
-          longitude: lngLat.lng,
-        });
+        const preview = moveAoiToCenter(state.aoi, newCenter);
         const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
         if (aoiSource) aoiSource.setData(preview as unknown as GeoJSONFC);
         el.style.cursor = 'grabbing';
@@ -838,17 +930,18 @@ export function ThermalMap({
       const onDragEnd = () => {
         draggingAoiRef.current = false;
         el.style.cursor = 'grab';
-        const lngLat = marker.getLngLat();
-        onMoveAoi?.({ latitude: lngLat.lat, longitude: lngLat.lng });
+        const newCenter = translatedCenter();
+        dragOrigin = null;
+        if (newCenter) aoiMoveCallbackRef.current?.(newCenter);
       };
 
       marker.on('drag', onDrag);
       marker.on('dragend', onDragEnd);
       aoiHandleRef.current = marker;
     } else {
-      // External geometry update (size/shape/location change) — reposition handle
+      // External geometry update (size/shape/location change) — re-anchor handle
       if (!draggingAoiRef.current) {
-        aoiHandleRef.current.setLngLat([center.longitude, center.latitude]);
+        aoiHandleRef.current.setLngLat([anchor.longitude, anchor.latitude]);
       }
     }
   }, [mapReady, analysisAoi, onMoveAoi, theme]);

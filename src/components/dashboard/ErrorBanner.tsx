@@ -9,6 +9,8 @@ interface ErrorBannerProps {
   altLocations: NamedLocation[];
   onRetry: () => void;
   onSwitchToDemo: () => void;
+  /** Offered in DEMO mode (e.g. NO_DEMO_CAPTURE) — switch the DATA SOURCE to LIVE. */
+  onSwitchToLive?: () => void;
   onSelectAltLocation: (loc: NamedLocation) => void;
 }
 
@@ -22,6 +24,7 @@ export function ErrorBanner({
   altLocations,
   onRetry,
   onSwitchToDemo,
+  onSwitchToLive,
   onSelectAltLocation,
 }: ErrorBannerProps) {
   return (
@@ -66,6 +69,16 @@ export function ErrorBanner({
               style={{ borderColor: 'var(--accent-amber)', background: 'var(--accent-amber-bg)' }}
             >
               Continue with Verified Demo
+            </button>
+          )}
+          {mode === 'FIXTURE' && onSwitchToLive && (
+            <button
+              onClick={onSwitchToLive}
+              data-testid="switch-to-live-btn"
+              className="px-3 py-1.5 min-h-[36px] text-xs rounded-lg border font-semibold transition-colors text-white hover:opacity-90"
+              style={{ borderColor: 'var(--accent-emerald)', background: 'var(--accent-emerald)' }}
+            >
+              Switch to LIVE
             </button>
           )}
         </div>

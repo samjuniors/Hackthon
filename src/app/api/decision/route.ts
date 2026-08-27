@@ -27,6 +27,7 @@ import { isPointInAoi, aoiBboxesIntersect } from '@/lib/spatial/aoi';
 import {
   getFixtureExtentAoi,
   getFixtureCaptureMetadata,
+  getFixtureCaptureRequestAoi,
 } from '@/lib/fortyguard/fixture-metadata';
 import { z } from 'zod';
 import {
@@ -249,9 +250,11 @@ export async function POST(request: Request) {
       | import('@/types/domain').PolygonAOI
       | undefined;
 
-    // DEMO capture-extent gate: the captured field is FIXED. If the user's
-    // AOI does not intersect the captured extent, the DEMO dataset cannot
-    // cover it — we do NOT invent thermal data and do NOT call FortyGuard.
+    // ── DEMO capture-extent gate ──
+    // The captured field is FIXED. If the client-supplied AOI does not even
+    // intersect the captured extent, the DEMO dataset cannot cover it — we do
+    // NOT invent thermal data and do NOT call FortyGuard. (The honest client
+    // always submits the captured analysis area — see the override below.)
     if (mode === 'FIXTURE') {
       const captureExtent = getFixtureExtentAoi();
       if (captureExtent && canonicalAoi && !aoiBboxesIntersect(canonicalAoi, captureExtent)) {
@@ -261,7 +264,7 @@ export async function POST(request: Request) {
             error: {
               code: 'AOI_OUTSIDE_DEMO_CAPTURE',
               message: 'The selected analysis area is outside the captured DEMO dataset. DEMO uses one fixed captured FortyGuard field — moving the AOI does not produce new provider data.',
-              recoverySuggestion: 'Drag the analysis area back inside the captured-field boundary (dashed outline), or switch to LIVE mode to request fresh FortyGuard data.',
+              recoverySuggestion: 'Select a Manhattan DEMO location to load the captured analysis area, or switch to LIVE mode to request fresh FortyGuard data for any area.',
               category: 'COVERAGE',
             } as const,
           },
@@ -269,6 +272,15 @@ export async function POST(request: Request) {
         );
       }
     }
+
+    // ── DEMO canonical AOI: the CAPTURED REQUEST AREA ──
+    // In DEMO the analysis area is the polygon_aoi the capture was genuinely
+    // requested with (fixture metadata) — never a client-invented geometry.
+    // The capture is replayed verbatim inside it: no clipping, no
+    // interpolation, no regridding, no pretend provider response for any
+    // other AOI. (LIVE keeps the client's canonical AOI exactly as submitted.)
+    const effectiveAoi: import('@/types/domain').PolygonAOI | undefined =
+      mode === 'FIXTURE' ? (getFixtureCaptureRequestAoi() ?? canonicalAoi) : canonicalAoi;
 
     // ── Candidate resolution (Section 8 — NO synthetic generation) ──
     // FIXTURE: the three DEMO CANDIDATES (application-defined points inside
@@ -305,9 +317,9 @@ export async function POST(request: Request) {
     // candidate.
     //   - LIVE: the authoritative extent is the user's canonical AOI (what
     //     FortyGuard is asked for).
-    //   - FIXTURE: the authoritative extent is the CAPTURED fixture strip
-    //     (the thermal data the demo actually contains).
-    const validationExtent = mode === 'FIXTURE' ? (getFixtureExtentAoi() ?? canonicalAoi) : canonicalAoi;
+    //   - FIXTURE: the authoritative extent is the CAPTURED analysis area
+    //     (the capture request AOI from the fixture metadata).
+    const validationExtent = mode === 'FIXTURE' ? (getFixtureCaptureRequestAoi() ?? getFixtureExtentAoi() ?? effectiveAoi) : effectiveAoi;
     if (validationExtent) {
       for (const cand of candidatesToEvaluate) {
         if (!isPointInAoi(cand.location, validationExtent)) {
@@ -342,7 +354,7 @@ export async function POST(request: Request) {
       seenCoords.add(coordKey);
     }
 
-    const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps, canonicalAoi, {
+    const snapshotsMap = await adapter.getHourlyHeatmapSnapshots(location, hourlyTimestamps, effectiveAoi, {
       granularity: reqGranularity,
       analysisAreaShape: reqShape,
     });

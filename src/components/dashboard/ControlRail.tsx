@@ -30,15 +30,24 @@ import {
   FIXTURE_CELL_COUNT,
   FIXTURE_CAPTURED_AT_ISO,
   FIXTURE_CAPTURED_HOUR_ISO,
+  fixtureCaptureSpanLabel,
 } from '@/lib/fortyguard/fixture-display';
 
 interface ControlRailProps {
   mode: DataSourceMode;
-  selectedLocation: NamedLocation;
+  /** NULL in the EMPTY workspace state (no location selected yet). */
+  selectedLocation: NamedLocation | null;
   /** Current AOI center (tracks drag movements — Section 4). */
   analysisCenter?: LocationPoint;
   /** Non-null when a state/region was selected as CONTEXT (Section 13). */
   stateLevelSelection?: NamedLocation | null;
+  /**
+   * True when the DEMO data source has a genuine capture for the selected
+   * location (DEMO is a DATA SOURCE, not a default state): the captured
+   * analysis area, cells, and application-defined candidates exist ONLY
+   * then. FALSE → honest "no DEMO capture for this location" presentation.
+   */
+  demoCaptureAvailable?: boolean;
   /** Explicit WHEN inputs — date + start + end + time mode. */
   temporalInput: AnalysisTemporalInput;
   onTemporalChange: (next: AnalysisTemporalInput) => void;
@@ -100,19 +109,24 @@ export function ControlRail({
   addSiteMode,
   onAddSiteFromSearch,
   fixtureGranularity,
+  demoCaptureAvailable = false,
 }: ControlRailProps) {
   const [prefs, setters] = useUserPreferences();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [showSiteSearch, setShowSiteSearch] = useState(false);
-  const isFixtureMismatch = mode === 'FIXTURE' && !isLocationCoveredByFixture(selectedLocation);
+  const isFixtureMismatch =
+    mode === 'FIXTURE' && !!selectedLocation && !isLocationCoveredByFixture(selectedLocation);
   const aiProvider = aiHealth?.provider;
   // Display timezone: DEMO is UTC-anchored (the capture's request hour is a
   // UTC instant); LIVE uses the selected location's timezone.
-  const tz = mode === 'FIXTURE' ? FIXTURE_TIMEZONE : selectedLocation.timezone;
+  const tz = mode === 'FIXTURE' ? FIXTURE_TIMEZONE : selectedLocation?.timezone;
   const derivedDuration = deriveDurationHours(temporalInput);
   const isFixtureAnchored = mode === 'FIXTURE';
-  const centerCoords = analysisCenter ?? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude };
+  const centerCoords = analysisCenter
+    ?? (selectedLocation
+      ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }
+      : null);
 
   // Helper to update a single field of the temporal input.
   const update = (patch: Partial<AnalysisTemporalInput>) =>
@@ -158,13 +172,14 @@ export function ControlRail({
           </div>
           <div className="text-[10px] font-mono leading-relaxed" style={{ color: 'var(--accent-amber-text)', opacity: 0.9 }}>
             <div>{FIXTURE_DISPLAY_GRANULARITY}m cell resolution</div>
+            <div>Captured analysis area: {fixtureCaptureSpanLabel()}</div>
             <div>Model hour: {FIXTURE_CAPTURED_HOUR_ISO.slice(0, 10)} · {FIXTURE_CAPTURED_HOUR_ISO.slice(11, 16)} UTC</div>
             <div>Captured: {FIXTURE_CAPTURED_AT_ISO.slice(0, 10)} {FIXTURE_CAPTURED_AT_ISO.slice(11, 16)} UTC</div>
             <div>{FIXTURE_CELL_COUNT} provider cells · {FIXTURE_DISPLAY_SNAPSHOT_COUNT}-hour snapshot</div>
           </div>
           <p className="text-xs leading-relaxed mt-1.5" style={{ color: 'var(--accent-amber-text)', opacity: 0.85 }}>
-            Offline demonstration replaying one genuine captured FortyGuard field (Lower Manhattan). Switch to LIVE in
-            Settings to analyse any location in real time.
+            Offline demonstration replaying one genuine captured FortyGuard field (Lower Manhattan). Selecting a Manhattan
+            DEMO location loads this captured dataset. Switch to LIVE in Settings to analyse any location in real time.
           </p>
         </div>
       )}
@@ -203,62 +218,88 @@ export function ControlRail({
 
         <div className="border-t border-border" />
 
-        {/* ── Analysis Area (SPAN semantics — Section 3) ── */}
+        {/* ── Analysis Area — DEMO: the CAPTURED analysis area (fixed) / LIVE: user span controls ── */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-text-secondary">Analysis Area</span>
             <span className="text-[10px] font-mono text-text-dimmed">
-              {prefs.analysisAreaShape === 'circle' ? 'diameter' : 'square span'} · draggable
+              {mode === 'FIXTURE'
+                ? 'captured · fixed'
+                : `${prefs.analysisAreaShape === 'circle' ? 'diameter' : 'square span'} · draggable`}
             </span>
           </div>
-          {/* Shape toggle */}
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            {(['polygon', 'circle'] as const).map((shape) => (
-              <button
-                key={shape}
-                data-testid={`aoi-shape-${shape}`}
-                onClick={() => setters.setAnalysisAreaShape(shape)}
-                className={`min-h-[40px] rounded-lg text-xs font-semibold capitalize transition-all border ${
-                  prefs.analysisAreaShape === shape
-                    ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
-                    : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
-                }`}
-              >
-                {shape === 'polygon' ? 'Square' : 'Circle'}
-              </button>
-            ))}
-          </div>
-          {/* AOI span presets — the number IS the visible size:
-              polygon → side length ("400m × 400m"), circle → diameter. */}
-          <div className="grid grid-cols-5 gap-1.5" data-testid="aoi-size-presets">
-            {AOI_SPAN_PRESETS_LOCAL.map((size) => {
-              const active = prefs.analysisAoiSpanMetres === size;
-              return (
-                <button
-                  key={size}
-                  data-testid={`aoi-size-${size}`}
-                  onClick={() => setters.setAnalysisAoiSpanMetres(size)}
-                  className={`min-h-[36px] rounded-md text-[10px] font-mono font-bold transition-all border ${
-                    active
-                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
-                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
-                  }`}
-                  aria-pressed={active}
-                >
-                  {metresLabel(size)}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-1.5 px-2 py-1 rounded bg-surface-deep/60 border border-border/50 text-[10px] font-mono text-text-muted flex items-center justify-between">
-            <span>Size:</span>
-            <span className="text-accent-cyan font-bold" data-testid="aoi-span-label">
-              {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
-            </span>
-          </div>
-          <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
-            Drag the ⌖ handle on the map to move the area — the moved geometry is exactly what FortyGuard receives.
-          </p>
+          {mode === 'FIXTURE' ? (
+            <div data-testid="captured-analysis-area">
+              <div className="px-2 py-2 rounded-lg bg-surface-deep/60 border border-border/50 text-[10px] font-mono space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted">Captured analysis area:</span>
+                  <span className="font-bold" style={{ color: 'var(--accent-amber)' }}>
+                    {fixtureCaptureSpanLabel()}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-text-muted">Source:</span>
+                  <span className="text-text-dimmed">genuine FortyGuard capture request</span>
+                </div>
+              </div>
+              <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
+                DEMO analyses the exact area the captured FortyGuard field was requested for (read from the capture
+                metadata — the dashed extent on the map). Size and shape controls apply to LIVE only: DEMO never
+                pretends a different provider capture exists.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Shape toggle (LIVE) */}
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                {(['polygon', 'circle'] as const).map((shape) => (
+                  <button
+                    key={shape}
+                    data-testid={`aoi-shape-${shape}`}
+                    onClick={() => setters.setAnalysisAreaShape(shape)}
+                    className={`min-h-[40px] rounded-lg text-xs font-semibold capitalize transition-all border ${
+                      prefs.analysisAreaShape === shape
+                        ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                    }`}
+                  >
+                    {shape === 'polygon' ? 'Square' : 'Circle'}
+                  </button>
+                ))}
+              </div>
+              {/* AOI span presets — the number IS the visible size:
+                  polygon → side length ("400m × 400m"), circle → diameter. */}
+              <div className="grid grid-cols-5 gap-1.5" data-testid="aoi-size-presets">
+                {AOI_SPAN_PRESETS_LOCAL.map((size) => {
+                  const active = prefs.analysisAoiSpanMetres === size;
+                  return (
+                    <button
+                      key={size}
+                      data-testid={`aoi-size-${size}`}
+                      onClick={() => setters.setAnalysisAoiSpanMetres(size)}
+                      className={`min-h-[36px] rounded-md text-[10px] font-mono font-bold transition-all border ${
+                        active
+                          ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+                          : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                      }`}
+                      aria-pressed={active}
+                    >
+                      {metresLabel(size)}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-1.5 px-2 py-1 rounded bg-surface-deep/60 border border-border/50 text-[10px] font-mono text-text-muted flex items-center justify-between">
+                <span>Size:</span>
+                <span className="text-accent-cyan font-bold" data-testid="aoi-span-label">
+                  {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
+                </span>
+              </div>
+              <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
+                Drag the ⌖ handle on the map to move the area — the moved geometry is exactly what FortyGuard receives.
+              </p>
+            </>
+          )}
         </div>
 
         {/* ── Thermal Cell resolution (Section 2 — granularity, NOT zoom) ── */}
@@ -269,10 +310,20 @@ export function ControlRail({
               {mode === 'LIVE' ? 'FortyGuard granularity' : `fixture captured at ${fixtureGranularity ?? 100}m`}
             </span>
           </div>
+          {mode === 'FIXTURE' ? (
+            <div
+              className="rounded-lg bg-surface-deep/60 border border-border/50 px-2 py-2 flex items-center justify-between"
+              data-testid="captured-resolution"
+            >
+              <span className="text-[10px] font-mono text-text-muted">Captured resolution:</span>
+              <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--accent-amber)' }}>
+                {fixtureGranularity ?? 100}m × {fixtureGranularity ?? 100}m
+              </span>
+            </div>
+          ) : (
           <div className="grid grid-cols-3 gap-2" data-testid="resolution-options">
             {([60, 80, 100] as const).map((r) => {
               const active = prefs.analysisResolution === r;
-              const fixtureMismatch = mode === 'FIXTURE' && fixtureGranularity !== r;
               return (
                 <button
                   key={r}
@@ -290,11 +341,6 @@ export function ControlRail({
               );
             })}
           </div>
-          {mode === 'FIXTURE' && fixtureGranularity !== prefs.analysisResolution && (
-            <p className="text-[9px] mt-1" style={{ color: 'var(--accent-amber)' }}>
-              DEMO displays the fixture&apos;s actual {fixtureGranularity ?? 100}m cells — the {prefs.analysisResolution}m
-              selection only affects LIVE queries.
-            </p>
           )}
         </div>
 
@@ -304,15 +350,17 @@ export function ControlRail({
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-text-secondary">Candidate Sites</span>
             <span className="text-[10px] font-mono text-text-dimmed">
-              {mode === 'FIXTURE' ? 'DEMO CANDIDATES' : 'user-placed'}
+              {mode === 'FIXTURE' ? 'DEMO CANDIDATES · application-defined' : 'user-placed'}
             </span>
           </div>
 
           {mode === 'FIXTURE' ? (
+            demoCaptureAvailable ? (
             <div className="space-y-1.5">
               <p className="text-[10px] text-text-muted leading-relaxed">
-                DEMO CANDIDATES — application-defined points evaluated against the captured FortyGuard field (not
-                captured sites). LIVE lets you place your own sites.
+                Application-defined DEMO candidates — points the application wants evaluated against the captured
+                FortyGuard provider data (not captured sites, not FortyGuard observations). LIVE lets you place your own
+                sites.
               </p>
               {['Battery Park Greenway', 'City Hall Civic Center', 'Chinatown / Bowery'].map((n) => (
                 <div key={n} className="flex items-center gap-2 rounded-md bg-surface-deep border border-border px-2.5 py-1.5">
@@ -322,6 +370,12 @@ export function ControlRail({
                 </div>
               ))}
             </div>
+            ) : (
+              <p className="text-[10px] text-text-muted leading-relaxed" data-testid="no-demo-candidates">
+                No DEMO candidates — this location has no captured FortyGuard dataset. Switch to LIVE to place your own
+                candidate sites, or select a Manhattan DEMO location.
+              </p>
+            )
           ) : (
             <div className="space-y-2">
               {/* Add-site actions */}
@@ -648,14 +702,16 @@ export function ControlRail({
             </span>
           </div>
           <div className="text-sm font-bold text-text-primary leading-tight" data-testid="active-analysis-location-name">
-            {selectedLocation.name}
+            {selectedLocation ? selectedLocation.name : 'No location selected'}
           </div>
-          <div className="text-[11px] font-mono flex items-center justify-between" style={{ color: 'var(--accent-cyan)' }} data-testid="active-analysis-location-coords">
-            <span>{centerCoords.latitude.toFixed(4)}°, {centerCoords.longitude.toFixed(4)}°</span>
-            <span className="text-text-muted font-sans text-[10px]">
-              {selectedLocation.city ? `${selectedLocation.city}, ${selectedLocation.state || selectedLocation.country}` : selectedLocation.state || ''}
-            </span>
-          </div>
+          {selectedLocation && centerCoords && (
+            <div className="text-[11px] font-mono flex items-center justify-between" style={{ color: 'var(--accent-cyan)' }} data-testid="active-analysis-location-coords">
+              <span>{centerCoords.latitude.toFixed(4)}°, {centerCoords.longitude.toFixed(4)}°</span>
+              <span className="text-text-muted font-sans text-[10px]">
+                {selectedLocation.city ? `${selectedLocation.city}, ${selectedLocation.state || selectedLocation.country}` : selectedLocation.state || ''}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Generate button */}

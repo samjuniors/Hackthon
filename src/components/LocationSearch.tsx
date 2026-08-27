@@ -10,10 +10,12 @@ import {
   getPresetLocations,
   resolveLocationPoint,
   METROPOLITAN_LOCATIONS,
+  isLocationCoveredByFixture,
 } from '@/lib/location/search';
 
 interface LocationSearchProps {
-  selectedLocation: NamedLocation;
+  /** NULL in the EMPTY workspace state — no location selected yet. */
+  selectedLocation: NamedLocation | null;
   mode: DataSourceMode;
   onSelectLocation: (loc: NamedLocation) => void;
   onSwitchToLive?: () => void;
@@ -129,7 +131,10 @@ export function LocationSearch({
   };
 
   const isFixture = mode === 'FIXTURE';
-  const isSelectedNonDemoInFixture = isFixture && !selectedLocation.isDemoOnly;
+  // A location has DEMO data only when it lies inside the genuine captured
+  // field (coverage semantics — not the isDemoOnly catalog flag).
+  const isSelectedWithoutDemoCapture =
+    isFixture && !!selectedLocation && !isLocationCoveredByFixture(selectedLocation);
 
   return (
     <div className="space-y-3">
@@ -148,39 +153,47 @@ export function LocationSearch({
       </div>
       )}
 
-      {/* Selected Location Card */}
+      {/* Selected Location Card (EMPTY state: instruction to select one) */}
       {!compact && (
       <div className="bg-surface-deep p-3 rounded-xl border border-border space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-2.5 h-2.5 rounded-full bg-accent-cyan shrink-0" />
             <span className="text-xs font-bold text-text-primary truncate" data-testid="selected-location-name">
-              {selectedLocation.name}
+              {selectedLocation ? selectedLocation.name : 'No location selected'}
             </span>
           </div>
-          <Badge
-            variant="outline"
-            className="text-[10px] font-mono shrink-0 border-accent-cyan/40 text-accent-cyan bg-accent-cyan-bg"
-          >
-            {selectedLocation.category}
-          </Badge>
-        </div>
-
-        <div className="text-[11px] font-mono text-text-muted flex items-center justify-between">
-          <span>
-            {selectedLocation.latitude.toFixed(4)}°, {selectedLocation.longitude.toFixed(4)}°
-          </span>
-          {selectedLocation.zipCode && (
-            <span className="text-text-dimmed">ZIP {selectedLocation.zipCode}</span>
+          {selectedLocation && (
+            <Badge
+              variant="outline"
+              className="text-[10px] font-mono shrink-0 border-accent-cyan/40 text-accent-cyan bg-accent-cyan-bg"
+            >
+              {selectedLocation.category}
+            </Badge>
           )}
         </div>
 
-        {/* Fixture Mode Limitation Warning */}
-        {isSelectedNonDemoInFixture && (
+        {selectedLocation ? (
+          <div className="text-[11px] font-mono text-text-muted flex items-center justify-between">
+            <span>
+              {selectedLocation.latitude.toFixed(4)}°, {selectedLocation.longitude.toFixed(4)}°
+            </span>
+            {selectedLocation.zipCode && (
+              <span className="text-text-dimmed">ZIP {selectedLocation.zipCode}</span>
+            )}
+          </div>
+        ) : (
+          <p className="text-[10px] text-text-muted leading-relaxed">
+            Search a city, street, or address — or pick a preset below — to select the location you want to analyse.
+          </p>
+        )}
+
+        {/* No DEMO capture for the selected location */}
+        {isSelectedWithoutDemoCapture && (
           <div className="p-2.5 rounded-lg bg-accent-amber-bg border border-accent-amber/40 text-[11px] text-accent-amber-text space-y-1 mt-2">
-            <p className="font-bold text-accent-amber">⚠️ Fixture Mode Notice</p>
+            <p className="font-bold text-accent-amber">⚠️ No DEMO capture for this location</p>
             <p className="text-[10px] leading-tight opacity-90">
-              DEMO mode uses captured Manhattan thermal tiles. To evaluate {selectedLocation.name} with real FortyGuard data, switch to LIVE mode.
+              The captured FortyGuard DEMO dataset covers Lower Manhattan only. To evaluate {selectedLocation?.name} with real FortyGuard data, switch to LIVE mode.
             </p>
             {onSwitchToLive && (
               <Button
@@ -300,7 +313,7 @@ export function LocationSearch({
           >
             {results.length > 0 ? (
               results.map((loc, idx) => {
-                const isSelected = selectedLocation.id === loc.id;
+                const isSelected = selectedLocation?.id === loc.id;
                 const isFocused = activeIndex === idx;
                 return (
                   <button
@@ -407,7 +420,7 @@ export function LocationSearch({
             ? METROPOLITAN_LOCATIONS.filter((l) => l.isDemoOnly)
             : METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly)
           ).map((loc) => {
-            const isSelected = selectedLocation.id === loc.id;
+            const isSelected = selectedLocation?.id === loc.id;
             return (
               <button
                 key={loc.id}
@@ -440,12 +453,12 @@ export function LocationSearch({
               id="manual-lat-input"
               type="number"
               step="0.0001"
-              value={selectedLocation.latitude}
+              value={selectedLocation?.latitude ?? ''}
               onChange={(e) => {
                 const lat = parseFloat(e.target.value);
                 if (!isNaN(lat)) {
                   onSelectLocation(
-                    resolveLocationPoint(lat, selectedLocation.longitude, 'Custom Coordinates')
+                    resolveLocationPoint(lat, selectedLocation?.longitude ?? 0, 'Custom Coordinates')
                   );
                 }
               }}
@@ -458,12 +471,12 @@ export function LocationSearch({
               id="manual-lon-input"
               type="number"
               step="0.0001"
-              value={selectedLocation.longitude}
+              value={selectedLocation?.longitude ?? ''}
               onChange={(e) => {
                 const lon = parseFloat(e.target.value);
                 if (!isNaN(lon)) {
                   onSelectLocation(
-                    resolveLocationPoint(selectedLocation.latitude, lon, 'Custom Coordinates')
+                    resolveLocationPoint(selectedLocation?.latitude ?? 0, lon, 'Custom Coordinates')
                   );
                 }
               }}

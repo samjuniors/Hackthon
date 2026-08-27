@@ -46,6 +46,20 @@ export function getFixtureCaptureMetadata(): FixtureCaptureMetadata | null {
   return fixture.captureMetadata ?? null;
 }
 
+/**
+ * The polygon_aoi that was ACTUALLY sent to FortyGuard when the DEMO snapshot
+ * was captured (from captureMetadata.requestBody). In DEMO mode this geometry
+ * IS the analysis area — the captured request AOI == the rendered AOI == the
+ * area the captured cells were produced for. DEMO never evaluates any other
+ * geometry against the capture (no clipping / interpolation / regridding).
+ * The client mirrors this exact geometry (fixture-display.ts
+ * FIXTURE_CAPTURE_REQUEST_AOI); a test asserts the two stay identical.
+ */
+export function getFixtureCaptureRequestAoi(): PolygonAOI | null {
+  const aoi = fixture.captureMetadata?.requestBody?.polygon_aoi;
+  return aoi ? (JSON.parse(JSON.stringify(aoi)) as PolygonAOI) : null;
+}
+
 /** The single captured hour (ISO UTC) — the only hour DEMO can evaluate. */
 export function getFixtureCapturedHourIso(): string | null {
   const first = fixture.hourlySnapshots?.[0];

@@ -8,7 +8,7 @@
  * stays identical to the server-side fixture metadata — if the capture
  * changes, update fixture-metadata.ts (server) AND this mirror (client).
  */
-import type { CandidateLocation, PolygonAOI } from '@/types/domain';
+import type { CandidateLocation, LocationPoint, PolygonAOI } from '@/types/domain';
 
 /**
  * Granularity the captured fixture was ACTUALLY recorded at (100m). In DEMO
@@ -65,6 +65,71 @@ export const FIXTURE_EXTENT_AOI: PolygonAOI = {
     },
   ],
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The CAPTURED ANALYSIS AREA (DEMO's canonical AOI)
+//
+// The DEMO capture was requested from FortyGuard with ONE specific polygon_aoi
+// (recorded verbatim in the fixture's captureMetadata.requestBody.polygon_aoi).
+// In DEMO mode THIS geometry — and nothing else — is the analysis area:
+// the captured request AOI == the rendered AOI == the area the captured cells
+// were produced for. DEMO never pretends FortyGuard returned data for any
+// other geometry (no clipping, no interpolation, no regridding of the capture).
+// A test asserts this mirror equals the server-side metadata exactly.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The genuine capture REQUEST AOI — mirrored verbatim from the fixture metadata. */
+export const FIXTURE_CAPTURE_REQUEST_AOI: PolygonAOI = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      properties: { shape: 'polygon', source: 'fixture-capture-request' },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [-74.01222132741097, 40.70122026590011],
+          [-73.98377867258904, 40.70122026590011],
+          [-73.98377867258904, 40.722779734099895],
+          [-74.01222132741097, 40.722779734099895],
+          [-74.01222132741097, 40.70122026590011],
+        ]],
+      },
+    },
+  ],
+};
+
+/** Center of the captured analysis area (the capture request AOI's midpoint). */
+export const FIXTURE_CAPTURE_CENTER: LocationPoint = { latitude: 40.712, longitude: -73.998 };
+
+/** Planar metres-per-degree factors — identical to src/lib/spatial/aoi.ts. */
+const FIXTURE_METRES_PER_DEG_LAT = 111320;
+function fixtureMetresPerDegLon(lat: number): number {
+  return FIXTURE_METRES_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
+}
+
+/** Physical span of the captured analysis area (width × height, metres). */
+export const FIXTURE_CAPTURE_SPAN_METRES: { width: number; height: number } = (() => {
+  const ring = (
+    FIXTURE_CAPTURE_REQUEST_AOI.features[0].geometry as { coordinates: number[][][] }
+  ).coordinates[0];
+  const lngs = ring.map(([lng]) => lng);
+  const lats = ring.map(([, lat]) => lat);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  return {
+    width: (maxLng - minLng) * fixtureMetresPerDegLon((minLat + maxLat) / 2),
+    height: (maxLat - minLat) * FIXTURE_METRES_PER_DEG_LAT,
+  };
+})();
+
+/** Compact human label for the captured analysis area (e.g. "≈2.4km × 2.4km"). */
+export function fixtureCaptureSpanLabel(): string {
+  const fmt = (m: number) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${Math.round(m)}m`);
+  return `≈${fmt(FIXTURE_CAPTURE_SPAN_METRES.width)} × ${fmt(FIXTURE_CAPTURE_SPAN_METRES.height)}`;
+}
 
 /**
  * The three DEMO CANDIDATE sites (Lower Manhattan).

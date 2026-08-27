@@ -22,8 +22,12 @@ type GeoJSONFC = FeatureCollection;
 
 
 interface ThermalMapProps {
-  /** User-selected analysis center. Used for fallback fit + marker. */
-  location: LocationPoint;
+  /**
+   * User-selected analysis center. Used for the fallback fit + marker.
+   * NULL in the EMPTY workspace state — the map then opens on a neutral
+   * continental view and renders NO analysis marker (no location is chosen).
+   */
+  location: LocationPoint | null;
   /** State or territory code/name (e.g. CA, NY) */
   locationState?: string;
   locationName?: string;
@@ -55,6 +59,22 @@ interface ThermalMapProps {
   areaShape?: AnalysisAreaShape;
   /** Fired when the user finishes dragging the AOI — new canonical center. */
   onMoveAoi?: (center: LocationPoint) => void;
+  /**
+   * Whether the AOI drag handle is offered. FALSE in DEMO: the captured
+   * analysis area is FIXED (the genuine capture request AOI) — dragging it
+   * would imply a provider capture that does not exist. LIVE keeps the
+   * draggable AOI (the user's own analysis area).
+   */
+  aoiDraggable?: boolean;
+  /**
+   * Whether the fallback "Selected Analysis Area" marker renders when no
+   * candidate sites exist. FALSE when NO analysis area exists (e.g. a DEMO
+   * location with no capture) so the map never labels a point as an analysis
+   * area that was never configured.
+   */
+  showLocationMarker?: boolean;
+  /** Message shown by the empty-map overlay (no field AND no AOI). */
+  emptyMapMessage?: string;
   /** Add-candidate-site mode: map clicks place a candidate at the clicked point. */
   addSiteMode?: boolean;
   onAddSiteAt?: (lng: number, lat: number) => void;
@@ -73,6 +93,16 @@ interface ThermalMapProps {
 
 /** Empty FeatureCollection sentinel for source initialization / clear. */
 const EMPTY_FC: GeoJSONFC = { type: 'FeatureCollection', features: [] };
+
+/**
+ * Neutral continental-US view for the EMPTY workspace state — no location is
+ * selected, so the map must not imply any analysis context (and never the
+ * implicit Manhattan DEMO). Pure view default; nothing is analysed here.
+ */
+const DEFAULT_EMPTY_VIEW: { center: [number, number]; zoom: number } = {
+  center: [-98.5795, 39.8283], // geographic center of the contiguous US
+  zoom: 3.7,
+};
 
 /** Extract a flat [lng, lat] list from a Polygon or MultiPolygon geometry. */
 function extractCoords(geometry: { type: string; coordinates: unknown }): [number, number][] {
@@ -258,6 +288,9 @@ export function ThermalMap({
   onToggleLayer,
   areaShape = 'polygon',
   onMoveAoi,
+  aoiDraggable = true,
+  showLocationMarker = true,
+  emptyMapMessage = 'Select a location to render the thermal field',
   addSiteMode = false,
   onAddSiteAt,
   onToggleAddSiteMode,
@@ -342,10 +375,15 @@ export function ThermalMap({
 
     const isDark = theme === 'dark';
 
-    const isValidLat = Number.isFinite(location.latitude) && location.latitude >= -90 && location.latitude <= 90;
-    const isValidLon = Number.isFinite(location.longitude) && location.longitude >= -180 && location.longitude <= 180;
-    const centerLng = isValidLon ? location.longitude : -74.008;
-    const centerLat = isValidLat ? location.latitude : 40.712;
+    // EMPTY state (location === null): neutral continental view — no implied
+    // analysis context. Otherwise center on the selected analysis point.
+    const hasLocation =
+      location !== null &&
+      Number.isFinite(location.latitude) && location.latitude >= -90 && location.latitude <= 90 &&
+      Number.isFinite(location.longitude) && location.longitude >= -180 && location.longitude <= 180;
+    const centerLng = hasLocation && location ? location.longitude : DEFAULT_EMPTY_VIEW.center[0];
+    const centerLat = hasLocation && location ? location.latitude : DEFAULT_EMPTY_VIEW.center[1];
+    const initialZoom = hasLocation ? 14.5 : DEFAULT_EMPTY_VIEW.zoom;
 
     // Esri World Gray Canvas raster tiles — keyless, no watermark, production-clean.
     // (Supersedes CARTO basemaps.cartocdn.com rasters, which now bake an
@@ -434,7 +472,7 @@ export function ThermalMap({
         ],
       },
       center: [centerLng, centerLat],
-      zoom: 14.5,
+      zoom: initialZoom,
     });
 
     mapRef.current = map;
@@ -836,6 +874,17 @@ export function ThermalMap({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
+    // DEMO: the captured analysis area is FIXED — no drag affordance. Dragging
+    // it would imply a provider capture for a different geometry that does
+    // not exist. (LIVE keeps the draggable AOI.)
+    if (!aoiDraggable) {
+      if (aoiHandleRef.current) {
+        try { aoiHandleRef.current.remove(); } catch { /* safe */ }
+        aoiHandleRef.current = null;
+      }
+      return;
+    }
+
     const center = analysisAoi ? getAoiCenter(analysisAoi) : null;
     const anchor = analysisAoi ? getAoiHandleAnchor(analysisAoi) : null;
     if (!analysisAoi || !center || !anchor) {
@@ -973,9 +1022,11 @@ export function ThermalMap({
           loc: c.location,
           isWinner: c.locationId === recommendedLocationId,
         }))
-      : [
-          { id: 'analysis-center', name: 'Selected Analysis Area', loc: location, isWinner: false },
-        ];
+      : showLocationMarker && location
+        ? [
+            { id: 'analysis-center', name: 'Selected Analysis Area', loc: location, isWinner: false },
+          ]
+        : [];
 
     for (const item of locsToRender) {
       if (
@@ -1063,6 +1114,11 @@ export function ThermalMap({
     if (!map) return;
     const aoiCenter = analysisAoi ? getAoiCenter(analysisAoi) : null;
     const focus = aoiCenter ?? location;
+    if (!focus) {
+      // EMPTY state: neutral continental view — no implied analysis context.
+      map.flyTo({ center: DEFAULT_EMPTY_VIEW.center, zoom: DEFAULT_EMPTY_VIEW.zoom, duration: 700 });
+      return;
+    }
     const bounds = computeAoiBounds(
       analysisAoi,
       spatialField,
@@ -1094,6 +1150,10 @@ export function ThermalMap({
   const fitToPoint = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
+    if (!location) {
+      map.flyTo({ center: DEFAULT_EMPTY_VIEW.center, zoom: DEFAULT_EMPTY_VIEW.zoom, duration: 900 });
+      return;
+    }
     map.flyTo({ center: [location.longitude, location.latitude], zoom: 16.5, duration: 900 });
   }, [location]);
 
@@ -1356,10 +1416,10 @@ export function ThermalMap({
 
       {/* Empty state overlay (shown only when no spatialField AND no AOI) */}
       {!spatialField && !analysisAoi && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-          <div className="bg-surface-card/95 backdrop-blur-md px-5 py-3 rounded-xl text-center border border-border shadow-lg">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" data-testid="map-empty-overlay">
+          <div className="bg-surface-card/95 backdrop-blur-md px-5 py-3 rounded-xl text-center border border-border shadow-lg max-w-sm">
             <p className="text-text-muted text-sm">
-              Select a location to render the thermal field
+              {emptyMapMessage}
             </p>
           </div>
         </div>

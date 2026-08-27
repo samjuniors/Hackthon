@@ -49,10 +49,13 @@ import { getRegionBoundaryPolygon, getInvertedMaskPolygon } from '@/lib/spatial/
 import { cameraForResultType, type SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
 import {
   FIXTURE_DISPLAY_GRANULARITY,
+  FIXTURE_CAPTURE_REQUEST_AOI,
+  FIXTURE_CAPTURE_CENTER,
   DEMO_CANDIDATE_SITES,
   FIXTURE_EXTENT_AOI,
   doesAoiIntersectFixtureExtent,
 } from '@/lib/fortyguard/fixture-display';
+import type { WorkflowStage } from '@/components/dashboard/ThermalMapCanvas';
 import {
   type AnalysisTemporalInput,
   defaultTemporalInput,
@@ -109,27 +112,30 @@ export default function WorkspacePage() {
   const mode: DataSourceMode = prefs.dataSourceMode;
 
   // ── Input state ──
-  const [selectedLocation, setSelectedLocation] = useState<NamedLocation>(METROPOLITAN_LOCATIONS[0]);
+  // EMPTY workspace state: NO location is pre-selected. The captured DEMO
+  // dataset exists as a DATA SOURCE, but the app must NOT open with the
+  // Manhattan analysis already loaded — the user explicitly selects a
+  // location to begin (DEMO capture for it, or LIVE).
+  const [selectedLocation, setSelectedLocation] = useState<NamedLocation | null>(null);
 
   // ── Explicit WHEN inputs (Section 14) ──
   const [temporalInput, setTemporalInput] = useState<AnalysisTemporalInput>(() =>
     buildFixtureTemporalInput()
   );
 
-  // ── Canonical AOI center (movable — Section 4) ──
-  // The AOI starts at the selected location's coordinates and can be DRAGGED
-  // on the map. The moved geometry is canonical: rendered == sent to FortyGuard.
+  // ── Canonical AOI center (movable in LIVE — Section 4) ──
+  // Neutral continental-US view until a location is selected. On selection the
+  // AOI centers on the location (LIVE) or on the captured analysis area (DEMO).
+  // In LIVE the moved geometry is canonical: rendered == sent to FortyGuard.
   const [aoiCenter, setAoiCenter] = useState<LocationPoint>(() => ({
-    latitude: METROPOLITAN_LOCATIONS[0].latitude,
-    longitude: METROPOLITAN_LOCATIONS[0].longitude,
+    latitude: 39.8283,
+    longitude: -98.5795,
   }));
 
   // ── Geographic region context (Section 5 + 13) ──
   // A state/region selection sets CONTEXT ONLY — it never moves the analysis
   // point to the state's geographic center.
-  const [regionName, setRegionName] = useState<string | undefined>(
-    METROPOLITAN_LOCATIONS[0].state
-  );
+  const [regionName, setRegionName] = useState<string | undefined>(undefined);
   const [stateLevelSelection, setStateLevelSelection] = useState<NamedLocation | null>(null);
 
   // ── Camera control (Section 12) ──
@@ -146,21 +152,34 @@ export default function WorkspacePage() {
   // ── Candidate sites (REAL sites only — never generated) ──
   const candidateSites = useCandidateSites();
 
+  // ── DEMO capture availability (DEMO is a DATA SOURCE, not a default state) ──
+  // A genuine capture exists ONLY for locations inside the captured field
+  // (Lower Manhattan). Everything else in DEMO is an honest no-capture state.
+  const demoCaptureAvailable =
+    mode === 'FIXTURE' && !!selectedLocation && isLocationCoveredByFixture(selectedLocation);
+
   // ── Canonical Analysis AOI (ONE geometry: rendered == sent) ──
-  const analysisAoi: PolygonAOI = useMemo(
-    () => createAoiFromSpan(aoiCenter, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape),
-    [aoiCenter, prefs.analysisAreaShape, prefs.analysisAoiSpanMetres],
-  );
+  //   EMPTY            → none (no analysis without a location).
+  //   DEMO (captured)  → the CAPTURED REQUEST AREA (fixture metadata mirror):
+  //                      the exact polygon_aoi the genuine FortyGuard capture
+  //                      was requested with. Fixed — never resized/dragged.
+  //   DEMO (no capture)→ none (no captured analysis area for this location).
+  //   LIVE             → the user's span-based AOI (draggable, canonical).
+  const analysisAoi: PolygonAOI | null = useMemo(() => {
+    if (!selectedLocation) return null;
+    if (mode === 'FIXTURE') return demoCaptureAvailable ? FIXTURE_CAPTURE_REQUEST_AOI : null;
+    return createAoiFromSpan(aoiCenter, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
+  }, [selectedLocation, mode, demoCaptureAvailable, aoiCenter, prefs.analysisAreaShape, prefs.analysisAoiSpanMetres]);
 
   // Geographic region boundary polygon (geographic CONTEXT — never provider coverage)
   const regionBoundary: PolygonAOI | null = useMemo(
     () => getRegionBoundaryPolygon(
       regionName,
-      selectedLocation.city,
+      selectedLocation?.city,
       aoiCenter.latitude,
       aoiCenter.longitude,
     ),
-    [regionName, selectedLocation.city, aoiCenter.latitude, aoiCenter.longitude],
+    [regionName, selectedLocation, aoiCenter.latitude, aoiCenter.longitude],
   );
 
   // Inverted mask polygon that dims everything OUTSIDE the selected region
@@ -305,7 +324,7 @@ export default function WorkspacePage() {
    * rendered AOI == the API AOI, including after the user drags it.
    */
   const runDecisionPipeline = useCallback(async (
-    loc: NamedLocation,
+    loc: NamedLocation | null,
     aoi: PolygonAOI,
     temporal: AnalysisTemporalInput,
     tz: string,
@@ -315,6 +334,31 @@ export default function WorkspacePage() {
     const requestId = ++activeRequestIdRef.current;
     setLoading(true);
     setErrorDetails(null);
+
+    // EMPTY state guard: no location selected → nothing to analyse.
+    if (!loc) {
+      setLoading(false);
+      setErrorDetails({
+        code: 'NO_LOCATION_SELECTED',
+        message: 'No location selected yet.',
+        recoverySuggestion: 'Search a city, street, or address (or pick a preset) to select the location to analyse, then Generate again.',
+        category: 'VALIDATION',
+      });
+      return;
+    }
+
+    // DEMO data-source gate: a location without a genuine capture NEVER gets
+    // Manhattan cells, translated cells, synthetic candidates, or any request.
+    if (dataSourceMode === 'FIXTURE' && !isLocationCoveredByFixture(loc)) {
+      setLoading(false);
+      setErrorDetails({
+        code: 'NO_DEMO_CAPTURE',
+        message: 'NO DEMO CAPTURE AVAILABLE FOR THIS LOCATION',
+        recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate sites, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
+        category: 'COVERAGE',
+      });
+      return;
+    }
 
     // Validate the AOI against the documented FortyGuard limit.
     if (!isAoiWithinLimit(aoi)) {
@@ -382,17 +426,26 @@ export default function WorkspacePage() {
       return;
     }
 
+    // DEMO canonical AOI: the CAPTURED REQUEST AREA (the genuine polygon_aoi
+    // the capture was requested with — mirrored from the fixture metadata).
+    // The captured field is replayed verbatim inside it; DEMO never submits a
+    // client-invented geometry for the capture. (LIVE submits the user's
+    // canonical AOI exactly as rendered — including any drag.)
+    const requestAoi = dataSourceMode === 'FIXTURE' ? FIXTURE_CAPTURE_REQUEST_AOI : aoi;
+
     try {
       const body: Record<string, unknown> = {
         latitude: loc.latitude,
         longitude: loc.longitude,
         durationHours: deriveDurationHours(temporal),
         mode: dataSourceMode,
-        granularity: prefs.analysisResolution,
+        // DEMO sends the capture's ACTUAL granularity (100m); LIVE sends the
+        // user-selected provider granularity.
+        granularity: dataSourceMode === 'FIXTURE' ? FIXTURE_DISPLAY_GRANULARITY : prefs.analysisResolution,
         analysisAreaShape: prefs.analysisAreaShape,
         // Canonical analysis AOI — the EXACT geometry rendered on the map
         // (including any drag the user performed).
-        analysisAoi: aoi,
+        analysisAoi: requestAoi,
         temporalInput: temporal,
         timezone: tz,
       };
@@ -476,11 +529,17 @@ export default function WorkspacePage() {
   }, [fetchExplanation, prefs.analysisResolution, prefs.analysisAreaShape]);
 
   /**
-   * Location selection (Section 7 + 13):
+   * Location selection (Section 7 + 13) — the DEMO/LIVE data-source semantics:
    *   - STATE/REGION result → geographic context ONLY: show boundary, dim the
    *     outside, fit the region. The analysis point does NOT move.
-   *   - CITY/NEIGHBORHOOD → move map + AOI to the city; region stays context.
-   *   - STREET/ADDRESS/POI → zoom directly to the point; AOI recenters there.
+   *   - CITY/NEIGHBORHOOD/STREET/ADDRESS/POI:
+   *       DEMO + genuine capture for the location → load the CAPTURED dataset
+   *         (captured analysis area + 425 verbatim cells + application-defined
+   *         DEMO candidates + deterministic analysis; zero provider requests).
+   *       DEMO + NO capture → honest NO_DEMO_CAPTURE state: no cells, no
+   *         candidates, no Manhattan data — "Switch to LIVE" offered.
+   *       LIVE → configure the user's own analysis (AOI, WHEN, candidates);
+   *         Generate spends credits only when explicitly pressed.
    */
   const handleSelectLocation = useCallback((loc: NamedLocation) => {
     // ── State-level selection: context only, no analysis-point move ──
@@ -509,20 +568,37 @@ export default function WorkspacePage() {
     requestCamera(cameraForResultType(loc.resultType));
 
     if (modeRef.current === 'FIXTURE') {
-      const fixtureTemporal = buildFixtureTemporalInput();
-      setTemporalInput(fixtureTemporal);
-      temporalInputRef.current = fixtureTemporal;
-      const aoi = createAoiFromSpan(nextCenter, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
-      // DEMO times are UTC-anchored (the capture's request hour) — never
-      // silently re-anchored to the selected location's timezone.
-      runDecisionPipeline(loc, aoi, fixtureTemporal, FIXTURE_TIMEZONE, 'FIXTURE');
+      if (isLocationCoveredByFixture(loc)) {
+        // ── Genuine capture available: load the CAPTURED dataset ──
+        // The analysis area becomes the captured request AOI (fixed); the
+        // WHEN anchors to the captured hour; the pipeline replays the capture
+        // (zero provider requests).
+        const fixtureTemporal = buildFixtureTemporalInput();
+        setTemporalInput(fixtureTemporal);
+        temporalInputRef.current = fixtureTemporal;
+        const captureCenter = { ...FIXTURE_CAPTURE_CENTER };
+        setAoiCenter(captureCenter);
+        aoiCenterRef.current = captureCenter;
+        // DEMO times are UTC-anchored (the capture's request hour) — never
+        // silently re-anchored to the selected location's timezone.
+        runDecisionPipeline(loc, FIXTURE_CAPTURE_REQUEST_AOI, fixtureTemporal, FIXTURE_TIMEZONE, 'FIXTURE');
+      } else {
+        // ── No capture for this location: honest NO_DEMO_CAPTURE state ──
+        // No cells, no candidates, no recommendation, zero requests.
+        setErrorDetails({
+          code: 'NO_DEMO_CAPTURE',
+          message: 'NO DEMO CAPTURE AVAILABLE FOR THIS LOCATION',
+          recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate sites, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
+          category: 'COVERAGE',
+        });
+      }
     } else {
       // LIVE: require explicit Generate (never silently spend credits)
       const liveDefault = defaultTemporalInput(loc.timezone);
       setTemporalInput(liveDefault);
       temporalInputRef.current = liveDefault;
     }
-  }, [clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape, requestCamera, runDecisionPipeline]);
+  }, [clearResults, requestCamera, runDecisionPipeline]);
 
   const handleTemporalChange = useCallback((next: AnalysisTemporalInput) => {
     setTemporalInput(next);
@@ -535,9 +611,12 @@ export default function WorkspacePage() {
   }, [prefSetters]);
 
   /**
-   * AOI moved by dragging (Section 4): the moved geometry becomes canonical.
-   * Preserves size, shape, date/time, resolution — updates the center +
-   * displayed coordinates, clears stale thermal data.
+   * AOI moved by dragging (Section 4) — a LIVE control. The moved geometry
+   * becomes canonical (rendered == sent). Preserves size, shape, date/time,
+   * resolution — updates the center + displayed coordinates, clears stale
+   * thermal data. DEMO never calls this: the captured analysis area is FIXED
+   * (the drag affordance is hidden in DEMO), so the capture can never be
+   * presented for a geometry it was not captured for.
    */
   const handleMoveAoi = useCallback((newCenter: LocationPoint) => {
     setAoiCenter(newCenter);
@@ -547,18 +626,8 @@ export default function WorkspacePage() {
     );
     clearResults();
     requestCamera('fit-aoi');
-    if (modeRef.current === 'FIXTURE') {
-      const aoi = createAoiFromSpan(newCenter, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
-      runDecisionPipeline(
-        selectedLocationRef.current,
-        aoi,
-        temporalInputRef.current,
-        FIXTURE_TIMEZONE,
-        'FIXTURE'
-      );
-    }
-    // LIVE: require explicit Generate after moving the AOI.
-  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape, requestCamera, runDecisionPipeline]);
+    // LIVE: require explicit Generate after moving the AOI (credit safety).
+  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape, requestCamera]);
 
   /** Map click while in add-site mode (Section 8 — real user-placed sites). */
   const handleAddSiteAt = useCallback((lng: number, lat: number) => {
@@ -607,28 +676,13 @@ export default function WorkspacePage() {
   // Effects
   // ───────────────────────────────────────────────────────────────────────────
 
-  // Initial mount: trigger DEMO decision pipeline immediately + check health in parallel.
+  // Initial mount: EMPTY workspace state. NO analysis is auto-loaded — the
+  // DEMO capture is a DATA SOURCE the user explicitly selects a location for,
+  // never the implicit opening state. Only provider health checks run here.
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Instantly fire the DEMO decision pipeline on initial mount (free fixture lookup)
-    const fixtureTemporal = buildFixtureTemporalInput();
-    setTemporalInput(fixtureTemporal);
-    temporalInputRef.current = fixtureTemporal;
-    const aoi = createAoiFromSpan(
-      { latitude: METROPOLITAN_LOCATIONS[0].latitude, longitude: METROPOLITAN_LOCATIONS[0].longitude },
-      prefs.analysisAoiSpanMetres,
-      prefs.analysisAreaShape,
-    );
-    runDecisionPipeline(
-      METROPOLITAN_LOCATIONS[0],
-      aoi,
-      fixtureTemporal,
-      FIXTURE_TIMEZONE,
-      'FIXTURE'
-    );
-
-    // 2. Run provider health checks in the background (non-blocking)
+    // Provider health checks in the background (non-blocking)
     safeJsonFetch<{
       success: boolean;
       health: FortyGuardHealthResponse;
@@ -661,42 +715,59 @@ export default function WorkspacePage() {
      
   }, []);
 
-  // React to mode changes (from Settings drawer or "Switch to LIVE" button).
+  // React to data-source mode changes (Settings drawer or "Switch to LIVE").
+  // DEMO and LIVE are DATA SOURCES, not separate workflows: switching never
+  // invents a location and never silently spends credits.
   useEffect(() => {
     if (!didMountRef.current) {
       didMountRef.current = true;
-      return; // initial mount handled above
+      return; // initial mount handled above (EMPTY state, nothing loaded)
     }
     const newMode = mode;
-    // Clear model state on mode switch
+    // Clear model state on mode switch — LIVE never reuses DEMO thermal data
+    // and DEMO never reuses LIVE cells.
     clearResults();
 
     checkFortyGuardHealth(newMode);
 
-    let loc = selectedLocationRef.current;
-    if (newMode === 'FIXTURE' && !isLocationCoveredByFixture(loc)) {
-      loc = METROPOLITAN_LOCATIONS[0];
-      setSelectedLocation(loc);
-      selectedLocationRef.current = loc;
+    const loc = selectedLocationRef.current;
+
+    // EMPTY stays EMPTY: the data source alone never loads data.
+    if (!loc) return;
+
+    if (newMode === 'FIXTURE') {
+      if (isLocationCoveredByFixture(loc)) {
+        // DEMO with a genuine capture for this location → load the captured
+        // dataset (free fixture replay, zero provider requests).
+        const fixtureTemporal = buildFixtureTemporalInput();
+        setTemporalInput(fixtureTemporal);
+        temporalInputRef.current = fixtureTemporal;
+        const captureCenter = { ...FIXTURE_CAPTURE_CENTER };
+        setAoiCenter(captureCenter);
+        aoiCenterRef.current = captureCenter;
+        runDecisionPipeline(loc, FIXTURE_CAPTURE_REQUEST_AOI, fixtureTemporal, FIXTURE_TIMEZONE, 'FIXTURE');
+      } else {
+        // DEMO with NO capture for this location → honest gate (never swaps
+        // the user's location to Manhattan implicitly).
+        setErrorDetails({
+          code: 'NO_DEMO_CAPTURE',
+          message: 'NO DEMO CAPTURE AVAILABLE FOR THIS LOCATION',
+          recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate sites, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
+          category: 'COVERAGE',
+        });
+      }
+    } else {
+      // LIVE from a DEMO location: RETAIN the location's coordinates. The AOI
+      // becomes the user-configurable analysis area centered on the location;
+      // the WHEN defaults to the location's timezone. A NEW FortyGuard request
+      // is made only when the user presses Generate — DEMO data is never reused.
       const nextCenter = { latitude: loc.latitude, longitude: loc.longitude };
       setAoiCenter(nextCenter);
       aoiCenterRef.current = nextCenter;
+      const liveDefault = defaultTemporalInput(loc.timezone);
+      setTemporalInput(liveDefault);
+      temporalInputRef.current = liveDefault;
     }
-
-    // Reset the WHEN inputs to match the new mode's data source.
-    const newTemporal = newMode === 'FIXTURE'
-      ? buildFixtureTemporalInput()
-      : defaultTemporalInput(loc.timezone);
-    setTemporalInput(newTemporal);
-    temporalInputRef.current = newTemporal;
-
-    if (newMode === 'FIXTURE') {
-      // DEMO is free (captured fixture) — auto-run for instant feedback.
-      const aoi = createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
-      runDecisionPipeline(loc, aoi, newTemporal, FIXTURE_TIMEZONE, 'FIXTURE');
-    }
-    // LIVE: require explicit Generate — never auto-spend provider credits.
-     
   }, [mode]);
 
   // React to preferred-AI-provider changes (from Settings drawer).
@@ -712,25 +783,17 @@ export default function WorkspacePage() {
      
   }, [prefs.preferredAIProvider]);
 
-  // React to AOI shape / size / resolution changes:
-  //   ALWAYS clear stale thermal data (Section 20).
-  //   FIXTURE auto-reruns (free). LIVE requires explicit Generate (credit safety).
+  // React to AOI shape / size / resolution changes (LIVE analysis controls):
+  //   ALWAYS clear stale thermal data (Section 20) — the LIVE geometry changes
+  //   exactly. LIVE requires explicit Generate (credit safety). DEMO is
+  //   unaffected: the captured analysis area is fixed and the captured dataset
+  //   never pretends a different provider capture exists.
   useEffect(() => {
     if (!didMountRef.current) return;
     clearResults();
     candidateSites.validateAgainstAoi(
       createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)
     );
-    if (modeRef.current === 'FIXTURE') {
-      const aoi = createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
-      runDecisionPipeline(
-        selectedLocationRef.current,
-        aoi,
-        temporalInputRef.current,
-        FIXTURE_TIMEZONE,
-        'FIXTURE'
-      );
-    }
      
   }, [prefs.analysisAreaShape, prefs.analysisAoiSpanMetres, prefs.analysisResolution]);
 
@@ -738,19 +801,35 @@ export default function WorkspacePage() {
   // Derived values
   // ───────────────────────────────────────────────────────────────────────────
 
-  const isFixtureMismatch = mode === 'FIXTURE' && !isLocationCoveredByFixture(selectedLocation);
   const activeScenario = scenarioAnalysis?.scenarios?.find((s) => s.scenarioId === selectedScenarioId) ?? scenarioAnalysis?.scenarios?.[0];
   const fieldReady = !!spatialField && !loading;
   const altLocations = METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly).slice(0, 4);
   const thermalCellCount = spatialField?.features?.length ?? 0;
   const aiProvider = aiHealth?.provider;
 
+  // ── Explicit workspace state machine ──
+  //   EMPTY → LOCATION_SELECTED → (AOI_CONFIGURED → TEMPORAL_CONFIGURED) →
+  //   ANALYZING → RESULTS, with NO_DEMO_CAPTURE as the honest DEMO dead-end
+  //   for locations without a capture. DEMO and LIVE are DATA SOURCES that
+  //   feed the SAME workflow — not separate app states.
+  const workflowStage: WorkflowStage = !selectedLocation
+    ? 'EMPTY'
+    : loading
+      ? 'ANALYZING'
+      : jointDecision
+        ? 'RESULTS'
+        : mode === 'FIXTURE'
+          ? (demoCaptureAvailable ? 'LOCATION_SELECTED' : 'NO_DEMO_CAPTURE')
+          : 'LOCATION_SELECTED';
+
   // Candidates to display on the map + evaluate:
-  //   FIXTURE → the three DEMO CANDIDATES (application-defined points
-  //             evaluated against the captured field — not captured sites).
+  //   FIXTURE + genuine capture → the three application-defined DEMO
+  //             candidates (evaluated against the captured field — NOT
+  //             captured sites). No capture → NO candidates (never synthetic,
+  //             never Manhattan candidates for another location).
   //   LIVE    → the user's real candidate sites only.
   const displayCandidates: CandidateLocation[] = mode === 'FIXTURE'
-    ? DEMO_CANDIDATE_SITES
+    ? (demoCaptureAvailable ? DEMO_CANDIDATE_SITES : [])
     : candidateSites.sites.map((s) => ({
         locationId: s.locationId,
         name: s.name,
@@ -764,7 +843,7 @@ export default function WorkspacePage() {
   // Display timezone: DEMO is UTC-anchored (the capture's request hour is a
   // UTC instant) — displaying it in the selected location's timezone would
   // MISLABEL the captured wall-clock. LIVE uses the location's timezone.
-  const displayTimezone = mode === 'FIXTURE' ? FIXTURE_TIMEZONE : (selectedLocation.timezone || 'UTC');
+  const displayTimezone = mode === 'FIXTURE' ? FIXTURE_TIMEZONE : (selectedLocation?.timezone || 'UTC');
 
   const handleSelectScenario = useCallback((scenarioId: string) => {
     setSelectedScenarioId(scenarioId);
@@ -786,13 +865,15 @@ export default function WorkspacePage() {
 
   const handleGenerate = useCallback(() => {
     setAddSiteMode(false);
+    const m = modeRef.current;
+    const loc = selectedLocationRef.current;
     runDecisionPipeline(
-      selectedLocationRef.current,
-      createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape),
+      loc,
+      m === 'FIXTURE' ? FIXTURE_CAPTURE_REQUEST_AOI : createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape),
       temporalInputRef.current,
-      selectedLocationRef.current.timezone || 'UTC',
-      modeRef.current,
-      modeRef.current === 'LIVE'
+      m === 'FIXTURE' ? FIXTURE_TIMEZONE : (loc?.timezone || 'UTC'),
+      m,
+      m === 'LIVE'
         ? candidateSitesRef.current.map((s) => ({
             locationId: s.locationId,
             name: s.name,
@@ -803,13 +884,15 @@ export default function WorkspacePage() {
   }, [runDecisionPipeline, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
 
   const handleRetry = useCallback(() => {
+    const m = modeRef.current;
+    const loc = selectedLocationRef.current;
     runDecisionPipeline(
-      selectedLocationRef.current,
-      createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape),
+      loc,
+      m === 'FIXTURE' ? FIXTURE_CAPTURE_REQUEST_AOI : createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape),
       temporalInputRef.current,
-      selectedLocationRef.current.timezone || 'UTC',
-      modeRef.current,
-      modeRef.current === 'LIVE'
+      m === 'FIXTURE' ? FIXTURE_TIMEZONE : (loc?.timezone || 'UTC'),
+      m,
+      m === 'LIVE'
         ? candidateSitesRef.current.map((s) => ({
             locationId: s.locationId,
             name: s.name,
@@ -819,36 +902,24 @@ export default function WorkspacePage() {
     );
   }, [runDecisionPipeline, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
 
-  // Credit safety: selecting an alternative location NEVER triggers a provider
-  // request by itself. It updates the selection + WHEN defaults and clears the
-  // previous results; the user explicitly presses Generate to spend credits.
+  // Alternative-location buttons share the FULL location-selection semantics:
+  // DEMO + capture → load the captured dataset (free); DEMO without capture →
+  // honest NO_DEMO_CAPTURE; LIVE → configure, Generate spends credits only
+  // when explicitly pressed (credit safety).
   const handleSelectAltLocation = useCallback((loc: NamedLocation) => {
-    setStateLevelSelection(null);
-    setSelectedLocation(loc);
-    selectedLocationRef.current = loc;
-    const nextCenter = { latitude: loc.latitude, longitude: loc.longitude };
-    setAoiCenter(nextCenter);
-    aoiCenterRef.current = nextCenter;
-    if (loc.state) setRegionName(loc.state);
-    if (modeRef.current === 'FIXTURE' && isLocationCoveredByFixture(loc)) {
-      const fixtureTemporal = buildFixtureTemporalInput();
-      setTemporalInput(fixtureTemporal);
-      temporalInputRef.current = fixtureTemporal;
-    } else {
-      const liveDefault = defaultTemporalInput(loc.timezone);
-      setTemporalInput(liveDefault);
-      temporalInputRef.current = liveDefault;
-    }
-    clearResults();
-    requestCamera(cameraForResultType(loc.resultType));
-  }, [clearResults, requestCamera]);
+    handleSelectLocation(loc);
+  }, [handleSelectLocation]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // RENDER
   // ───────────────────────────────────────────────────────────────────────────
 
   return (
-    <main className="min-h-screen flex flex-col bg-surface-bg text-text-primary" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <main
+      className="min-h-screen flex flex-col bg-surface-bg text-text-primary"
+      style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
+      data-workflow-stage={workflowStage}
+    >
       <Header
         mode={mode}
         unit={unit}
@@ -868,7 +939,8 @@ export default function WorkspacePage() {
             <ControlRail
               mode={mode}
               selectedLocation={selectedLocation}
-              analysisCenter={aoiCenter}
+              analysisCenter={selectedLocation ? aoiCenter : undefined}
+              demoCaptureAvailable={demoCaptureAvailable}
               stateLevelSelection={stateLevelSelection}
               temporalInput={temporalInput}
               onTemporalChange={handleTemporalChange}
@@ -903,20 +975,22 @@ export default function WorkspacePage() {
                 altLocations={altLocations}
                 onRetry={handleRetry}
                 onSwitchToDemo={() => handleModeChange('FIXTURE')}
+                onSwitchToLive={() => handleModeChange('LIVE')}
                 onSelectAltLocation={handleSelectAltLocation}
               />
             )}
 
             {/* 1. FORTYGUARD THERMAL FIELD — the visual hero */}
             <ThermalMapCanvas
-              locationName={selectedLocation.name}
+              stage={workflowStage}
+              locationName={selectedLocation?.name ?? 'No location selected'}
               baseTimestamp={spatialFieldMeta?.baseTimestamp}
               thermalCellCount={thermalCellCount}
-              resolution={resolutionDisplay}
+              resolution={selectedLocation ? resolutionDisplay : undefined}
               mode={mode}
               loading={loading}
-              selectedLocation={selectedLocation}
-              analysisCenter={aoiCenter}
+              selectedLocation={selectedLocation ?? undefined}
+              analysisCenter={selectedLocation ? aoiCenter : undefined}
               temporalInput={temporalInput}
               timezone={displayTimezone}
               rankedCandidates={spatialDecision?.rankedLocations.map((r) => ({
@@ -927,9 +1001,9 @@ export default function WorkspacePage() {
               recommendedLocationId={spatialDecision?.recommendedLocation.locationId}
             >
               <ThermalMap
-                location={aoiCenter}
-                locationState={selectedLocation.state}
-                locationName={selectedLocation.name}
+                location={selectedLocation ? aoiCenter : null}
+                locationState={selectedLocation?.state}
+                locationName={selectedLocation?.name}
                 regionBoundary={regionBoundary}
                 regionMask={regionMask}
                 regionDisplayName={regionName}
@@ -943,12 +1017,19 @@ export default function WorkspacePage() {
                 onToggleLayer={prefSetters.setMapLayerVisibility}
                 areaShape={prefs.analysisAreaShape}
                 onMoveAoi={handleMoveAoi}
+                aoiDraggable={mode === 'LIVE'}
+                showLocationMarker={mode === 'LIVE' || demoCaptureAvailable}
+                emptyMapMessage={
+                  workflowStage === 'NO_DEMO_CAPTURE'
+                    ? 'No DEMO capture available for this location — switch to LIVE or pick a Manhattan DEMO location'
+                    : 'Select a location to begin the analysis'
+                }
                 addSiteMode={addSiteMode}
                 onAddSiteAt={handleAddSiteAt}
                 onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
                 cameraBehavior={cameraBehavior}
                 cameraNonce={cameraNonce}
-                captureExtent={mode === 'FIXTURE' ? FIXTURE_EXTENT_AOI : undefined}
+                captureExtent={demoCaptureAvailable ? FIXTURE_EXTENT_AOI : undefined}
               />
             </ThermalMapCanvas>
 
@@ -994,16 +1075,34 @@ export default function WorkspacePage() {
               />
             )}
 
-            {/* Empty state before first run */}
+            {/* Empty state before first run (EMPTY / LOCATION_SELECTED stages) */}
             {!jointDecision && !loading && !errorDetails && (
-              <div className="rounded-xl border border-border bg-surface-card px-5 py-12 text-center">
+              <div
+                className="rounded-xl border border-border bg-surface-card px-5 py-12 text-center"
+                data-testid={workflowStage === 'EMPTY' ? 'empty-workspace-card' : 'pre-generate-card'}
+              >
                 <div className="text-2xl mb-2">🌡</div>
-                <p className="text-text-muted text-sm font-medium">Generate a thermal field to see the recommended operational plan.</p>
-                <p className="text-text-dimmed text-xs mt-1">
-                  {mode === 'LIVE'
-                    ? 'Search a location, place candidate sites (+ Site on the map), set the WHEN date/time, then click Generate.'
-                    : 'Select a location, set the WHEN date/time, then click Generate.'}
-                </p>
+                {workflowStage === 'EMPTY' ? (
+                  <>
+                    <p className="text-text-primary text-sm font-bold">Select a location to begin</p>
+                    <p className="text-text-muted text-xs mt-1.5 leading-relaxed max-w-md mx-auto">
+                      Search a city, street, or address — or pick a preset in the left rail. Locations with a genuine
+                      captured DEMO dataset load it explicitly; every other location runs LIVE against FortyGuard.
+                    </p>
+                    <p className="text-[10px] font-mono text-text-dimmed mt-3 tracking-wide">
+                      LOCATION → ANALYSIS AOI → THERMAL OBSERVATIONS → CANDIDATES → RECOMMENDATION
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-text-muted text-sm font-medium">Generate a thermal field to see the recommended operational plan.</p>
+                    <p className="text-text-dimmed text-xs mt-1">
+                      {mode === 'LIVE'
+                        ? 'Place candidate sites (+ Site on the map), set the WHEN date/time, then click Generate.'
+                        : 'This location has a genuine captured dataset — Generate replays it (no provider request).'}
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </div>

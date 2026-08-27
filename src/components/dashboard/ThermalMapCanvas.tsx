@@ -6,7 +6,22 @@ import type { CandidateLocation, JointDecisionResult, LocationPoint } from '@/ty
 import type { AnalysisTemporalInput } from '@/lib/temporal/analysis-window';
 import { formatTemporalForHeader, FIXTURE_TEMPORAL_METADATA } from '@/lib/temporal/analysis-window';
 
+/**
+ * Explicit workspace state machine (DEMO and LIVE are DATA SOURCES, not
+ * workflow stages):
+ *   EMPTY → LOCATION_SELECTED → (AOI_CONFIGURED → TEMPORAL_CONFIGURED →)
+ *   ANALYZING → RESULTS   …or… NO_DEMO_CAPTURE (DEMO source, no capture).
+ */
+export type WorkflowStage =
+  | 'EMPTY'
+  | 'LOCATION_SELECTED'
+  | 'NO_DEMO_CAPTURE'
+  | 'ANALYZING'
+  | 'RESULTS';
+
 interface ThermalMapCanvasProps {
+  /** Current workspace stage (drives the EMPTY overlay + status copy). */
+  stage?: WorkflowStage;
   /** Selected analysis-area location (the user's chosen place). */
   locationName: string;
   /** Optional subtitle timestamp for the base observation snapshot. */
@@ -48,6 +63,7 @@ interface ThermalMapCanvasProps {
  * ssr:false import stays in the page orchestrator.
  */
 export function ThermalMapCanvas({
+  stage,
   locationName,
   baseTimestamp,
   thermalCellCount,
@@ -146,6 +162,25 @@ export function ThermalMapCanvas({
       {/* Map */}
       <div className="px-4 pb-4 relative">
         {children}
+        {/* EMPTY workspace overlay — clear instruction to select a location.
+            pointer-events-none: the map stays fully usable underneath. */}
+        {stage === 'EMPTY' && (
+          <div
+            className="absolute inset-4 rounded-xl z-10 flex items-center justify-center pointer-events-none"
+            data-testid="empty-workspace-overlay"
+          >
+            <div className="bg-surface-card/95 backdrop-blur-md px-6 py-5 rounded-xl border-2 border-dashed border-border shadow-lg text-center max-w-md">
+              <p className="text-sm font-bold text-text-primary">Select a location to begin</p>
+              <p className="text-xs text-text-muted mt-1.5 leading-relaxed">
+                Search a city, street, or address (or pick a preset in the left rail), then analyse it with the captured
+                DEMO dataset or a LIVE FortyGuard request.
+              </p>
+              <p className="text-[9px] font-mono text-text-dimmed mt-3 leading-relaxed tracking-wide">
+                LOCATION → ANALYSIS AOI → FORTYGUARD THERMAL OBSERVATIONS → CANDIDATE SITES → RECOMMENDATION
+              </p>
+            </div>
+          </div>
+        )}
         {/* Thermal field loading overlay */}
         {loading && (
           <div className="absolute inset-4 rounded-xl bg-surface-card/70 backdrop-blur-sm flex items-center justify-center pointer-events-none scan-loading">
@@ -202,6 +237,19 @@ export function ThermalMapCanvas({
                 <span className="text-[9px] font-bold uppercase tracking-widest text-text-dimmed">
                   Candidate Sites
                 </span>
+                {mode === 'FIXTURE' && (
+                  <span
+                    className="text-[8px] font-mono px-1 py-px rounded border"
+                    style={{
+                      color: 'var(--accent-amber)',
+                      borderColor: 'var(--accent-amber)',
+                      background: 'var(--accent-amber-bg)',
+                    }}
+                    title="Application-defined candidate locations — NOT captured provider sites"
+                  >
+                    application-defined
+                  </span>
+                )}
               </div>
               {nonWinnerCandidates.length > 0 ? (
                 <ul className="space-y-0.5">

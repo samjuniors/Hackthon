@@ -12,6 +12,9 @@ import {
   DEFAULT_TEMP_UNIT,
   TEMP_UNIT_KEY,
   translateExplanationToUnit,
+  THERMAL_RAMP_STOPS,
+  sampleThermalRampColor,
+  thermalRampGradientCss,
 } from '@/lib/temperature';
 
 describe('Temperature Unit Conversion & Formatting Utility', () => {
@@ -114,27 +117,67 @@ describe('Temperature Unit Conversion & Formatting Utility', () => {
     });
   });
 
-  describe('getThermalLegendTicks', () => {
-    it('returns Celsius ticks matching expected domain breakpoints', () => {
+  describe('getThermalLegendTicks (professional continuous ramp redesign)', () => {
+    // The legend is SAMPLED from THERMAL_RAMP_STOPS so it always matches the
+    // rendered thermal-tiles-fill layer (single source of truth).
+    it('returns Celsius band ticks ordered cool → warm', () => {
       const ticks = getThermalLegendTicks('C');
-      expect(ticks).toHaveLength(4);
-      expect(ticks[0].label).toBe('≤28');
-      expect(ticks[1].label).toBe('28-30');
-      expect(ticks[2].label).toBe('30-32');
-      expect(ticks[3].label).toBe('>32');
+      expect(ticks).toHaveLength(5);
+      expect(ticks[0].label).toBe('0–26');
+      expect(ticks[1].label).toBe('26–28');
+      expect(ticks[2].label).toBe('28–30');
+      expect(ticks[3].label).toBe('30–32');
+      expect(ticks[4].label).toBe('>32');
     });
 
     it('returns Fahrenheit ticks with converted integer approximations', () => {
       const ticks = getThermalLegendTicks('F');
-      expect(ticks).toHaveLength(4);
-      // 28°C = 82.4°F -> 82
-      expect(ticks[0].label).toBe('≤82');
-      // 28-30°C = 82-86°F
-      expect(ticks[1].label).toBe('82-86');
-      // 30-32°C = 86-90°F
-      expect(ticks[2].label).toBe('86-90');
-      // >32°C = >90°F
-      expect(ticks[3].label).toBe('>90');
+      expect(ticks).toHaveLength(5);
+      // 26°C = 78.8°F -> 79 ; 28°C = 82.4°F -> 82 ; 30°C = 86°F ; 32°C = 89.6°F -> 90
+      expect(ticks[0].label).toBe('32–79');
+      expect(ticks[1].label).toBe('79–82');
+      expect(ticks[2].label).toBe('82–86');
+      expect(ticks[3].label).toBe('86–90');
+      expect(ticks[4].label).toBe('>90');
+    });
+
+    it('tick colors are sampled from THERMAL_RAMP_STOPS and progress cool → warm', () => {
+      const ticks = getThermalLegendTicks('C');
+      const first = ticks[0].color;
+      const last = ticks[ticks.length - 1].color;
+      // Cool end ≈ the ramp's deep blue; warm end ≈ red/crimson family.
+      expect(first.toLowerCase()).toBe('#2f6bd8');
+      // Warm band (>32°C probed at 34°C) lands between #e2503a and #c02948.
+      expect(last.toLowerCase()).toBe('#cb3643'); // interpolated 34°C between #e2503a and #c02948
+    });
+  });
+
+  describe('THERMAL_RAMP_STOPS (single source of truth)', () => {
+    it('stops are strictly increasing in °C and cover the provider domain', () => {
+      const stops = THERMAL_RAMP_STOPS;
+      expect(stops.length).toBeGreaterThanOrEqual(8);
+      for (let i = 1; i < stops.length; i++) {
+        expect(stops[i].c).toBeGreaterThan(stops[i - 1].c);
+      }
+      expect(stops[0].c).toBeLessThanOrEqual(16);
+      expect(stops[stops.length - 1].c).toBeGreaterThanOrEqual(40);
+      // Every stop color is a valid hex literal.
+      for (const s of stops) {
+        expect(s.color).toMatch(/^#[0-9a-f]{6}$/i);
+      }
+    });
+
+    it('sampleThermalRampColor clamps outside the stop range', () => {
+      expect(sampleThermalRampColor(-10)).toBe(THERMAL_RAMP_STOPS[0].color);
+      expect(sampleThermalRampColor(99)).toBe(THERMAL_RAMP_STOPS[THERMAL_RAMP_STOPS.length - 1].color);
+    });
+
+    it('thermalRampGradientCss includes every stop', () => {
+      const css = thermalRampGradientCss();
+      for (const s of THERMAL_RAMP_STOPS) {
+        expect(css).toContain(s.color);
+      }
+      expect(css.startsWith('linear-gradient(')).toBe(true);
     });
   });
 

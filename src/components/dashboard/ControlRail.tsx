@@ -1,10 +1,9 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { useState } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { RotateCcw, Plus, Search } from 'lucide-react';
 import { LocationSearch } from '@/components/LocationSearch';
-import { SystemStatus } from '@/components/dashboard/SystemStatus';
 import type { NamedLocation, ProviderStatus, FortyGuardHealthResponse, AIHealthResponse } from '@/types/provider';
 import type { DataSourceMode } from '@/types/provenance';
 import type { LocationPoint } from '@/types/domain';
@@ -12,7 +11,6 @@ import type { CandidateSite } from '@/hooks/use-candidate-sites';
 import { getCandidateColor } from '@/components/ThermalMap';
 import { useUserPreferences, AOI_SPAN_PRESETS_LOCAL } from '@/lib/user-preferences';
 import { aoiSpanLabel } from '@/lib/spatial/aoi';
-import { isLocationCoveredByFixture } from '@/lib/location/search';
 import {
   type AnalysisTemporalInput,
   type AnalysisTimeMode,
@@ -34,20 +32,20 @@ import {
   FIXTURE_CAPTURED_HOUR_ISO,
   fixtureCaptureSpanLabel,
 } from '@/lib/fortyguard/fixture-display';
+import { SystemStatus } from '@/components/dashboard/SystemStatus';
 
 interface ControlRailProps {
   mode: DataSourceMode;
   /** NULL in the EMPTY workspace state (no location selected yet). */
   selectedLocation: NamedLocation | null;
-  /** Current AOI center (tracks drag movements — Section 4). */
+  /** Current AOI center (tracks drag movements). */
   analysisCenter?: LocationPoint;
-  /** Non-null when a state/region was selected as CONTEXT (Section 13). */
+  /** Non-null when a state/region was selected as CONTEXT. */
   stateLevelSelection?: NamedLocation | null;
   /**
    * True when the DEMO data source has a genuine capture for the selected
-   * location (DEMO is a DATA SOURCE, not a default state): the captured
-   * analysis area, cells, and application-defined candidates exist ONLY
-   * then. FALSE → honest "no DEMO capture for this location" presentation.
+   * location: the captured analysis area, cells, and application-defined
+   * DEMO candidates exist ONLY then.
    */
   demoCaptureAvailable?: boolean;
   /** Explicit WHEN inputs — date + start + end + time mode. */
@@ -65,7 +63,7 @@ interface ControlRailProps {
   fieldReady: boolean;
   onTestFortyGuard: () => void;
   onTestAI: () => void;
-  // Candidate sites (REAL user-placed sites — Section 8)
+  // Candidate sites (REAL user-placed sites)
   candidateSites: CandidateSite[];
   onRemoveSite: (locationId: string) => void;
   onRenameSite: (locationId: string, name: string) => void;
@@ -75,19 +73,17 @@ interface ControlRailProps {
   /** Granularity the captured fixture was ACTUALLY recorded at (DEMO display). */
   fixtureGranularity?: number;
   /**
-   * ONE compact Reset control (Section 2): clears the ENTIRE analysis
-   * workspace (location, AOI, candidates, thermal field, decision,
-   * recommendation, explanation, scenario state, errors) and invalidates any
-   * in-flight request — returning to the EMPTY workspace without a reload.
+   * ONE compact Reset control: clears the ENTIRE analysis workspace and
+   * invalidates any in-flight request — returning to EMPTY without a reload.
    */
   onReset: () => void;
-  /** Clear the selected operating location → EMPTY workspace (Section 3). */
+  /** Clear the selected operating location → EMPTY workspace. */
   onClearLocation: () => void;
-  /** True when Generate must stay disabled (validation failure — Section 11). */
+  /** True when Generate must stay disabled (validation failure). */
   generateDisabled?: boolean;
-  /** Human reason shown next to a disabled Generate (Section 11). */
+  /** Human reason shown next to a disabled Generate. */
   generateDisabledReason?: string;
-  /** Active geographic region or state code (e.g. 'TX', 'CA', 'New York') for preset filtering. */
+  /** Active geographic region or state code for preset filtering. */
   activeStateFilter?: string;
 }
 
@@ -96,10 +92,30 @@ function metresLabel(m: number): string {
   return m >= 1000 ? `${m / 1000}km` : `${m}m`;
 }
 
+/** Section label — one consistent hierarchy element. */
+function SectionLabel({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between mb-2.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-text-dimmed">
+        {children}
+      </span>
+      {right}
+    </div>
+  );
+}
+
+/** Hairline separator — whitespace + one line instead of nested cards. */
+function Separator() {
+  return <div className="h-px bg-border/70 my-5" aria-hidden="true" />;
+}
+
 /**
- * Left control rail — the operational input workspace.
- * Location → Analysis Area (span) → Thermal Cell → Candidate Sites → WHEN → Generate.
- * System status sits compactly at the bottom (advanced diagnostics live in Settings).
+ * Analysis panel — the operational input workspace.
+ *
+ * Flat section hierarchy (LOCATION → AREA OF INTEREST → THERMAL CELL →
+ * EVALUATION WINDOW → CANDIDATE SITES → Generate) separated by hairlines and
+ * whitespace. No nested bordered cards. Rendered in the desktop rail AND the
+ * mobile analysis bottom sheet (same component, one source of truth).
  */
 export function ControlRail({
   mode,
@@ -137,8 +153,6 @@ export function ControlRail({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [showSiteSearch, setShowSiteSearch] = useState(false);
-  const isFixtureMismatch =
-    mode === 'FIXTURE' && !!selectedLocation && !isLocationCoveredByFixture(selectedLocation);
   const aiProvider = aiHealth?.provider;
   // Display timezone: DEMO is UTC-anchored (the capture's request hour is a
   // UTC instant); LIVE uses the selected location's timezone.
@@ -182,49 +196,47 @@ export function ControlRail({
   const liveHourlyRequestCount = Math.max(1, derivedDuration);
 
   return (
-    <div className="space-y-4">
-      {/* ── DEMO notice — truthful capture provenance ── */}
+    <div className="space-y-0">
+      {/* ── ANALYSIS header + ONE compact Reset ── */}
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-text-dimmed">
+          Analysis
+        </span>
+        {/* ONE compact Reset control — wipes the whole analysis workspace back
+            to EMPTY. Tooltip + aria-label: "Reset analysis". */}
+        <button
+          type="button"
+          data-testid="reset-analysis-btn"
+          onClick={onReset}
+          title="Reset analysis"
+          aria-label="Reset analysis"
+          className="flex items-center gap-1.5 h-7 px-2 rounded-md text-[11px] font-medium text-text-muted hover:text-text-primary hover:bg-surface-deep transition-colors duration-150"
+        >
+          <RotateCcw className="size-3" aria-hidden="true" />
+          <span className="hidden sm:inline">Reset</span>
+        </button>
+      </div>
+
+      {/* ── DEMO notice — truthful capture provenance (compact note) ── */}
       {mode === 'FIXTURE' && (
-        <div className="rounded-xl p-3.5 border border-border bg-accent-amber-bg" data-testid="demo-capture-notice">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm" style={{ color: 'var(--accent-amber)' }}>⬡</span>
-            <span className="text-sm font-bold" style={{ color: 'var(--accent-amber)' }}>
-              DEMO · Captured FortyGuard
-            </span>
+        <div className="mt-3 rounded-lg px-3 py-2.5 border border-amber-500/25" style={{ background: 'var(--accent-amber-bg)' }} data-testid="demo-capture-notice">
+          <div className="text-[11.5px] font-semibold" style={{ color: 'var(--accent-amber)' }}>
+            DEMO · Captured FortyGuard field
           </div>
-          <div className="text-[10px] font-mono leading-relaxed" style={{ color: 'var(--accent-amber-text)', opacity: 0.9 }}>
-            <div>{FIXTURE_DISPLAY_GRANULARITY}m cell resolution</div>
-            <div>Captured analysis area: {fixtureCaptureSpanLabel()}</div>
-            <div>Model hour: {FIXTURE_CAPTURED_HOUR_ISO.slice(0, 10)} · {FIXTURE_CAPTURED_HOUR_ISO.slice(11, 16)} UTC</div>
-            <div>Captured: {FIXTURE_CAPTURED_AT_ISO.slice(0, 10)} {FIXTURE_CAPTURED_AT_ISO.slice(11, 16)} UTC</div>
-            <div>{FIXTURE_CELL_COUNT} provider cells · {FIXTURE_DISPLAY_SNAPSHOT_COUNT}-hour snapshot</div>
+          <div className="text-[10.5px] leading-relaxed mt-1" style={{ color: 'var(--accent-amber-text)' }}>
+            {FIXTURE_DISPLAY_GRANULARITY}m cell resolution · {fixtureCaptureSpanLabel()} · {FIXTURE_CELL_COUNT} provider cells ·
+            model hour {FIXTURE_CAPTURED_HOUR_ISO.slice(0, 10)} {FIXTURE_CAPTURED_HOUR_ISO.slice(11, 16)} UTC ·
+            captured {FIXTURE_CAPTURED_AT_ISO.slice(0, 10)}.
           </div>
-          <p className="text-xs leading-relaxed mt-1.5" style={{ color: 'var(--accent-amber-text)', opacity: 0.85 }}>
-            Offline demonstration replaying one genuine captured FortyGuard field (Lower Manhattan). Selecting a Manhattan
-            DEMO location loads this captured dataset. Switch to LIVE in Settings to analyse any location in real time.
+          <p className="text-[10.5px] leading-relaxed mt-1.5" style={{ color: 'var(--accent-amber-text)', opacity: 0.85 }}>
+            Offline replay of one genuine captured field (Lower Manhattan). Switch to LIVE for any location.
           </p>
         </div>
       )}
 
-      {/* ── ANALYSIS ── */}
-      <div className="rounded-xl border border-border bg-surface-card p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">Analysis</div>
-          {/* ONE compact Reset control (Section 2) — wipes the whole analysis
-              workspace back to EMPTY. Tooltip + aria-label: "Reset analysis". */}
-          <button
-            type="button"
-            data-testid="reset-analysis-btn"
-            onClick={onReset}
-            title="Reset analysis"
-            aria-label="Reset analysis"
-            className="min-h-[32px] min-w-[32px] px-2 rounded-lg border border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:border-red-400/50 hover:bg-red-400/10 transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <RotateCcw className="size-3.5" />
-            <span className="text-[10px] font-bold uppercase tracking-wide hidden sm:inline">Reset</span>
-          </button>
-        </div>
-
+      {/* ── LOCATION ── */}
+      <div className="mt-4">
+        <SectionLabel>Location</SectionLabel>
         <LocationSearch
           selectedLocation={selectedLocation}
           mode={mode}
@@ -234,133 +246,132 @@ export function ControlRail({
           activeStateFilter={activeStateFilter}
         />
 
-        {/* ── State-level selection context (Section 13) ── */}
+        {/* State-level selection context */}
         {stateLevelSelection && (
           <div
-            className="rounded-lg p-3 border"
-            style={{ background: 'rgba(225,29,72,0.06)', borderColor: 'rgba(225,29,72,0.35)' }}
+            className="mt-2.5 rounded-lg p-2.5 border border-border bg-surface-elevated"
             data-testid="state-level-selection-indicator"
           >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#e11d48' }}>
-                Geographic Region Selected
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-text-dimmed">
+                Region selected · context only
               </span>
-              <span className="text-[9px] font-mono text-text-dimmed">context only</span>
             </div>
-            <div className="text-xs font-bold text-text-primary">{stateLevelSelection.name}</div>
-            <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
-              Region boundary shown for context. The analysis point did NOT move — now search a city, street, or address
-              inside {stateLevelSelection.name} to place the analysis area.
+            <div className="text-xs font-semibold text-text-primary">{stateLevelSelection.name}</div>
+            <p className="text-[10.5px] text-text-muted mt-1 leading-relaxed">
+              Boundary shown for context — the analysis point did NOT move. Search a city, street, or address inside{' '}
+              {stateLevelSelection.name} to place the analysis area.
             </p>
           </div>
         )}
+      </div>
 
-        <div className="border-t border-border" />
+      <Separator />
 
-        {/* ── Analysis Area — DEMO: the CAPTURED analysis area (fixed) / LIVE: user span controls ── */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-text-secondary">Analysis Area</span>
-            <span className="text-[10px] font-mono text-text-dimmed">
-              {mode === 'FIXTURE'
-                ? 'captured · fixed'
-                : `${prefs.analysisAreaShape === 'circle' ? 'diameter' : 'square span'} · draggable`}
+      {/* ── AREA OF INTEREST ── */}
+      <div>
+        <SectionLabel
+          right={
+            <span className="text-[10px] font-medium text-text-dimmed">
+              {mode === 'FIXTURE' ? 'captured · fixed' : 'follows location pin'}
             </span>
-          </div>
-          {mode === 'FIXTURE' ? (
-            <div data-testid="captured-analysis-area">
-              <div className="px-2 py-2 rounded-lg bg-surface-deep/60 border border-border/50 text-[10px] font-mono space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-text-muted">Captured analysis area:</span>
-                  <span className="font-bold" style={{ color: 'var(--accent-amber)' }}>
-                    {fixtureCaptureSpanLabel()}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-text-muted">Source:</span>
-                  <span className="text-text-dimmed">genuine FortyGuard capture request</span>
-                </div>
-              </div>
-              <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
-                DEMO analyses the exact area the captured FortyGuard field was requested for (read from the capture
-                metadata — the dashed extent on the map). Size and shape controls apply to LIVE only: DEMO never
-                pretends a different provider capture exists.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Shape toggle (LIVE) */}
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                {(['polygon', 'circle'] as const).map((shape) => (
-                  <button
-                    key={shape}
-                    data-testid={`aoi-shape-${shape}`}
-                    onClick={() => setters.setAnalysisAreaShape(shape)}
-                    className={`min-h-[40px] rounded-lg text-xs transition-all border ${
-                      prefs.analysisAreaShape === shape
-                        ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-400 dark:bg-cyan-500/20 dark:text-cyan-300 font-bold shadow-xs'
-                        : 'border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 font-medium'
-                    }`}
-                  >
-                    {shape === 'polygon' ? 'Square' : 'Circle'}
-                  </button>
-                ))}
-              </div>
-              {/* AOI span presets — the number IS the visible size:
-                  polygon → side length ("400m × 400m"), circle → diameter. */}
-              <div className="grid grid-cols-5 gap-1.5" data-testid="aoi-size-presets">
-                {AOI_SPAN_PRESETS_LOCAL.map((size) => {
-                  const active = prefs.analysisAoiSpanMetres === size;
-                  return (
-                    <button
-                      key={size}
-                      data-testid={`aoi-size-${size}`}
-                      onClick={() => setters.setAnalysisAoiSpanMetres(size)}
-                      className={`min-h-[38px] rounded-md text-[10px] font-mono transition-all border ${
-                        active
-                          ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-400 dark:bg-cyan-500/20 dark:text-cyan-300 font-bold shadow-xs'
-                          : 'border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 font-medium'
-                      }`}
-                      aria-pressed={active}
-                    >
-                      {metresLabel(size)}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                <span className="font-semibold text-slate-600 dark:text-slate-400">Span:</span>
-                <span className="text-slate-950 dark:text-cyan-300 font-bold" data-testid="aoi-span-label">
-                  {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
-                </span>
-              </div>
-              <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
-                Drag the ⌖ handle on the map to move the area — the moved geometry is exactly what FortyGuard receives.
-              </p>
-            </>
-          )}
-        </div>
-
-        {/* ── Thermal Cell resolution (Section 2 — granularity, NOT zoom) ── */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-text-primary">Thermal Cell</span>
-            <span className="text-[10px] font-mono text-text-dimmed">
-              {mode === 'LIVE' ? 'FortyGuard granularity' : `fixture captured at ${fixtureGranularity ?? 100}m`}
-            </span>
-          </div>
-          {mode === 'FIXTURE' ? (
-            <div
-              className="rounded-lg bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between"
-              data-testid="captured-resolution"
-            >
-              <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400 font-medium">Captured resolution:</span>
-              <span className="text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400">
-                {fixtureGranularity ?? 100}m × {fixtureGranularity ?? 100}m
+          }
+        >
+          Area of Interest
+        </SectionLabel>
+        {mode === 'FIXTURE' ? (
+          <div data-testid="captured-analysis-area" className="space-y-1">
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-text-muted">Captured analysis area</span>
+              <span className="font-semibold tnum text-text-primary">
+                {fixtureCaptureSpanLabel()}
               </span>
             </div>
-          ) : (
-          <div className="grid grid-cols-3 gap-2" data-testid="resolution-options">
+            <div className="text-[10px] text-text-dimmed leading-relaxed">
+              The exact area the genuine FortyGuard capture was requested for. Shape and size apply to LIVE only.
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Shape toggle (LIVE) */}
+            <div className="grid grid-cols-2 gap-1.5 mb-2">
+              {(['polygon', 'circle'] as const).map((shape) => (
+                <button
+                  key={shape}
+                  data-testid={`aoi-shape-${shape}`}
+                  onClick={() => setters.setAnalysisAreaShape(shape)}
+                  aria-pressed={prefs.analysisAreaShape === shape}
+                  className={`h-9 rounded-lg text-xs font-medium border transition-colors duration-150 ${
+                    prefs.analysisAreaShape === shape
+                      ? 'border-primary bg-primary/10 text-text-primary'
+                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  {shape === 'polygon' ? 'Square' : 'Circle'}
+                </button>
+              ))}
+            </div>
+            {/* AOI span presets — the number IS the visible size:
+                polygon → side length, circle → diameter. */}
+            <div className="grid grid-cols-5 gap-1.5" data-testid="aoi-size-presets">
+              {AOI_SPAN_PRESETS_LOCAL.map((size) => {
+                const active = prefs.analysisAoiSpanMetres === size;
+                return (
+                  <button
+                    key={size}
+                    data-testid={`aoi-size-${size}`}
+                    onClick={() => setters.setAnalysisAoiSpanMetres(size)}
+                    aria-pressed={active}
+                    className={`h-9 rounded-md text-[10.5px] font-medium border tnum transition-colors duration-150 ${
+                      active
+                        ? 'border-primary bg-primary/10 text-text-primary'
+                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    {metresLabel(size)}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-1.5 text-[10.5px] text-text-dimmed flex items-center justify-between">
+              <span>Span</span>
+              <span className="tnum text-text-muted" data-testid="aoi-span-label">
+                {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
+              </span>
+            </div>
+            <p className="text-[10px] text-text-dimmed mt-1.5 leading-relaxed">
+              Drag the teal operating-location pin on the map to move the area — the moved geometry is exactly what
+              FortyGuard receives.
+            </p>
+          </>
+        )}
+      </div>
+
+      <Separator />
+
+      {/* ── THERMAL CELL (granularity — NOT zoom) ── */}
+      <div>
+        <SectionLabel
+          right={
+            <span className="text-[10px] font-medium text-text-dimmed">
+              {mode === 'LIVE' ? 'FortyGuard granularity' : `captured at ${fixtureGranularity ?? 100}m`}
+            </span>
+          }
+        >
+          Thermal Cell
+        </SectionLabel>
+        {mode === 'FIXTURE' ? (
+          <div
+            className="flex items-center justify-between"
+            data-testid="captured-resolution"
+          >
+            <span className="text-[12px] text-text-muted">Captured resolution:</span>
+            <span className="text-[12px] font-semibold tnum text-text-primary">
+              {fixtureGranularity ?? 100}m × {fixtureGranularity ?? 100}m
+            </span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-1.5" data-testid="resolution-options">
             {([60, 80, 100] as const).map((r) => {
               const active = prefs.analysisResolution === r;
               return (
@@ -368,11 +379,12 @@ export function ControlRail({
                   key={r}
                   data-testid={`resolution-${r}`}
                   onClick={() => setters.setAnalysisResolution(r)}
+                  aria-pressed={active}
                   title={`FortyGuard thermal-cell granularity ${r}m × ${r}m (does not change map zoom)`}
-                  className={`min-h-[40px] rounded-lg text-xs transition-all border leading-tight ${
+                  className={`h-9 rounded-lg text-[11px] font-medium border tnum transition-colors duration-150 ${
                     active
-                      ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-400 dark:bg-cyan-500/20 dark:text-cyan-300 font-bold shadow-xs'
-                      : 'border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 font-medium'
+                      ? 'border-primary bg-primary/10 text-text-primary'
+                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
                   }`}
                 >
                   {r}m × {r}m
@@ -380,433 +392,426 @@ export function ControlRail({
               );
             })}
           </div>
-          )}
-        </div>
+        )}
+      </div>
 
-        {/* ── Candidate Sites (REAL sites only — Section 8) ── */}
-        <div className="border-t border-border" />
-        <div data-testid="candidate-sites-section">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-text-secondary">Candidate Sites</span>
-            <span className="text-[10px] font-mono text-text-dimmed">
-              {mode === 'FIXTURE' ? 'DEMO CANDIDATES · application-defined' : 'user-placed'}
-            </span>
-          </div>
+      <Separator />
 
-          {mode === 'FIXTURE' ? (
-            demoCaptureAvailable ? (
-            <div className="space-y-1.5">
-              <p className="text-[10px] text-text-muted leading-relaxed">
-                Application-defined DEMO candidates — points the application wants evaluated against the captured
-                FortyGuard provider data (not captured sites, not FortyGuard observations). LIVE lets you place your own
-                sites.
-              </p>
-              {['Battery Park Greenway', 'City Hall Civic Center', 'Chinatown / Bowery'].map((n) => (
-                <div key={n} className="flex items-center gap-2 rounded-md bg-surface-deep border border-border px-2.5 py-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--text-secondary)' }} />
-                  <span className="text-xs text-text-secondary">{n}</span>
-                  <span className="ml-auto text-[8px] font-mono uppercase text-text-dimmed">demo candidate</span>
-                </div>
-              ))}
-            </div>
-            ) : (
-              <p className="text-[10px] text-text-muted leading-relaxed" data-testid="no-demo-candidates">
-                No DEMO candidates — this location has no captured FortyGuard dataset. Switch to LIVE to place your own
-                candidate sites, or select a Manhattan DEMO location.
-              </p>
-            )
-          ) : (
-            <div className="space-y-2">
-              {/* Add-site actions */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  data-testid="add-site-map-btn"
-                  onClick={onToggleAddSiteMode}
-                  className={`min-h-[38px] rounded-lg text-[11px] font-bold transition-all border flex items-center justify-center gap-1.5 ${
-                    addSiteMode
-                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
-                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
-                  }`}
-                >
-                  {addSiteMode ? '✓ Click the map…' : '+ Add on map'}
-                </button>
-                <button
-                  type="button"
-                  data-testid="add-site-search-btn"
-                  onClick={() => setShowSiteSearch((v) => !v)}
-                  className={`min-h-[38px] rounded-lg text-[11px] font-bold transition-all border flex items-center justify-center gap-1.5 ${
-                    showSiteSearch
-                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
-                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
-                  }`}
-                >
-                  🔍 From search
-                </button>
-              </div>
-
-              {/* Site search inline */}
-              {showSiteSearch && (
-                <div className="rounded-lg border border-border bg-surface-deep p-2">
-                  <LocationSearch
-                    selectedLocation={selectedLocation}
-                    mode={mode}
-                    onSelectLocation={(loc) => {
-                      onAddSiteFromSearch(loc);
-                      setShowSiteSearch(false);
-                    }}
-                    onSwitchToLive={undefined}
-                    compact
-                    activeStateFilter={activeStateFilter}
-                  />
-                  <p className="text-[9px] text-text-dimmed mt-1">
-                    Only sites inside the analysis area can be added.
-                  </p>
-                </div>
-              )}
-
-              {/* Site list */}
-              {candidateSites.length === 0 ? (
-                <p className="text-[10px] text-text-muted leading-relaxed" data-testid="no-candidate-sites">
-                  No candidate sites yet. LIVE never fabricates sites — add one on the map or from search, then Generate.
-                </p>
-              ) : (
-                <ul className="space-y-1.5 max-h-40 overflow-y-auto" data-testid="candidate-sites-list">
-                  {candidateSites.map((site, idx) => (
-                    <li
-                      key={site.locationId}
-                      className={`rounded-md border px-2.5 py-1.5 ${
-                        site.outsideAoi
-                          ? 'border-red-400/60 bg-red-400/5'
-                          : 'border-border bg-surface-deep'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-mono font-bold text-white flex-shrink-0 shadow-sm"
-                          style={{ backgroundColor: getCandidateColor(idx) }}
-                          title={`Site ${idx + 1}`}
-                        >
-                          {idx + 1}
-                        </span>
-                        {renamingId === site.locationId ? (
-                          <input
-                            autoFocus
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={() => {
-                              if (renameValue.trim()) onRenameSite(site.locationId, renameValue.trim());
-                              setRenamingId(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                if (renameValue.trim()) onRenameSite(site.locationId, renameValue.trim());
-                                setRenamingId(null);
-                              }
-                            }}
-                            className="flex-1 min-w-0 bg-surface-elevated border border-accent-cyan/50 rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRenamingId(site.locationId);
-                              setRenameValue(site.name);
-                            }}
-                            className="flex-1 min-w-0 text-left text-xs text-text-secondary hover:text-text-primary transition-colors truncate"
-                            title="Click to rename"
-                          >
-                            {site.name}
-                          </button>
-                        )}
-                        <span
-                          className="text-[8px] font-mono uppercase text-text-dimmed flex-shrink-0"
-                          title={`Added via ${site.origin}`}
-                        >
-                          {site.origin === 'map-click' ? 'map' : site.origin}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onRemoveSite(site.locationId)}
-                          className="text-text-dimmed hover:text-red-400 transition-colors text-xs flex-shrink-0"
-                          title="Remove site"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      {site.outsideAoi && (
-                        <div className="text-[9px] text-red-400 mt-0.5">
-                          Outside the analysis area — move it inside or drag the AOI to cover it.
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {outsideSiteCount > 0 && (
-                <p className="text-[9px] text-red-400" data-testid="outside-sites-warning">
-                  {outsideSiteCount} site{outsideSiteCount > 1 ? 's' : ''} outside the analysis area — fix before Generate.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-border" />
-
-        {/* ── WHEN — explicit date + time window (Section 14) ── */}
-        <div data-testid="when-section">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-text-secondary">WHEN</span>
-            {isFixtureAnchored ? (
+      {/* ── EVALUATION WINDOW ── */}
+      <div data-testid="when-section">
+        <SectionLabel
+          right={
+            isFixtureAnchored ? (
               <span
-                className="px-2 py-0.5 rounded text-[9px] font-mono font-bold border"
-                style={{
-                  background: 'var(--accent-amber-bg)',
-                  color: 'var(--accent-amber)',
-                  borderColor: 'var(--accent-amber)',
-                }}
+                className="text-[10px] font-medium tnum"
+                style={{ color: 'var(--accent-amber)' }}
                 title={FIXTURE_TEMPORAL_METADATA.captureLabel}
               >
-                Fixture capture
+                fixture capture
               </span>
             ) : (
-              <span className="text-[10px] font-mono text-text-dimmed">{tz || 'UTC'}</span>
-            )}
-          </div>
+              <span className="text-[10px] font-medium text-text-dimmed tnum">{tz || 'UTC'}</span>
+            )
+          }
+        >
+          Evaluation Window
+        </SectionLabel>
 
-          {/* EVALUATION WINDOW selector — a UI concept, NOT a provider
-              filter_type. The verified wire contract: every evaluated hour is
-              its own single-hour FortyGuard request (filter_type: 1). */}
-          <div className="mb-2.5">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
-                Evaluation Window
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {TIME_MODE_OPTIONS.map((opt) => {
-                const active = temporalInput.timeMode === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    data-testid={`evaluation-window-${opt.value}`}
-                    onClick={() => handleTimeModeChange(opt.value)}
-                    className={`min-h-[38px] rounded-lg text-[10px] transition-all border leading-tight px-1 ${
-                      active
-                        ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-400 dark:bg-cyan-500/20 dark:text-cyan-300 font-bold shadow-xs'
-                        : 'border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 font-medium'
-                    }`}
-                    aria-pressed={active}
-                    title={opt.description}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
-              A time range is evaluated as a sequence of hourly FortyGuard requests — one request per hour.
-            </p>
-          </div>
+        {/* EVALUATION WINDOW selector — a UI concept, NOT a provider
+            filter_type. The verified wire contract: every evaluated hour is
+            its own single-hour FortyGuard request (filter_type: 1). */}
+        <p className="text-[10px] text-text-dimmed mb-1.5 leading-relaxed">
+          A time range is evaluated as a sequence of hourly FortyGuard requests — one request per hour.
+        </p>
+        <div className="grid grid-cols-2 gap-1.5 mb-2.5">
+          {TIME_MODE_OPTIONS.map((opt) => {
+            const active = temporalInput.timeMode === opt.value;
+            return (
+              <button
+                key={opt.value}
+                data-testid={`evaluation-window-${opt.value}`}
+                onClick={() => handleTimeModeChange(opt.value)}
+                aria-pressed={active}
+                title={opt.description}
+                className={`h-9 rounded-lg text-[11px] font-medium border transition-colors duration-150 ${
+                  active
+                    ? 'border-primary bg-primary/10 text-text-primary'
+                    : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
 
-          {/* Date input (always visible) */}
-          <label className="block mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">Date</span>
+        {/* Date input */}
+        <label className="block mb-2">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-text-dimmed">Date</span>
+          <input
+            type="date"
+            value={temporalInput.date}
+            onChange={(e) => update({ date: e.target.value })}
+            disabled={isFixtureAnchored}
+            className={`mt-1 w-full h-10 rounded-lg border bg-surface-card px-3 text-[13px] tnum text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors duration-150 ${
+              dateValid ? 'border-input' : 'border-destructive'
+            } ${isFixtureAnchored ? 'opacity-60 cursor-not-allowed' : ''}`}
+            aria-label="Analysis date"
+          />
+          {/* LIVE date hint — honest about model completion */}
+          {mode === 'LIVE' && (
+            <span className="block text-[10px] text-text-dimmed mt-1 leading-relaxed" data-testid="live-date-hint">
+              Pick the date explicitly. Recently requested periods may have no completed FortyGuard model yet (the
+              provider returns an empty field — reported verbatim, never retried with another date). Documented
+              forecast support: up to +12h ahead.
+            </span>
+          )}
+        </label>
+
+        {/* Start / End time inputs */}
+        <div className={`grid ${isSingleHour ? 'grid-cols-1' : 'grid-cols-2'} gap-2 mb-2`}>
+          <label className="block">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-text-dimmed">
+              {isSingleHour ? 'Hour' : 'Start'}
+            </span>
             <input
-              type="date"
-              value={temporalInput.date}
-              onChange={(e) => update({ date: e.target.value })}
+              type="time"
+              value={temporalInput.startTime}
+              onChange={(e) => update({ startTime: e.target.value })}
               disabled={isFixtureAnchored}
-              className={`mt-1 w-full min-h-[42px] rounded-lg border bg-white dark:bg-slate-900 px-3 text-sm font-mono text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:border-slate-900 dark:focus:border-cyan-400 focus:ring-1 focus:ring-slate-900/20 transition-colors ${
-                dateValid ? 'border-slate-300 dark:border-slate-700' : 'border-rose-500'
-              } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
-              aria-label="Analysis date"
+              className={`mt-1 w-full h-10 rounded-lg border bg-surface-card px-3 text-[13px] tnum text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors duration-150 ${
+                startValid ? 'border-input' : 'border-destructive'
+              } ${isFixtureAnchored ? 'opacity-60 cursor-not-allowed' : ''}`}
+              aria-label="Analysis start time"
             />
-            {/* LIVE date hint — honest about model completion, no invented
-                "guaranteed valid" date, no silent retry / DEMO fallback. */}
-            {mode === 'LIVE' && (
-              <span className="block text-[9px] text-text-dimmed mt-1 leading-relaxed" data-testid="live-date-hint">
-                Pick the date explicitly. Recently requested periods may have no completed FortyGuard model yet (the
-                provider then returns an empty thermal field — reported verbatim, never retried with another date).
-                Documented forecast support: up to +12h ahead.
-              </span>
-            )}
           </label>
-
-          {/* Start / End time inputs */}
-          <div className={`grid ${isSingleHour ? 'grid-cols-1' : 'grid-cols-2'} gap-2 mb-2`}>
+          {!isSingleHour && (
             <label className="block">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
-                {isSingleHour ? 'Hour' : 'Start'}
-              </span>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-text-dimmed">End</span>
               <input
                 type="time"
-                value={temporalInput.startTime}
-                onChange={(e) => update({ startTime: e.target.value })}
+                value={temporalInput.endTime}
+                onChange={(e) => update({ endTime: e.target.value })}
                 disabled={isFixtureAnchored}
-                className={`mt-1 w-full min-h-[42px] rounded-lg border bg-white dark:bg-slate-900 px-3 text-sm font-mono text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:border-slate-900 dark:focus:border-cyan-400 focus:ring-1 focus:ring-slate-900/20 transition-colors ${
-                  startValid ? 'border-slate-300 dark:border-slate-700' : 'border-rose-500'
-                } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
-                aria-label="Analysis start time"
+                className={`mt-1 w-full h-10 rounded-lg border bg-surface-card px-3 text-[13px] tnum text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors duration-150 ${
+                  endValid ? 'border-input' : 'border-destructive'
+                } ${isFixtureAnchored ? 'opacity-60 cursor-not-allowed' : ''}`}
+                aria-label="Analysis end time"
               />
             </label>
-            {!isSingleHour && (
-              <label className="block">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">End</span>
-                <input
-                  type="time"
-                  value={temporalInput.endTime}
-                  onChange={(e) => update({ endTime: e.target.value })}
-                  disabled={isFixtureAnchored}
-                  className={`mt-1 w-full min-h-[42px] rounded-lg border bg-white dark:bg-slate-900 px-3 text-sm font-mono text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:border-slate-900 dark:focus:border-cyan-400 focus:ring-1 focus:ring-slate-900/20 transition-colors ${
-                    endValid ? 'border-slate-300 dark:border-slate-700' : 'border-rose-500'
-                  } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
-                  aria-label="Analysis end time"
-                />
-              </label>
-            )}
-          </div>
-
-          {/* Derived duration (read-only) */}
-          <div className="flex items-center justify-between rounded-lg bg-slate-100 dark:bg-slate-900/80 px-3 py-2 border border-slate-200 dark:border-slate-800">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
-              Duration
-            </span>
-            <span
-              className="text-base font-black font-mono text-slate-950 dark:text-cyan-300"
-              data-testid="duration-display"
-            >
-              {derivedDuration}h
-            </span>
-          </div>
-
-          {/* Inline validation hint */}
-          {!allValid && (
-            <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-1.5 font-medium">
-              {!dateValid && 'Enter a valid date (YYYY-MM-DD). '}
-              {!rangeValid && 'End time must be after start time.'}
-            </p>
-          )}
-
-          {/* Honest future-date note */}
-          {mode === 'LIVE' && isFutureDate && (
-            <p className="text-[10px] mt-1.5 font-medium text-amber-700 dark:text-amber-300">
-              Future date selected — subject to FortyGuard forecast availability. The provider reports any unsupported window verbatim.
-            </p>
-          )}
-
-          {/* LIVE billing disclosure — the engine sends ONE hourly provider
-              request per evaluated hour; make that explicit BEFORE Generate.
-              Conservative wording: no exact credit cost is claimed. */}
-          {mode === 'LIVE' && allValid && (
-            <div
-              className="rounded-lg px-3 py-2 mt-2 border border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/80 dark:bg-emerald-950/20"
-              data-testid="live-request-disclosure"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-800 dark:text-emerald-400">
-                  LIVE · {derivedDuration}-hour evaluation
-                </span>
-                <span className="text-[10px] font-mono font-bold text-emerald-800 dark:text-emerald-300">
-                  {liveHourlyRequestCount} FortyGuard hourly request{liveHourlyRequestCount > 1 ? 's' : ''}
-                </span>
-              </div>
-              <p className="text-[9px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
-                Each evaluated hour is submitted as its own single-hour FortyGuard /v1/heatmap request (cached results are
-                reused, not re-billed). Repeat requests may consume provider credits.
-              </p>
-            </div>
-          )}
-
-          {/* Human-readable window preview */}
-          {allValid && (
-            <p className="text-[10px] font-mono text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-              {formatTemporalForHeader(temporalInput, tz)}
-            </p>
           )}
         </div>
 
-        {/* Selected Analysis Area indicator — coordinates track AOI drag */}
-        <div
-          className="rounded-lg p-3 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-1"
-          data-testid="active-analysis-location-indicator"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-bold uppercase tracking-widest text-text-dimmed">Selected Analysis Area</span>
-            <span
-              className="px-2 py-0.5 rounded text-[10px] font-bold border"
-              style={mode === 'LIVE'
-                ? { background: 'var(--accent-emerald-bg)', color: 'var(--accent-emerald-text)', borderColor: 'var(--accent-emerald)' }
-                : { background: 'var(--accent-amber-bg)', color: 'var(--accent-amber-text)', borderColor: 'var(--accent-amber)' }
-              }
-              data-testid="analysis-mode-badge"
-            >
-              {mode === 'LIVE' ? 'LIVE · FortyGuard' : 'DEMO · Captured FortyGuard'}
-            </span>
-          </div>
-          <div className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight" data-testid="active-analysis-location-name">
-            {selectedLocation ? selectedLocation.name : 'No location selected'}
-          </div>
-          {selectedLocation && centerCoords && (
-            <div className="text-[11px] font-mono flex items-center justify-between text-slate-700 dark:text-cyan-300" data-testid="active-analysis-location-coords">
-              <span className="font-semibold">{centerCoords.latitude.toFixed(4)}°, {centerCoords.longitude.toFixed(4)}°</span>
-              <span className="text-slate-500 font-sans text-[10px]">
-                {selectedLocation.city ? `${selectedLocation.city}, ${selectedLocation.state || selectedLocation.country}` : selectedLocation.state || ''}
+        {/* Derived duration (read-only row) */}
+        <div className="flex items-center justify-between py-1">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-text-dimmed">Duration</span>
+          <span className="text-[13px] font-semibold tnum text-text-primary" data-testid="duration-display">
+            {derivedDuration}h
+          </span>
+        </div>
+
+        {/* Inline validation hint */}
+        {!allValid && (
+          <p className="text-[10.5px] text-destructive mt-1.5 font-medium">
+            {!dateValid && 'Enter a valid date (YYYY-MM-DD). '}
+            {!rangeValid && 'End time must be after start time.'}
+          </p>
+        )}
+
+        {/* Honest future-date note */}
+        {mode === 'LIVE' && isFutureDate && (
+          <p className="text-[10.5px] mt-1.5 font-medium" style={{ color: 'var(--accent-amber)' }}>
+            Future date selected — subject to FortyGuard forecast availability. The provider reports any unsupported
+            window verbatim.
+          </p>
+        )}
+
+        {/* LIVE billing disclosure */}
+        {mode === 'LIVE' && allValid && (
+          <div
+            className="rounded-lg px-3 py-2 mt-2 border border-emerald-500/25"
+            style={{ background: 'var(--accent-emerald-bg)' }}
+            data-testid="live-request-disclosure"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--accent-emerald)' }}>
+                LIVE · {derivedDuration}-hour evaluation
+              </span>
+              <span className="text-[11px] font-semibold tnum" style={{ color: 'var(--accent-emerald)' }}>
+                {liveHourlyRequestCount} FortyGuard hourly request{liveHourlyRequestCount > 1 ? 's' : ''}
               </span>
             </div>
-          )}
-        </div>
+            <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
+              Each evaluated hour is its own single-hour FortyGuard request (cached results reused, not re-billed).
+              Repeat requests may consume provider credits.
+            </p>
+          </div>
+        )}
 
-        {/* Generate button — solid Apple / Linear / Stripe high contrast styling */}
-        <motion.button
-          whileTap={{ scale: 0.99 }}
-          disabled={loading || generateDisabled}
-          onClick={onGenerate}
-          data-testid="recalculate-decision-btn"
-          title={generateDisabled && !loading ? generateDisabledReason : undefined}
-          className={`w-full min-h-[48px] rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 border shadow-xs ${
-            loading || generateDisabled
-              ? 'bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-              : mode === 'LIVE'
-                ? 'bg-slate-900 hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white border-slate-900 dark:border-emerald-500 cursor-pointer active:bg-black'
-                : 'bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 text-white border-slate-900 dark:border-sky-500 cursor-pointer active:bg-black'
-          }`}
-        >
-          {loading ? (
-            <span className="flex items-center gap-2">
-              <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-              Generating thermal field…
-            </span>
-          ) : (
-            `⚡ Generate Thermal Field (${mode === 'LIVE' ? 'LIVE' : 'DEMO'})`
-          )}
-        </motion.button>
-
-        {/* Inline reason when Generate is blocked (validation feedback) */}
-        {generateDisabled && !loading && generateDisabledReason && (
-          <p
-            className="text-[10px] leading-relaxed text-center -mt-1 font-medium text-amber-700 dark:text-amber-400"
-            data-testid="generate-blocked-reason"
-          >
-            ⚠ {generateDisabledReason}
+        {/* Human-readable window preview */}
+        {allValid && (
+          <p className="text-[10.5px] text-text-dimmed tnum mt-2 leading-relaxed">
+            {formatTemporalForHeader(temporalInput, tz)}
           </p>
         )}
       </div>
 
-      {/* ── SYSTEM STATUS ── */}
-      <SystemStatus
-        mode={mode}
-        fortyGuardStatus={fortyGuardStatus}
-        aiStatus={aiStatus}
-        aiProvider={aiProvider}
-        fieldReady={fieldReady}
-        loading={loading}
-        onTestFortyGuard={onTestFortyGuard}
-        onTestAI={onTestAI}
-      />
+      <Separator />
 
-      <div className="text-[10px] text-text-dimmed font-mono text-center">
+      {/* ── CANDIDATE SITES ── */}
+      <div data-testid="candidate-sites-section">
+        <SectionLabel
+          right={
+            <span className="text-[10px] font-medium text-text-dimmed">
+              {mode === 'FIXTURE' ? 'DEMO CANDIDATES · application-defined' : 'user-placed'}
+            </span>
+          }
+        >
+          Candidate Sites
+        </SectionLabel>
+
+        {mode === 'FIXTURE' ? (
+          demoCaptureAvailable ? (
+            <div className="space-y-1">
+              <p className="text-[10.5px] text-text-muted leading-relaxed">
+                Application-defined DEMO candidates — points the application wants evaluated against the captured
+                FortyGuard provider data (not captured sites, not FortyGuard observations). LIVE lets you place your
+                own sites.
+              </p>
+              {['Battery Park Greenway', 'City Hall Civic Center', 'Chinatown / Bowery'].map((n) => (
+                <div key={n} className="flex items-center gap-2 rounded-md bg-surface-deep px-2.5 py-2">
+                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--text-secondary)' }} />
+                  <span className="text-[12px] text-text-secondary">{n}</span>
+                  <span className="ml-auto text-[9px] font-mono uppercase text-text-dimmed">demo</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10.5px] text-text-muted leading-relaxed" data-testid="no-demo-candidates">
+              No DEMO candidates — this location has no captured FortyGuard dataset. Switch to LIVE to place your own
+              candidate sites, or select a Manhattan DEMO location.
+            </p>
+          )
+        ) : (
+          <div className="space-y-2">
+            {/* Add-site actions */}
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                data-testid="add-site-map-btn"
+                onClick={onToggleAddSiteMode}
+                aria-pressed={addSiteMode}
+                className={`h-9 rounded-lg text-[11.5px] font-medium border flex items-center justify-center gap-1.5 transition-colors duration-150 ${
+                  addSiteMode
+                    ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
+                    : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                {addSiteMode ? 'Click the map…' : 'Add on map'}
+              </button>
+              <button
+                type="button"
+                data-testid="add-site-search-btn"
+                onClick={() => setShowSiteSearch((v) => !v)}
+                aria-pressed={showSiteSearch}
+                className={`h-9 rounded-lg text-[11.5px] font-medium border flex items-center justify-center gap-1.5 transition-colors duration-150 ${
+                  showSiteSearch
+                    ? 'border-primary text-text-primary bg-primary/10'
+                    : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
+                }`}
+              >
+                <Search className="size-3.5" aria-hidden="true" />
+                From search
+              </button>
+            </div>
+
+            {/* Site search inline */}
+            {showSiteSearch && (
+              <div className="rounded-lg border border-border bg-surface-deep p-2">
+                <LocationSearch
+                  selectedLocation={selectedLocation}
+                  mode={mode}
+                  onSelectLocation={(loc) => {
+                    onAddSiteFromSearch(loc);
+                    setShowSiteSearch(false);
+                  }}
+                  onSwitchToLive={undefined}
+                  compact
+                  activeStateFilter={activeStateFilter}
+                />
+                <p className="text-[9.5px] text-text-dimmed mt-1">
+                  Only sites inside the analysis area can be added.
+                </p>
+              </div>
+            )}
+
+            {/* Site list */}
+            {candidateSites.length === 0 ? (
+              <p className="text-[10.5px] text-text-muted leading-relaxed" data-testid="no-candidate-sites">
+                No candidate sites yet. LIVE never fabricates sites — add one on the map or from search, then Generate.
+              </p>
+            ) : (
+              <ul className="space-y-1 max-h-40 overflow-y-auto" data-testid="candidate-sites-list">
+                {candidateSites.map((site, idx) => (
+                  <li
+                    key={site.locationId}
+                    className={`rounded-md border px-2.5 py-2 ${
+                      site.outsideAoi
+                        ? 'border-destructive/50 bg-destructive/5'
+                        : 'border-transparent bg-surface-deep'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-mono font-bold text-white flex-shrink-0"
+                        style={{ backgroundColor: getCandidateColor(idx) }}
+                        title={`Site ${idx + 1}`}
+                      >
+                        {idx + 1}
+                      </span>
+                      {renamingId === site.locationId ? (
+                        <input
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onBlur={() => {
+                            if (renameValue.trim()) onRenameSite(site.locationId, renameValue.trim());
+                            setRenamingId(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              if (renameValue.trim()) onRenameSite(site.locationId, renameValue.trim());
+                              setRenamingId(null);
+                            }
+                          }}
+                          className="flex-1 min-w-0 bg-surface-elevated border border-primary/50 rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRenamingId(site.locationId);
+                            setRenameValue(site.name);
+                          }}
+                          className="flex-1 min-w-0 text-left text-xs text-text-secondary hover:text-text-primary transition-colors duration-150 truncate"
+                          title="Click to rename"
+                        >
+                          {site.name}
+                        </button>
+                      )}
+                      <span
+                        className="text-[9px] font-mono uppercase text-text-dimmed flex-shrink-0"
+                        title={`Added via ${site.origin}`}
+                      >
+                        {site.origin === 'map-click' ? 'map' : site.origin}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveSite(site.locationId)}
+                        className="text-text-dimmed hover:text-destructive transition-colors duration-150 text-xs flex-shrink-0"
+                        title="Remove site"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {site.outsideAoi && (
+                      <div className="text-[9.5px] text-destructive mt-1">
+                        Outside the analysis area — move it inside before Generate.
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {outsideSiteCount > 0 && (
+              <p className="text-[10px] text-destructive" data-testid="outside-sites-warning">
+                {outsideSiteCount} site{outsideSiteCount > 1 ? 's' : ''} outside the analysis area — fix before Generate.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <Separator />
+
+      {/* ── Selected analysis summary + Generate ── */}
+      <div
+        className="pt-3 border-t border-border/70 space-y-1"
+        data-testid="active-analysis-location-indicator"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-text-dimmed">Selected Analysis Area</span>
+          <span
+            className="text-[10px] font-semibold"
+            style={{ color: mode === 'LIVE' ? 'var(--accent-emerald)' : 'var(--accent-amber)' }}
+            data-testid="analysis-mode-badge"
+          >
+            {mode === 'LIVE' ? 'LIVE · FortyGuard' : 'DEMO · Captured FortyGuard'}
+          </span>
+        </div>
+        <div className="text-[13px] font-semibold text-text-primary leading-tight" data-testid="active-analysis-location-name">
+          {selectedLocation ? selectedLocation.name : 'No location selected'}
+        </div>
+        {selectedLocation && centerCoords && (
+          <div className="text-[10.5px] font-mono flex items-center justify-between text-text-muted" data-testid="active-analysis-location-coords">
+            <span className="tnum">{centerCoords.latitude.toFixed(4)}°, {centerCoords.longitude.toFixed(4)}°</span>
+            <span className="font-sans text-[10px] text-text-dimmed">
+              {selectedLocation.city ? `${selectedLocation.city}, ${selectedLocation.state || selectedLocation.country}` : selectedLocation.state || ''}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Generate — the single primary action */}
+      <motion.button
+        whileTap={{ scale: 0.99 }}
+        disabled={loading || generateDisabled}
+        onClick={onGenerate}
+        data-testid="recalculate-decision-btn"
+        title={generateDisabled && !loading ? generateDisabledReason : undefined}
+        className={`mt-3 w-full h-12 rounded-xl text-[13px] font-semibold transition-colors duration-150 flex items-center justify-center gap-2 border ${
+          loading || generateDisabled
+            ? 'bg-surface-deep border-border text-text-dimmed cursor-not-allowed'
+            : 'bg-slate-900 hover:bg-slate-800 dark:bg-cyan-400 dark:hover:bg-cyan-300 text-white dark:text-slate-950 border-slate-900 dark:border-cyan-400 cursor-pointer'
+        }`}
+      >
+        {loading ? (
+          <span className="flex items-center gap-2">
+            <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            Generating thermal field…
+          </span>
+        ) : (
+          `Generate Thermal Field · ${mode === 'LIVE' ? 'LIVE' : 'DEMO'}`
+        )}
+      </motion.button>
+
+      {/* Inline reason when Generate is blocked */}
+      {generateDisabled && !loading && generateDisabledReason && (
+        <p
+          className="text-[10.5px] leading-relaxed text-center mt-1.5 font-medium"
+          style={{ color: 'var(--accent-amber)' }}
+          data-testid="generate-blocked-reason"
+        >
+          {generateDisabledReason}
+        </p>
+      )}
+
+      {/* ── SYSTEM STATUS (quiet, at the bottom) ── */}
+      <div className="mt-6">
+        <SystemStatus
+          mode={mode}
+          fortyGuardStatus={fortyGuardStatus}
+          aiStatus={aiStatus}
+          aiProvider={aiProvider}
+          fieldReady={fieldReady}
+          loading={loading}
+          onTestFortyGuard={onTestFortyGuard}
+          onTestAI={onTestAI}
+        />
+      </div>
+
+      <div className="text-[10px] text-text-dimmed text-center mt-4">
         FortyGuard Hackathon&apos;26
       </div>
     </div>

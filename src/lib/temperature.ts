@@ -98,42 +98,104 @@ export function tempUnitSuffix(unit: TempUnit): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Thermal color ramp — SINGLE source of truth
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Professional continuous thermal ramp (cool → warm), shared by:
+ *   - the MapLibre `thermal-tiles-fill` paint interpolation (ThermalMap.tsx)
+ *   - the map legend gradient bar + tick labels (below)
+ *
+ * Stops are in °C. Colors form a smooth perceptual-ish progression so
+ * adjacent provider cells read as a continuous thermal surface while
+ * retaining enough variation for individual 100m cells to stay perceptible.
+ */
+export const THERMAL_RAMP_STOPS: ReadonlyArray<{ c: number; color: string }> = [
+  { c: 16, color: '#2f6bd8' }, // deep blue — cool
+  { c: 20, color: '#14a3c9' }, // cyan
+  { c: 23, color: '#14b88a' }, // teal-green
+  { c: 26, color: '#7cb83c' }, // lime-green
+  { c: 28, color: '#dfb33a' }, // yellow
+  { c: 30, color: '#f08c2e' }, // orange
+  { c: 32, color: '#e2503a' }, // red-orange
+  { c: 35, color: '#c02948' }, // red
+  { c: 40, color: '#8f1d42' }, // deep crimson — extreme
+];
+
+/** CSS linear-gradient string for the legend bar (left → right = cool → warm). */
+export function thermalRampGradientCss(): string {
+  const stops = THERMAL_RAMP_STOPS.map((s) => `${s.color} ${s.c}°C`).join(', ');
+  return `linear-gradient(to right, ${stops})`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Map Legend helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Generate thermal legend tick labels for the current unit.
- * The underlying MapLibre color scale always operates in Celsius
- * (FortyGuard data is Celsius); only the legend *labels* are converted.
+ * Tick colors are SAMPLED from THERMAL_RAMP_STOPS so the legend always
+ * matches the rendered field. The underlying MapLibre color scale always
+ * operates in Celsius (FortyGuard data is Celsius); only labels convert.
  */
 export function getThermalLegendTicks(unit: TempUnit): { color: string; label: string }[] {
-  const ticks: { celsiusBound: number | null; color: string; labelPrefix?: string; labelSuffix?: string }[] = [
-    { celsiusBound: 28,   color: '#10b981', labelPrefix: '≤' },
-    { celsiusBound: 30,   color: '#eab308' },
-    { celsiusBound: 32,   color: '#f97316' },
-    { celsiusBound: null, color: '#ef4444', labelPrefix: '>' },
+  const band = (cLow: number, cHigh: number | null): { color: string; label: string } => {
+    // Sample the ramp color at the band's midpoint (or upper edge for open bands).
+    const probe = cHigh === null ? cLow + 2 : (cLow + cHigh) / 2;
+    const color = sampleThermalRampColor(probe);
+    const conv = (c: number) => (unit === 'F' ? Math.round(celsiusToFahrenheit(c)) : c);
+    return cHigh === null
+      ? { color, label: `>${conv(cLow)}` }
+      : { color, label: `${conv(cLow)}–${conv(cHigh)}` };
+  };
+
+  return [
+    band(0, 26),
+    band(26, 28),
+    band(28, 30),
+    band(30, 32),
+    band(32, null),
   ];
+}
 
-  return ticks.map((tick, i) => {
-    const prev = i > 0 ? ticks[i - 1].celsiusBound : null;
-    const curr = tick.celsiusBound;
+/**
+ * Linearly interpolate the ramp color at an arbitrary °C value.
+ * Clamps outside the stop range. Pure function — used by the legend and
+ * any UI element that needs to color-match a specific temperature.
+ */
+export function sampleThermalRampColor(celsius: number): string {
+  const stops = THERMAL_RAMP_STOPS;
+  if (celsius <= stops[0].c) return stops[0].color;
+  const last = stops[stops.length - 1];
+  if (celsius >= last.c) return last.color;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i];
+    const b = stops[i + 1];
+    if (celsius >= a.c && celsius <= b.c) {
+      const t = (celsius - a.c) / (b.c - a.c);
+      return mixHex(a.color, b.color, t);
+    }
+  }
+  return last.color;
+}
 
-    if (tick.labelPrefix === '≤' && curr !== null) {
-      const v = unit === 'F' ? Math.round(celsiusToFahrenheit(curr)) : curr;
-      return { color: tick.color, label: `≤${v}` };
-    }
-    if (tick.labelPrefix === '>' && prev !== null) {
-      const v = unit === 'F' ? Math.round(celsiusToFahrenheit(prev)) : prev;
-      return { color: tick.color, label: `>${v}` };
-    }
-    // Middle range: "prevVal–currVal"
-    if (prev !== null && curr !== null) {
-      const lo = unit === 'F' ? Math.round(celsiusToFahrenheit(prev)) : prev;
-      const hi = unit === 'F' ? Math.round(celsiusToFahrenheit(curr)) : curr;
-      return { color: tick.color, label: `${lo}-${hi}` };
-    }
-    return { color: tick.color, label: '?' };
-  });
+/** Hex color interpolation helper (no alpha handling — ramp colors are RGB). */
+function mixHex(a: string, b: string, t: number): string {
+  const pa = hexToRgb(a);
+  const pb = hexToRgb(b);
+  const r = Math.round(pa[0] + (pb[0] - pa[0]) * t);
+  const g = Math.round(pa[1] + (pb[1] - pa[1]) * t);
+  const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t);
+  return `#${[r, g, bl].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

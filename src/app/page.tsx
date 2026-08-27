@@ -11,8 +11,11 @@ import { TopCandidates } from '@/components/dashboard/TopCandidates';
 import { WhatIfPanel } from '@/components/dashboard/WhatIfPanel';
 import { GroundedExplanation } from '@/components/dashboard/GroundedExplanation';
 import { ErrorBanner } from '@/components/dashboard/ErrorBanner';
+import { MobileAnalysisSheet } from '@/components/dashboard/MobileAnalysisSheet';
 import { SettingsDrawer } from '@/components/SettingsDrawer';
 import { useTheme } from '@/components/ThemeProvider';
+import { formatTemporalForHeader } from '@/lib/temporal/analysis-window';
+import { fmtTemp } from '@/lib/temperature';
 
 import type {
   DecisionResult,
@@ -228,6 +231,23 @@ export default function WorkspacePage() {
 
   // ── UI state ──
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  // ── Viewport ──
+  // lg (1024px) is the desktop/mobile composition boundary. BELOW it the
+  // workspace renders map-first with a bottom-sheet analysis panel; ABOVE it
+  // the classic rail + main grid. The state decides WHERE the single
+  // ControlRail / result components mount (no DOM duplication); CSS
+  // (hidden lg:block / lg:hidden) guarantees the correct chrome even during
+  // the first frame.
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const update = () => setIsMobileViewport(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   // ── Refs (stable values read inside async callbacks) ──
   const activeRequestIdRef = useRef(0);
@@ -1054,6 +1074,20 @@ export default function WorkspacePage() {
   // MISLABEL the captured wall-clock. LIVE uses the location's timezone.
   const displayTimezone = mode === 'FIXTURE' ? FIXTURE_TIMEZONE : (selectedLocation?.timezone || 'UTC');
 
+  // Header WHEN label (desktop header context line).
+  const headerTemporalLabel = formatTemporalForHeader(temporalInput, displayTimezone);
+
+  // Bottom-sheet peek summary (mobile): one honest line of workspace state.
+  const sheetSummary = loading
+    ? 'Generating thermal field…'
+    : errorDetails
+      ? `${errorDetails.code} — open for recovery actions`
+      : jointDecision
+        ? `${jointDecision.recommendedPlan.location.name.split(' (')[0]} · ${fmtTemp(jointDecision.recommendedPlan.exposureScore, unit)} · #1 of ${jointDecision.searchSpace.locationCount}`
+        : selectedLocation
+          ? `${selectedLocation.name} · ${mode === 'LIVE' ? 'ready to generate' : 'captured dataset ready'}`
+          : 'Select a location to begin';
+
   const handleSelectScenario = useCallback((scenarioId: string) => {
     setSelectedScenarioId(scenarioId);
     selectedScenarioIdRef.current = scenarioId;
@@ -1139,50 +1173,112 @@ export default function WorkspacePage() {
         fortyGuardStatus={fgStatus}
         aiStatus={aiStatus}
         aiProvider={aiProvider}
+        selectedLocation={selectedLocation}
+        onSelectLocation={handleSelectLocation}
+        onSwitchToLive={() => handleModeChange('LIVE')}
+        onClearLocation={handleClearLocation}
+        temporalLabel={headerTemporalLabel}
+        onModeChange={handleModeChange}
+        onOpenMobileSheet={() => setSheetOpen(true)}
+        activeStateFilter={regionDisplayName || selectedLocation?.state}
       />
 
-      <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-5 lg:py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
-          {/* LEFT CONTROL RAIL */}
-          <div className="lg:col-span-4 xl:col-span-3">
-            <ControlRail
-              mode={mode}
-              selectedLocation={selectedLocation}
-              analysisCenter={selectedLocation ? aoiCenter : undefined}
-              demoCaptureAvailable={demoCaptureAvailable}
-              stateLevelSelection={stateLevelSelection}
-              temporalInput={temporalInput}
-              onTemporalChange={handleTemporalChange}
-              onGenerate={handleGenerate}
-              loading={loading}
-              generateDisabled={!generateReadiness.enabled}
-              generateDisabledReason={generateReadiness.reason}
-              onReset={handleResetAnalysis}
-              onClearLocation={handleClearLocation}
-              onSelectLocation={handleSelectLocation}
-              onSwitchToLive={() => handleModeChange('LIVE')}
-              fortyGuardStatus={fgStatus}
-              fortyGuardHealth={fgHealth}
-              aiStatus={aiStatus}
-              aiHealth={aiHealth}
-              fieldReady={fieldReady}
-              onTestFortyGuard={() => checkFortyGuardHealth(mode)}
-              onTestAI={checkAIHealth}
-              candidateSites={candidateSites.sites}
-              onRemoveSite={handleRemoveSite}
-              onRenameSite={handleRenameSite}
-              onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
-              addSiteMode={addSiteMode}
-              onAddSiteFromSearch={handleAddSiteFromSearch}
-              fixtureGranularity={FIXTURE_DISPLAY_GRANULARITY}
-              activeStateFilter={regionDisplayName || selectedLocation?.state}
-            />
+      {/* ── MOBILE CONTEXT STRIP — location · when · DEMO/LIVE ── */}
+      <div className="md:hidden sticky top-14 z-40 border-b border-border backdrop-blur-md" style={{ background: 'var(--surface-header)' }}>
+        <div className="px-3 py-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            aria-label="Select operating location"
+            className="flex items-center gap-1.5 min-w-0 flex-1 h-9 px-2.5 rounded-lg border border-border bg-surface-card text-[12px] text-text-primary transition-colors duration-150"
+          >
+            <svg className="size-3.5 shrink-0" style={{ color: 'var(--accent-cyan)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            <span className="truncate">{selectedLocation ? selectedLocation.name : 'Select location'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="hidden xs:flex items-center h-9 px-2.5 rounded-lg border border-border bg-surface-card text-[11px] text-text-muted tnum transition-colors duration-150"
+            aria-label="Evaluation window"
+          >
+            <span className="truncate max-w-[110px]">{headerTemporalLabel}</span>
+          </button>
+          {/* DEMO/LIVE — compact segmented control */}
+          <div
+            role="group"
+            aria-label="Data source"
+            className="flex items-center p-0.5 rounded-lg border border-border bg-surface-card shrink-0"
+          >
+            {(['LIVE', 'FIXTURE'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={mode === m}
+                onClick={() => handleModeChange(m)}
+                className={`h-8 px-2 rounded-md text-[10.5px] font-semibold tracking-wide transition-colors duration-150 ${
+                  mode === m
+                    ? m === 'LIVE'
+                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                    : 'text-text-muted'
+                }`}
+              >
+                {m === 'LIVE' ? 'LIVE' : 'DEMO'}
+              </button>
+            ))}
           </div>
+        </div>
+      </div>
 
-          {/* MAIN CANVAS */}
-          <div className="lg:col-span-8 xl:col-span-9 space-y-5">
-            {/* Error banner (highest priority in main canvas when present) */}
-            {errorDetails && (
+      {/* ── WORKSPACE ── */}
+      <div className="flex-1 w-full max-w-[1600px] mx-auto px-3 sm:px-6 py-4 lg:py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
+          {/* LEFT CONTROL RAIL — desktop composition (hidden below lg; the
+              mobile bottom sheet carries the SAME ControlRail instance) */}
+          <aside className="hidden lg:block lg:col-span-4 xl:col-span-3">
+            {!isMobileViewport ? (
+              <ControlRail
+                mode={mode}
+                selectedLocation={selectedLocation}
+                analysisCenter={selectedLocation ? aoiCenter : undefined}
+                demoCaptureAvailable={demoCaptureAvailable}
+                stateLevelSelection={stateLevelSelection}
+                temporalInput={temporalInput}
+                onTemporalChange={handleTemporalChange}
+                onGenerate={handleGenerate}
+                loading={loading}
+                generateDisabled={!generateReadiness.enabled}
+                generateDisabledReason={generateReadiness.reason}
+                onReset={handleResetAnalysis}
+                onClearLocation={handleClearLocation}
+                onSelectLocation={handleSelectLocation}
+                onSwitchToLive={() => handleModeChange('LIVE')}
+                fortyGuardStatus={fgStatus}
+                fortyGuardHealth={fgHealth}
+                aiStatus={aiStatus}
+                aiHealth={aiHealth}
+                fieldReady={fieldReady}
+                onTestFortyGuard={() => checkFortyGuardHealth(mode)}
+                onTestAI={checkAIHealth}
+                candidateSites={candidateSites.sites}
+                onRemoveSite={handleRemoveSite}
+                onRenameSite={handleRenameSite}
+                onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
+                addSiteMode={addSiteMode}
+                onAddSiteFromSearch={handleAddSiteFromSearch}
+                fixtureGranularity={FIXTURE_DISPLAY_GRANULARITY}
+                activeStateFilter={regionDisplayName || selectedLocation?.state}
+              />
+            ) : null}
+          </aside>
+
+          {/* MAIN COLUMN — the map dominates; results below (desktop) */}
+          <div className="lg:col-span-8 xl:col-span-9 space-y-5 order-first lg:order-none">
+            {/* Error banner (desktop placement; mobile renders it in the sheet) */}
+            {errorDetails && !isMobileViewport && (
               <ErrorBanner
                 errorDetails={errorDetails}
                 mode={mode}
@@ -1203,6 +1299,7 @@ export default function WorkspacePage() {
               resolution={selectedLocation ? resolutionDisplay : undefined}
               mode={mode}
               loading={loading}
+              unit={unit}
               selectedLocation={selectedLocation ?? undefined}
               analysisCenter={selectedLocation ? aoiCenter : undefined}
               temporalInput={temporalInput}
@@ -1247,85 +1344,201 @@ export default function WorkspacePage() {
                 addSiteMode={addSiteMode}
                 onAddSiteAt={handleAddSiteAt}
                 onExitAddSiteMode={() => setAddSiteMode(false)}
+                onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
                 cameraBehavior={cameraBehavior}
                 cameraNonce={cameraNonce}
               />
             </ThermalMapCanvas>
 
-            {/* 2. RECOMMENDED OPERATION */}
-            {jointDecision && !errorDetails && (
-              <RecommendedOperation
-                jointDecision={jointDecision}
-                unit={unit}
-                timezone={displayTimezone}
-                mode={mode}
-                temporalInput={temporalInput}
-              />
-            )}
-
-            {/* 3. TOP CANDIDATES */}
-            {jointDecision && !errorDetails && (
-              <TopCandidates
-                jointDecision={jointDecision}
-                unit={unit}
-                timezone={displayTimezone}
-              />
-            )}
-
-            {/* 4. WHAT-IF */}
-            {scenarioAnalysis && scenarioAnalysis.scenarios.length > 0 && !errorDetails && (
-              <WhatIfPanel
-                scenarioAnalysis={scenarioAnalysis}
-                selectedScenarioId={selectedScenarioId}
-                onSelectScenario={handleSelectScenario}
-                unit={unit}
-                timezone={displayTimezone}
-              />
-            )}
-
-            {/* 5. GROUNDED AI EXPLANATION (subdued — not the hero) */}
-            {explanation && !errorDetails && (
-              <GroundedExplanation
-                explanation={explanation}
-                unit={unit}
-                timezone={displayTimezone}
-                explaining={explaining}
-                onRefresh={handleRefreshExplanation}
-              />
-            )}
-
-            {/* Empty state before first run (EMPTY / LOCATION_SELECTED stages) */}
-            {!jointDecision && !loading && !errorDetails && (
-              <div
-                className="rounded-xl border border-border bg-surface-card px-5 py-12 text-center"
-                data-testid={workflowStage === 'EMPTY' ? 'empty-workspace-card' : 'pre-generate-card'}
-              >
-                <div className="text-2xl mb-2">🌡</div>
-                {workflowStage === 'EMPTY' ? (
-                  <>
-                    <p className="text-text-primary text-sm font-bold">Select a location to begin</p>
-                    <p className="text-text-muted text-xs mt-1.5 leading-relaxed max-w-md mx-auto">
-                      Search a city, street, or address — or pick a preset in the left rail. Locations with a genuine
-                      captured DEMO dataset load it explicitly; every other location runs LIVE against FortyGuard.
-                    </p>
-                    <p className="text-[10px] font-mono text-text-dimmed mt-3 tracking-wide">
-                      LOCATION → ANALYSIS AOI → THERMAL OBSERVATIONS → CANDIDATES → RECOMMENDATION
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-text-muted text-sm font-medium">Generate a thermal field to see the recommended operational plan.</p>
-                    <p className="text-text-dimmed text-xs mt-1">
-                      {mode === 'LIVE'
-                        ? 'Place candidate sites (+ Site on the map), set the WHEN date/time, then click Generate.'
-                        : 'This location has a genuine captured dataset — Generate replays it (no provider request).'}
-                    </p>
-                  </>
+            {/* 2-5. RESULTS — desktop composition (mobile renders them in the sheet) */}
+            {!isMobileViewport && (
+              <>
+                {jointDecision && !errorDetails && (
+                  <RecommendedOperation
+                    jointDecision={jointDecision}
+                    unit={unit}
+                    timezone={displayTimezone}
+                    mode={mode}
+                    temporalInput={temporalInput}
+                  />
                 )}
-              </div>
+
+                {jointDecision && !errorDetails && (
+                  <TopCandidates
+                    jointDecision={jointDecision}
+                    unit={unit}
+                    timezone={displayTimezone}
+                  />
+                )}
+
+                {scenarioAnalysis && scenarioAnalysis.scenarios.length > 0 && !errorDetails && (
+                  <WhatIfPanel
+                    scenarioAnalysis={scenarioAnalysis}
+                    selectedScenarioId={selectedScenarioId}
+                    onSelectScenario={handleSelectScenario}
+                    unit={unit}
+                    timezone={displayTimezone}
+                  />
+                )}
+
+                {explanation && !errorDetails && (
+                  <GroundedExplanation
+                    explanation={explanation}
+                    unit={unit}
+                    timezone={displayTimezone}
+                    explaining={explaining}
+                    onRefresh={handleRefreshExplanation}
+                  />
+                )}
+
+                {/* Pre-generate guidance once a location is selected (EMPTY is
+                    covered by the map overlay — no duplicate messaging). */}
+                {!jointDecision && !loading && !errorDetails && selectedLocation && (
+                  <div
+                    className="rounded-xl border border-dashed border-border bg-surface-card px-5 py-10 text-center"
+                    data-testid={workflowStage === 'EMPTY' ? 'empty-workspace-card' : 'pre-generate-card'}
+                  >
+                    {workflowStage === 'EMPTY' ? (
+                      <>
+                        <p className="text-text-primary text-[13px] font-semibold">Select a location to begin</p>
+                        <p className="text-text-muted text-xs mt-1.5 leading-relaxed max-w-md mx-auto">
+                          Search a city, street, or address — or pick a preset in the left rail. Locations with a genuine
+                          captured DEMO dataset load it explicitly; every other location runs LIVE against FortyGuard.
+                        </p>
+                        <p className="text-[10px] font-mono text-text-dimmed mt-3 tracking-wide">
+                          LOCATION → ANALYSIS AREA → FORTYGUARD THERMAL OBSERVATIONS → CANDIDATE SITES → RECOMMENDATION
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-text-muted text-[13px] font-medium">Generate a thermal field to see the recommended operational plan.</p>
+                        <p className="text-text-dimmed text-xs mt-1">
+                          {mode === 'LIVE'
+                            ? 'Place candidate sites (Add on map), set the evaluation window, then click Generate.'
+                            : 'This location has a genuine captured dataset — Generate replays it (no provider request).'}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
+
+        {/* Bottom spacing so the mobile sheet never covers workspace content */}
+        <div className="h-24 lg:hidden" aria-hidden="true" />
+      </div>
+
+      {/* ── MOBILE ANALYSIS SHEET — analysis controls + results (below lg) ── */}
+      <div className="lg:hidden">
+        <MobileAnalysisSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          summary={sheetSummary}
+          action={
+            selectedLocation && !loading ? (
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={!generateReadiness.enabled || loading}
+                title={!generateReadiness.enabled ? generateReadiness.reason : undefined}
+                className={`h-9 px-3.5 rounded-lg text-[11.5px] font-semibold transition-colors duration-150 border ${
+                  !generateReadiness.enabled
+                    ? 'bg-surface-deep border-border text-text-dimmed'
+                    : 'bg-slate-900 dark:bg-cyan-400 text-white dark:text-slate-950 border-slate-900 dark:border-cyan-400'
+                }`}
+              >
+                Generate
+              </button>
+            ) : undefined
+          }
+        >
+          {/* Mobile error banner (recovery actions first) */}
+          {errorDetails && isMobileViewport && (
+            <ErrorBanner
+              errorDetails={errorDetails}
+              mode={mode}
+              altLocations={altLocations}
+              onRetry={handleRetry}
+              onSwitchToDemo={() => handleModeChange('FIXTURE')}
+              onSwitchToLive={() => handleModeChange('LIVE')}
+              onSelectAltLocation={handleSelectAltLocation}
+            />
+          )}
+
+          {/* Mobile results (above the analysis controls — most relevant first) */}
+          {isMobileViewport && (
+            <div className="space-y-4 mb-5">
+              {jointDecision && !errorDetails && (
+                <RecommendedOperation
+                  jointDecision={jointDecision}
+                  unit={unit}
+                  timezone={displayTimezone}
+                  mode={mode}
+                  temporalInput={temporalInput}
+                />
+              )}
+              {jointDecision && !errorDetails && (
+                <TopCandidates jointDecision={jointDecision} unit={unit} timezone={displayTimezone} />
+              )}
+              {scenarioAnalysis && scenarioAnalysis.scenarios.length > 0 && !errorDetails && (
+                <WhatIfPanel
+                  scenarioAnalysis={scenarioAnalysis}
+                  selectedScenarioId={selectedScenarioId}
+                  onSelectScenario={handleSelectScenario}
+                  unit={unit}
+                  timezone={displayTimezone}
+                />
+              )}
+              {explanation && !errorDetails && (
+                <GroundedExplanation
+                  explanation={explanation}
+                  unit={unit}
+                  timezone={displayTimezone}
+                  explaining={explaining}
+                  onRefresh={handleRefreshExplanation}
+                />
+              )}
+            </div>
+          )}
+
+          {/* The SAME ControlRail instance the desktop composition uses */}
+          {isMobileViewport ? (
+            <ControlRail
+              mode={mode}
+              selectedLocation={selectedLocation}
+              analysisCenter={selectedLocation ? aoiCenter : undefined}
+              demoCaptureAvailable={demoCaptureAvailable}
+              stateLevelSelection={stateLevelSelection}
+              temporalInput={temporalInput}
+              onTemporalChange={handleTemporalChange}
+              onGenerate={handleGenerate}
+              loading={loading}
+              generateDisabled={!generateReadiness.enabled}
+              generateDisabledReason={generateReadiness.reason}
+              onReset={handleResetAnalysis}
+              onClearLocation={handleClearLocation}
+              onSelectLocation={handleSelectLocation}
+              onSwitchToLive={() => handleModeChange('LIVE')}
+              fortyGuardStatus={fgStatus}
+              fortyGuardHealth={fgHealth}
+              aiStatus={aiStatus}
+              aiHealth={aiHealth}
+              fieldReady={fieldReady}
+              onTestFortyGuard={() => checkFortyGuardHealth(mode)}
+              onTestAI={checkAIHealth}
+              candidateSites={candidateSites.sites}
+              onRemoveSite={handleRemoveSite}
+              onRenameSite={handleRenameSite}
+              onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
+              addSiteMode={addSiteMode}
+              onAddSiteFromSearch={handleAddSiteFromSearch}
+              fixtureGranularity={FIXTURE_DISPLAY_GRANULARITY}
+              activeStateFilter={regionDisplayName || selectedLocation?.state}
+            />
+          ) : null}
+        </MobileAnalysisSheet>
       </div>
 
       {/* SETTINGS DRAWER — provider capability + diagnostics */}

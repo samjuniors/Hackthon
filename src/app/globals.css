@@ -7,126 +7,130 @@
 /* ============================================================================
    Thermal Decision Engine — Design Tokens
    Tailwind CSS v4 (CSS-first). Theme toggles via .dark class on <html>.
-   Dark mode = premium technical visualization canvas.
-   Light mode = clean, readable product surface (intentional, not inverted dark).
+
+   Design language: professional geospatial operations product.
+   - Neutral surfaces, ONE controlled accent (cyan family)
+   - Thermal data colors own the color; UI stays calm
+   - Typography scale: 11 / 12 / 13 / 15 / 20 / 34px
+   - Spacing scale: 4 / 8 / 12 / 16 / 20 / 24 / 32
+   - Modest radii: panels 10px, controls 6px — never pills
    ============================================================================ */
 
-/* ── Light theme (Apple, Linear, Stripe, Notion inspired high-contrast palette) ─ */
+/* ── Light theme ──────────────────────────────────────────────────────────── */
 :root {
   --radius: 0.625rem;
 
   /* Base surface and typography tokens */
-  --background:        #f8fafc;       /* slate-50 */
-  --foreground:        #0f172a;       /* slate-900 high contrast */
-  --card:              #ffffff;       /* pure card */
-  --card-foreground:   #0f172a;
+  --background:        #fafbfc;
+  --foreground:        #101828;
+  --card:              #ffffff;
+  --card-foreground:   #101828;
   --popover:           #ffffff;
-  --popover-foreground:#0f172a;
-  --primary:           #0f172a;       /* deep slate primary button (Linear / Apple style) */
+  --popover-foreground:#101828;
+  --primary:           #101828;       /* deep slate primary action */
   --primary-foreground:#ffffff;
-  --secondary:         #f1f5f9;       /* slate-100 */
-  --secondary-foreground:#0f172a;
-  --muted:             #f1f5f9;
-  --muted-foreground:  #475569;       /* slate-600 high contrast */
-  --accent:            #f1f5f9;
-  --accent-foreground: #0f172a;
-  --destructive:       #e11d48;       /* rose-600 */
+  --secondary:         #f2f4f7;
+  --secondary-foreground:#101828;
+  --muted:             #f2f4f7;
+  --muted-foreground:  #475467;
+  --accent:            #f2f4f7;
+  --accent-foreground: #101828;
+  --destructive:       #d92d20;
   --destructive-foreground:#ffffff;
-  --border:            #cbd5e1;       /* slate-300 crisp border */
-  --input:             #cbd5e1;
-  --ring:              #0f172a;
+  --border:            #e4e7ec;       /* hairline — used sparingly */
+  --input:             #d0d5dd;
+  --ring:              #101828;
 
   /* Surface hierarchy */
-  --surface-bg:        #f8fafc;       /* crisp page canvas */
-  --surface-card:      #ffffff;       /* clean card surface */
-  --surface-elevated:  #ffffff;       /* clean elevated elements */
-  --surface-deep:      #f1f5f9;       /* inset panels */
-  --surface-header:    rgba(255,255,255,0.98);
+  --surface-bg:        #f7f8fa;       /* calm page canvas */
+  --surface-card:      #ffffff;
+  --surface-elevated:  #f9fafb;
+  --surface-deep:      #f2f4f7;       /* inset rows */
+  --surface-header:    rgba(255,255,255,0.92);
 
-  /* High contrast text hierarchy */
-  --text-primary:      #0f172a;       /* slate-900 */
-  --text-secondary:    #1e293b;       /* slate-800 */
-  --text-muted:        #475569;       /* slate-600 */
-  --text-dimmed:       #64748b;       /* slate-500 */
+  /* Text hierarchy */
+  --text-primary:      #101828;
+  --text-secondary:    #344054;
+  --text-muted:        #475467;
+  --text-dimmed:       #667085;
 
-  /* Curated brand accents (Matte, non-glowing) */
-  --accent-cyan:       #0284c7;       /* sky-600 */
-  --accent-cyan-bg:    #f0f9ff;       /* sky-50 */
-  --accent-cyan-text:  #0369a1;       /* sky-700 */
-  --accent-emerald:    #059669;       /* emerald-600 */
-  --accent-emerald-bg: #ecfdf5;       /* emerald-50 */
-  --accent-emerald-text:#047857;      /* emerald-700 */
-  --accent-amber:      #d97706;       /* amber-600 */
-  --accent-amber-bg:   #fffbeb;       /* amber-50 */
-  --accent-amber-text: #b45309;       /* amber-700 */
-  --accent-indigo:     #4f46e5;       /* indigo-600 */
-  --accent-indigo-bg:  #eef2ff;       /* indigo-50 */
-  --accent-indigo-text:#3730a3;       /* indigo-800 */
-  --accent-red:        #e11d48;       /* rose-600 */
-  --accent-red-bg:     #fff1f2;       /* rose-50 */
-  --accent-red-text:   #9f1239;       /* rose-800 */
+  /* Brand accent — the ONE controlled accent (cyan family) */
+  --accent-cyan:       #0891b2;       /* cyan-600 — readable on white */
+  --accent-cyan-bg:    #ecfeff;
+  --accent-cyan-text:  #0e7490;
+  --accent-emerald:    #067647;
+  --accent-emerald-bg: #ecfdf3;
+  --accent-emerald-text:#05603a;
+  --accent-amber:      #b54708;       /* amber-700 — capture/provenance */
+  --accent-amber-bg:   #fffaeb;
+  --accent-amber-text: #93370d;
+  --accent-indigo:     #4f46e5;
+  --accent-indigo-bg:  #eef2ff;
+  --accent-indigo-text:#3730a3;
+  --accent-red:        #d92d20;
+  --accent-red-bg:     #fef3f2;
+  --accent-red-text:   #b42318;
 
   /* Status indicators */
-  --status-live:       #059669;
-  --status-demo:       #d97706;
-  --status-error:      #e11d48;
-  --status-unknown:    #64748b;
+  --status-live:       #067647;
+  --status-demo:       #b54708;
+  --status-error:      #d92d20;
+  --status-unknown:    #667085;
 }
 
-/* ── Dark theme ──────────────────────────────────────────────────────────────── */
+/* ── Dark theme ───────────────────────────────────────────────────────────── */
 .dark {
-  /* Thermal canvas — deep navy-black with visible depth */
-  --background:        #060a12;
-  --foreground:        #e2e8f0;
-  --card:              #0d1422;
-  --card-foreground:   #e2e8f0;
-  --popover:           #0d1422;
-  --popover-foreground:#e2e8f0;
-  --primary:           #22d3ee;       /* cyan-400 */
-  --primary-foreground:#060a12;
-  --secondary:         #141f33;
-  --secondary-foreground:#e2e8f0;
-  --muted:             #141f33;
-  --muted-foreground:  #7c8fa8;
-  --accent:            #141f33;
-  --accent-foreground: #e2e8f0;
-  --destructive:       #f87171;
-  --destructive-foreground:#060a12;
-  --border:            #1e2d45;
-  --input:             #1e2d45;
+  --background:        #0b0f17;
+  --foreground:        #e6eaf2;
+  --card:              #111622;
+  --card-foreground:   #e6eaf2;
+  --popover:           #131826;
+  --popover-foreground:#e6eaf2;
+  --primary:           #22d3ee;       /* brand accent action */
+  --primary-foreground:#08222b;
+  --secondary:         #1a2130;
+  --secondary-foreground:#e6eaf2;
+  --muted:             #1a2130;
+  --muted-foreground:  #8a94a8;
+  --accent:            #1a2130;
+  --accent-foreground: #e6eaf2;
+  --destructive:       #f97066;
+  --destructive-foreground:#0b0f17;
+  --border:            #1f2635;       /* hairline */
+  --input:             #2a3346;
   --ring:              #3b5278;
 
-  --surface-bg:        #060a12;
-  --surface-card:      #0d1422;
-  --surface-elevated:  #141f33;
-  --surface-deep:      #0a1220;
-  --surface-header:    rgba(6,10,18,0.95);
+  --surface-bg:        #0b0f17;
+  --surface-card:      #111622;
+  --surface-elevated:  #161d2c;
+  --surface-deep:      #0e1420;
+  --surface-header:    rgba(11,15,23,0.9);
 
-  --text-primary:      #e2e8f0;
-  --text-secondary:    #cbd5e1;
-  --text-muted:        #7c8fa8;
-  --text-dimmed:       #4b6080;
+  --text-primary:      #e6eaf2;
+  --text-secondary:    #c0c8d6;
+  --text-muted:        #8a94a8;
+  --text-dimmed:       #5d6778;
 
   --accent-cyan:       #22d3ee;
-  --accent-cyan-bg:    rgba(34,211,238,0.12);
+  --accent-cyan-bg:    rgba(34,211,238,0.10);
   --accent-cyan-text:  #67e8f9;
-  --accent-emerald:    #10b981;
-  --accent-emerald-bg: rgba(16,185,129,0.12);
+  --accent-emerald:    #34d399;
+  --accent-emerald-bg: rgba(52,211,153,0.10);
   --accent-emerald-text:#6ee7b7;
-  --accent-amber:      #f59e0b;
-  --accent-amber-bg:   rgba(245,158,11,0.12);
+  --accent-amber:      #f5a524;
+  --accent-amber-bg:   rgba(245,165,36,0.10);
   --accent-amber-text: #fcd34d;
   --accent-indigo:     #818cf8;
-  --accent-indigo-bg:  rgba(129,140,248,0.12);
+  --accent-indigo-bg:  rgba(129,140,248,0.10);
   --accent-indigo-text:#a5b4fc;
-  --accent-red:        #f87171;
-  --accent-red-bg:     rgba(248,113,113,0.12);
+  --accent-red:        #f97066;
+  --accent-red-bg:     rgba(249,112,102,0.10);
   --accent-red-text:   #fca5a5;
 
   --status-live:       #34d399;
-  --status-demo:       #fcd34d;
-  --status-error:      #f87171;
-  --status-unknown:    #7c8fa8;
+  --status-demo:       #f5a524;
+  --status-error:      #f97066;
+  --status-unknown:    #8a94a8;
 }
 
 /* ── Tailwind v4 @theme inline — registers all CSS vars as Tailwind utilities ─ */
@@ -180,16 +184,16 @@
   --color-accent-red-bg:       var(--accent-red-bg);
   --color-accent-red-text:     var(--accent-red-text);
 
-  /* Thermal severity scale */
-  --color-thermal-safe:     #10b981;
-  --color-thermal-caution:  #f59e0b;
-  --color-thermal-warning:  #f97316;
-  --color-thermal-critical: #ef4444;
+  /* Thermal severity scale (legacy aliases) */
+  --color-thermal-safe:     #14b88a;
+  --color-thermal-caution:  #dfb33a;
+  --color-thermal-warning:  #f08c2e;
+  --color-thermal-critical: #e2503a;
 
-  /* Data provenance palette — docs/DESIGN.md §3 */
+  /* Data provenance palette */
   --color-provenance-observed: #22d3ee;
   --color-provenance-derived:  #818cf8;
-  --color-provenance-predicted:#f59e0b;
+  --color-provenance-predicted:#f5a524;
   --color-provenance-assumed:  #94a3b8;
   --color-provenance-ai:       #34d399;
 
@@ -206,8 +210,7 @@
   }
 
   html {
-    /* Smooth theme transition — only on background/color, not on map/canvas */
-    transition: background-color 0.25s ease, color 0.2s ease;
+    transition: background-color 0.2s ease, color 0.15s ease;
   }
 
   body {
@@ -215,6 +218,14 @@
     font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont,
       'Segoe UI', Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Tabular numerals for data readouts */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
   }
 }
 
@@ -222,16 +233,7 @@
    Thermal Decision Engine — Component Styles
    ============================================================================ */
 
-/* Subtle ambient glow on key decision numbers */
-.thermal-glow-emerald {
-  text-shadow: 0 0 24px rgba(16, 185, 129, 0.35);
-}
-
-.thermal-glow-amber {
-  text-shadow: 0 0 24px rgba(245, 158, 11, 0.35);
-}
-
-/* Glass card effect — dark mode only */
+/* Glass card effect — floating map chrome */
 .glass-card {
   background: rgba(13, 20, 34, 0.85);
   backdrop-filter: blur(12px);
@@ -239,12 +241,102 @@
   border: 1px solid rgba(30, 45, 69, 0.8);
 }
 
-/* Light-mode glass override */
 :root:not(.dark) .glass-card {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  border: 1px solid rgba(228, 231, 236, 0.9);
+}
+
+/* Map toolbar button — compact icon affordance */
+.map-tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.map-tool-btn:hover {
+  background: var(--surface-deep);
+  color: var(--text-primary);
+}
+.map-tool-btn[data-active="true"] {
+  color: var(--accent-cyan);
+  background: var(--accent-cyan-bg);
+}
+
+/* Map pin markers — geographic anchoring handled by MapLibre (anchor: bottom).
+   The wrapper extends the touch target to 44px without moving the visual tip:
+   the tip SVG is absolutely positioned at the wrapper's bottom-center. */
+.map-pin {
+  position: relative;
+  width: 44px;
+  height: 46px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none; /* MapLibre drag handling */
+}
+.map-pin svg {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+}
+.map-pin__hit {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 44px;
+}
+.map-pin[data-draggable="true"] {
+  cursor: grab;
+}
+.map-pin[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+/* Winner marker selection emphasis (subtle scale-in) */
+@keyframes pin-pop {
+  0%   { transform: translateX(-50%) scale(0.72); opacity: 0; }
+  70%  { transform: translateX(-50%) scale(1.06); }
+  100% { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+.map-pin--winner svg {
+  animation: pin-pop 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+/* Winner halo — soft pulse anchored at the pin base */
+@keyframes winner-halo {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  50%      { transform: scale(1.55); opacity: 0; }
+}
+.winner-halo {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 30px;
+  height: 14px;
+  margin-left: -15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 12px 2px rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+  animation: winner-halo 2.2s ease-in-out infinite;
+}
+:root:not(.dark) .winner-halo {
+  background: rgba(16, 24, 40, 0.55);
+  box-shadow: 0 0 12px 2px rgba(16, 24, 40, 0.35);
 }
 
 /* Scan-line shimmer during loading */
@@ -260,7 +352,7 @@
   background: linear-gradient(
     to bottom,
     transparent 0%,
-    rgba(34, 211, 238, 0.06) 50%,
+    rgba(34, 211, 238, 0.05) 50%,
     transparent 100%
   );
   animation: scan 2s linear infinite;
@@ -277,34 +369,66 @@
   animation: status-pulse 2s ease-in-out infinite;
 }
 
-/* Constraint cost highlight */
-.constraint-cost {
-  background: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.1) 0%,
-    rgba(249, 115, 22, 0.08) 100%
-  );
-  border: 1px solid rgba(245, 158, 11, 0.3);
-}
-
-/* Light mode constraint cost */
-:root:not(.dark) .constraint-cost {
-  background: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.08) 0%,
-    rgba(249, 115, 22, 0.05) 100%
-  );
-  border: 1px solid rgba(245, 158, 11, 0.25);
-}
-
 /* Card entrance animation */
 @keyframes card-enter {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 .card-enter {
-  animation: card-enter 0.3s ease-out forwards;
+  animation: card-enter 0.28s ease-out both;
+}
+
+/* Bottom sheet (mobile analysis) */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(8, 12, 20, 0.45);
+  opacity: 1;
+  transition: opacity 0.25s ease;
+}
+.sheet-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 61;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  background: var(--surface-card);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.sheet-panel[data-dragging="true"] {
+  transition: none;
+}
+.sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--input);
+  margin: 8px auto 4px;
+  cursor: grab;
+}
+
+/* MapLibre popup refinement */
+.maplibregl-popup-content {
+  padding: 0 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: var(--surface-card) !important;
+  border-bottom-color: var(--surface-card) !important;
+}
+.maplibregl-ctrl-group {
+  border-radius: 8px !important;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28) !important;
 }
 
 /* Accessible motion safety overrides */
@@ -322,4 +446,7 @@
 
   .scan-loading::after { display: none !important; }
   .status-dot-live      { animation: none !important; opacity: 1 !important; }
+  .map-pin--winner svg  { animation: none !important; }
+  .winner-halo          { animation: none !important; opacity: 0.4; }
+  .sheet-panel          { transition: none !important; }
 }

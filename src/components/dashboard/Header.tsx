@@ -1,18 +1,21 @@
 'use client';
 
-import { Settings, Sun, Moon } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Settings, Sun, Moon, MapPin, Menu, ChevronDown, CalendarClock } from 'lucide-react';
+import { LocationSearch } from '@/components/LocationSearch';
 import type { DataSourceMode } from '@/types/provenance';
-import type { ProviderStatus, AIProviderName } from '@/types/provider';
+import type { AIProviderName, NamedLocation, ProviderStatus } from '@/types/provider';
 import type { TempUnit } from '@/lib/temperature';
 import type { Theme } from '@/components/ThemeProvider';
 
 /**
- * Header — sticky top bar for the Thermal Decision Engine.
+ * Header — restrained product header.
  *
- * Replaces the inline header in `src/app/page.tsx` with a self-contained
- * component that exposes provenance-explicit wording, the existing °F/°C
- * toggle, a compact FortyGuard + AI status dot pair, a theme toggle and a
- * Settings button (opens <SettingsDrawer />).
+ * Desktop:  Brand | Location | Date/time | DEMO/LIVE | °F/°C | theme | settings
+ * Mobile:   Brand | settings | menu (opens the analysis bottom sheet)
+ *
+ * No scattered status widgets — provider health lives in the analysis panel's
+ * system status; the header communicates WHERE, WHEN, and the data source.
  */
 
 interface HeaderProps {
@@ -26,58 +29,22 @@ interface HeaderProps {
   aiStatus: ProviderStatus;
   /** Active AI provider — labels the AI status dot, e.g. "AI · Z.ai". */
   aiProvider?: AIProviderName;
-}
-
-/**
- * Inline StatusDot — same visual language as the in-page StatusDot in
- * `src/app/page.tsx`. When `mode === 'FIXTURE'` it renders a DEMO pill
- * regardless of the underlying provider status (mirror behaviour).
- */
-function StatusDot({
-  status,
-  mode,
-}: {
-  status: ProviderStatus;
-  mode?: DataSourceMode;
-}) {
-  if (mode === 'FIXTURE') {
-    return (
-      <span
-        className="inline-flex items-center gap-1.5 text-xs font-semibold"
-        style={{ color: 'var(--status-demo)' }}
-      >
-        <span
-          className="w-2 h-2 rounded-full inline-block"
-          style={{ background: 'var(--status-demo)' }}
-        />
-        DEMO
-      </span>
-    );
-  }
-  const map: Record<ProviderStatus, { dot: string; label: string; pulse?: boolean }> = {
-    CONNECTED: { dot: 'var(--status-live)', label: 'LIVE', pulse: true },
-    CHECKING: { dot: 'var(--status-demo)', label: 'CHECKING' },
-    ERROR: { dot: 'var(--status-error)', label: 'OFFLINE' },
-    UNKNOWN: { dot: 'var(--status-unknown)', label: 'UNKNOWN' },
-  };
-  const s = map[status] ?? map.UNKNOWN;
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted">
-      <span
-        className={`w-2 h-2 rounded-full inline-block${s.pulse ? ' status-dot-live' : ''}`}
-        style={{ background: s.dot }}
-      />
-      {s.label}
-    </span>
-  );
-}
-
-/** Map an AIProviderName enum to a short, human-friendly label. */
-function aiProviderLabel(p?: AIProviderName): string {
-  if (p === 'GEMINI') return 'Gemini';
-  if (p === 'CLAUDE') return 'Claude';
-  if (p === 'ZAI') return 'Z.ai';
-  return 'Deterministic';
+  /** Selected operating location (header location selector). */
+  selectedLocation: NamedLocation | null;
+  /** Location selection shares the full page semantics (mode-aware). */
+  onSelectLocation: (loc: NamedLocation) => void;
+  /** "Switch to LIVE" affordance inside the location popover. */
+  onSwitchToLive?: () => void;
+  /** Clear the selected location → EMPTY workspace. */
+  onClearLocation: () => void;
+  /** Human-readable WHEN label (date + time window + tz). */
+  temporalLabel?: string;
+  /** Compact DEMO/LIVE segmented control handler. */
+  onModeChange: (m: DataSourceMode) => void;
+  /** Mobile only — opens the analysis bottom sheet. */
+  onOpenMobileSheet?: () => void;
+  /** Active geographic region/state for preset filtering in the location search. */
+  activeStateFilter?: string;
 }
 
 export function Header({
@@ -87,44 +54,144 @@ export function Header({
   theme,
   onToggleTheme,
   onOpenSettings,
-  fortyGuardStatus,
-  aiStatus,
-  aiProvider,
+  selectedLocation,
+  onSelectLocation,
+  onSwitchToLive,
+  onClearLocation,
+  temporalLabel,
+  onModeChange,
+  onOpenMobileSheet,
+  activeStateFilter,
 }: HeaderProps) {
+  const [locationOpen, setLocationOpen] = useState(false);
+  const locationRef = useRef<HTMLDivElement>(null);
+
+  // Close the location popover on outside click
+  useEffect(() => {
+    if (!locationOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (locationRef.current && !locationRef.current.contains(e.target as Node)) {
+        setLocationOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [locationOpen]);
+
   return (
     <header
-      className="sticky top-0 z-50 border-b border-border backdrop-blur-xl"
+      className="sticky top-0 z-50 border-b border-border backdrop-blur-md"
       style={{ background: 'var(--surface-header)' }}
     >
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-        {/* Title */}
-        <div className="min-w-0">
-          <h1 className="text-lg sm:text-xl font-black tracking-tight text-text-primary leading-tight">
-            Thermal Decision Engine
-          </h1>
-          <p className="text-[11px] text-text-muted mt-0 hidden sm:block">
-            Hyperlocal thermal intelligence → operational decisions
-          </p>
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
+        {/* ── Brand ── */}
+        <div className="flex items-center gap-2.5 min-w-0 shrink-0">
+          <span
+            className="flex items-center justify-center size-7 rounded-lg shrink-0"
+            style={{ background: 'var(--accent-cyan-bg)', color: 'var(--accent-cyan)' }}
+            aria-hidden="true"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <path d="M8 1.5a3.4 3.4 0 0 0-3.4 3.4c0 .9.4 1.8 1 2.4v1.4h4.8V7.3c.6-.6 1-1.5 1-2.4A3.4 3.4 0 0 0 8 1.5Z" fill="currentColor"/>
+              <path d="M6.2 10.1h3.6l-.6 4.4H6.8l-.6-4.4Z" fill="currentColor" opacity="0.7"/>
+            </svg>
+          </span>
+          <div className="min-w-0">
+            <div className="text-[13.5px] font-semibold tracking-tight text-text-primary leading-none">
+              Thermal Decision Engine
+            </div>
+          </div>
         </div>
 
-        {/* Controls — wrap gracefully on mobile */}
-        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2.5 shrink-0">
-          {/* Mode badge — provenance-explicit */}
-          {mode === 'LIVE' ? (
-            <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700 whitespace-nowrap">
-              LIVE · FortyGuard
-            </span>
-          ) : (
-            <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700 whitespace-nowrap">
-              DEMO · Captured FortyGuard
-            </span>
+        {/* ── Center context (desktop): Location · WHEN ── */}
+        <div className="hidden md:flex items-center gap-1.5 min-w-0 flex-1 justify-center">
+          {/* Location selector — popover with the shared LocationSearch */}
+          <div className="relative shrink-0" ref={locationRef}>
+            <button
+              type="button"
+              onClick={() => setLocationOpen((v) => !v)}
+              aria-expanded={locationOpen}
+              aria-haspopup="dialog"
+              data-testid="header-location-btn"
+              className="flex items-center gap-1.5 h-8 pl-2.5 pr-2 rounded-lg border border-border bg-surface-card text-[12.5px] font-medium text-text-primary hover:bg-surface-elevated transition-colors duration-150 max-w-[280px]"
+              title="Select operating location"
+            >
+              <MapPin className="size-3.5 shrink-0" style={{ color: 'var(--accent-cyan)' }} aria-hidden="true" />
+              <span className="truncate">
+                {selectedLocation ? selectedLocation.name : 'Select location'}
+              </span>
+              <ChevronDown className="size-3 shrink-0 text-text-dimmed" aria-hidden="true" />
+            </button>
+
+            {locationOpen && (
+              <div
+                role="dialog"
+                aria-label="Select operating location"
+                className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-[380px] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface-card shadow-2xl p-3 z-[70]"
+              >
+                <LocationSearch
+                  selectedLocation={selectedLocation}
+                  mode={mode}
+                  onSelectLocation={(loc) => {
+                    onSelectLocation(loc);
+                    setLocationOpen(false);
+                  }}
+                  onSwitchToLive={onSwitchToLive ? () => { onSwitchToLive(); setLocationOpen(false); } : undefined}
+                  onClearLocation={onClearLocation}
+                  compact
+                  activeStateFilter={activeStateFilter}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* WHEN — non-interactive status text (controls live in the analysis panel) */}
+          {temporalLabel && (
+            <div
+              className="hidden lg:flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] text-text-muted tnum min-w-0"
+              title="Evaluation window"
+            >
+              <CalendarClock className="size-3.5 shrink-0 text-text-dimmed" aria-hidden="true" />
+              <span className="truncate">{temporalLabel}</span>
+            </div>
           )}
+        </div>
+
+        {/* ── Right controls ── */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* DEMO / LIVE segmented control */}
+          <div
+            role="group"
+            aria-label="Data source"
+            data-testid="data-source-toggle"
+            className="hidden sm:flex items-center p-0.5 rounded-lg border border-border bg-surface-card"
+          >
+            {(['LIVE', 'FIXTURE'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={mode === m}
+                data-testid={`source-${m === 'LIVE' ? 'live' : 'demo'}`}
+                onClick={() => onModeChange(m)}
+                title={m === 'LIVE' ? 'Live FortyGuard requests (spends credits)' : 'Captured FortyGuard DEMO dataset (no requests)'}
+                className={`h-7 px-2.5 rounded-md text-[11px] font-semibold tracking-wide transition-colors duration-150 ${
+                  mode === m
+                    ? m === 'LIVE'
+                      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                {m === 'LIVE' ? 'LIVE' : 'DEMO'}
+              </button>
+            ))}
+          </div>
 
           {/* °F / °C toggle */}
           <div
             role="group"
             aria-label="Temperature unit selection"
-            className="flex items-center bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-300 dark:border-slate-700"
+            className="flex items-center p-0.5 rounded-lg border border-border bg-surface-card"
             data-testid="temp-unit-toggle"
           >
             {(['F', 'C'] as const).map((u) => (
@@ -134,37 +201,15 @@ export function Header({
                 aria-pressed={unit === u}
                 data-testid={`temp-unit-${u.toLowerCase()}`}
                 onClick={() => onToggleUnit(u)}
-                className={`min-h-[32px] min-w-[32px] px-2.5 py-0.5 rounded-md text-xs font-bold font-mono transition-all flex items-center justify-center ${
+                className={`h-7 min-w-[34px] px-1.5 rounded-md text-[11px] font-semibold tnum transition-colors duration-150 ${
                   unit === u
-                    ? 'bg-slate-900 text-white dark:bg-cyan-400 dark:text-slate-950 shadow-xs'
-                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white'
+                    ? 'bg-slate-900 text-white dark:bg-cyan-400 dark:text-slate-950'
+                    : 'text-text-muted hover:text-text-primary'
                 }`}
               >
                 °{u}
               </button>
             ))}
-          </div>
-
-          {/* Status indicators — visible on sm screens */}
-          <div className="hidden sm:flex items-center gap-3">
-            <div className="flex flex-col items-end gap-0.5">
-              <span className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">
-                FortyGuard
-              </span>
-              <StatusDot
-                status={fortyGuardStatus}
-                mode={mode === 'FIXTURE' ? 'FIXTURE' : undefined}
-              />
-            </div>
-
-            <div className="w-px h-7 bg-slate-200 dark:bg-slate-800" />
-
-            <div className="flex flex-col items-end gap-0.5">
-              <span className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">
-                AI · {aiProviderLabel(aiProvider)}
-              </span>
-              <StatusDot status={aiStatus} />
-            </div>
           </div>
 
           {/* Theme toggle */}
@@ -173,7 +218,7 @@ export function Header({
             onClick={onToggleTheme}
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all shadow-xs"
+            className="flex items-center justify-center size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
           >
             {theme === 'dark' ? (
               <Sun className="size-4" aria-hidden="true" />
@@ -182,16 +227,29 @@ export function Header({
             )}
           </button>
 
-          {/* Settings button */}
+          {/* Settings */}
           <button
             type="button"
             onClick={onOpenSettings}
             aria-label="Open settings"
             data-testid="settings-open-btn"
-            className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all shadow-xs"
+            className="hidden sm:flex items-center justify-center size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
           >
             <Settings className="size-4" aria-hidden="true" />
           </button>
+
+          {/* Mobile: menu → analysis bottom sheet */}
+          {onOpenMobileSheet ? (
+            <button
+              type="button"
+              onClick={onOpenMobileSheet}
+              aria-label="Open analysis panel"
+              data-testid="mobile-menu-btn"
+              className="md:hidden flex items-center justify-center size-8 rounded-lg border border-border bg-surface-card text-text-primary hover:bg-surface-elevated transition-colors duration-150"
+            >
+              <Menu className="size-4" aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </div>
     </header>

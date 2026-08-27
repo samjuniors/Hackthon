@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { useState } from 'react';
+import { RotateCcw } from 'lucide-react';
 import { LocationSearch } from '@/components/LocationSearch';
 import { SystemStatus } from '@/components/dashboard/SystemStatus';
 import type { NamedLocation, ProviderStatus, FortyGuardHealthResponse, AIHealthResponse } from '@/types/provider';
@@ -72,6 +73,19 @@ interface ControlRailProps {
   onAddSiteFromSearch: (loc: NamedLocation) => void;
   /** Granularity the captured fixture was ACTUALLY recorded at (DEMO display). */
   fixtureGranularity?: number;
+  /**
+   * ONE compact Reset control (Section 2): clears the ENTIRE analysis
+   * workspace (location, AOI, candidates, thermal field, decision,
+   * recommendation, explanation, scenario state, errors) and invalidates any
+   * in-flight request — returning to the EMPTY workspace without a reload.
+   */
+  onReset: () => void;
+  /** Clear the selected operating location → EMPTY workspace (Section 3). */
+  onClearLocation: () => void;
+  /** True when Generate must stay disabled (validation failure — Section 11). */
+  generateDisabled?: boolean;
+  /** Human reason shown next to a disabled Generate (Section 11). */
+  generateDisabledReason?: string;
 }
 
 /** Format a metres value as a compact label (1000 → "1km"). */
@@ -109,6 +123,10 @@ export function ControlRail({
   addSiteMode,
   onAddSiteFromSearch,
   fixtureGranularity,
+  onReset,
+  onClearLocation,
+  generateDisabled = false,
+  generateDisabledReason,
   demoCaptureAvailable = false,
 }: ControlRailProps) {
   const [prefs, setters] = useUserPreferences();
@@ -186,13 +204,29 @@ export function ControlRail({
 
       {/* ── ANALYSIS ── */}
       <div className="rounded-xl border border-border bg-surface-card p-4 space-y-4">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">Analysis</div>
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">Analysis</div>
+          {/* ONE compact Reset control (Section 2) — wipes the whole analysis
+              workspace back to EMPTY. Tooltip + aria-label: "Reset analysis". */}
+          <button
+            type="button"
+            data-testid="reset-analysis-btn"
+            onClick={onReset}
+            title="Reset analysis"
+            aria-label="Reset analysis"
+            className="min-h-[32px] min-w-[32px] px-2 rounded-lg border border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:border-red-400/50 hover:bg-red-400/10 transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <RotateCcw className="size-3.5" />
+            <span className="text-[10px] font-bold uppercase tracking-wide hidden sm:inline">Reset</span>
+          </button>
+        </div>
 
         <LocationSearch
           selectedLocation={selectedLocation}
           mode={mode}
           onSelectLocation={onSelectLocation}
           onSwitchToLive={onSwitchToLive}
+          onClearLocation={onClearLocation}
         />
 
         {/* ── State-level selection context (Section 13) ── */}
@@ -714,16 +748,21 @@ export function ControlRail({
           )}
         </div>
 
-        {/* Generate button */}
+        {/* Generate button — enabled ONLY when the full analysis contract
+            holds (Section 11): valid location + valid AOI + valid WHEN +
+            valid candidate state. The reason is surfaced inline. */}
         <motion.button
           whileTap={{ scale: 0.99 }}
-          disabled={loading}
+          disabled={loading || generateDisabled}
           onClick={onGenerate}
           data-testid="recalculate-decision-btn"
+          title={generateDisabled && !loading ? generateDisabledReason : undefined}
           className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-            loading ? 'bg-surface-elevated text-text-dimmed cursor-not-allowed' : 'text-white hover:scale-[1.01] active:scale-[0.99]'
+            loading || generateDisabled
+              ? 'bg-surface-elevated text-text-dimmed cursor-not-allowed'
+              : 'text-white hover:scale-[1.01] active:scale-[0.99] cursor-pointer'
           }`}
-          style={loading ? {} : {
+          style={loading || generateDisabled ? {} : {
             background: mode === 'LIVE'
               ? 'linear-gradient(135deg, var(--accent-emerald), #0d9488)'
               : 'linear-gradient(135deg, var(--accent-cyan), #0284c7)',
@@ -741,6 +780,17 @@ export function ControlRail({
             `⚡ Generate Thermal Field (${mode === 'LIVE' ? 'LIVE' : 'DEMO'})`
           )}
         </motion.button>
+
+        {/* Inline reason when Generate is blocked (validation feedback) */}
+        {generateDisabled && !loading && generateDisabledReason && (
+          <p
+            className="text-[10px] leading-relaxed text-center -mt-1"
+            style={{ color: 'var(--accent-amber)' }}
+            data-testid="generate-blocked-reason"
+          >
+            ⚠ {generateDisabledReason}
+          </p>
+        )}
       </div>
 
       {/* ── SYSTEM STATUS ── */}

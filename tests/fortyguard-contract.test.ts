@@ -506,9 +506,15 @@ describe('FortyGuard contract — DEMO AOI outside the captured field', () => {
     // Client-side gate exists before any API call in DEMO.
     expect(pageSrc).toContain('doesAoiIntersectFixtureExtent');
     expect(pageSrc).toContain('AOI_OUTSIDE_DEMO_CAPTURE');
-    // The captured-field extent is rendered as a map layer in DEMO.
-    expect(mapSrc).toContain('capture-extent-outline');
-    expect(pageSrc).toContain('FIXTURE_EXTENT_AOI');
+    // ONE canonical analysis extent (Section 9 — no second competing square):
+    // the DEMO AOI IS the captured request area, labeled explicitly on the map.
+    // The old separate capture-extent rectangle layer is GONE.
+    expect(mapSrc).not.toContain('capture-extent-outline');
+    expect(pageSrc).not.toContain('FIXTURE_EXTENT_AOI');
+    expect(pageSrc).toContain('FIXTURE_CAPTURE_REQUEST_AOI');
+    expect(pageSrc).toContain('captureAoiLabel');
+    expect(mapSrc).toContain('captured-aoi-label');
+    expect(mapSrc).toContain('Captured FortyGuard AOI');
     // DEMO candidates are labelled DEMO CANDIDATES (not "captured sites").
     expect(railSrc).toContain('DEMO CANDIDATES');
     expect(railSrc).not.toContain('captured demo sites');

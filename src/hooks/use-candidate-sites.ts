@@ -8,10 +8,14 @@
  *   - searching a site/address.
  * Nothing is auto-generated. Geographic offsets are never invented sites.
  *
+ * Lifecycle: ADD → MOVE → REMOVE. A MOVE that would drop the site OUTSIDE
+ * the canonical AOI is REJECTED (Section 7) — the site stays at its last
+ * valid position; it is never silently clamped or moved to a valid spot.
+ *
  * Containment (Section 9): a candidate outside the analysis AOI is flagged
  * `outsideAoi` — surfaced as an error, never silently moved or clamped.
  */
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { CandidateLocation, LocationPoint, PolygonAOI } from '@/types/domain';
 import { isPointInAoi } from '@/lib/spatial/aoi';
 
@@ -22,9 +26,50 @@ export interface CandidateSite extends CandidateLocation {
   origin: 'map-click' | 'search' | 'demo-captured';
 }
 
+/**
+ * Pure candidate-move application (testable without React).
+ *
+ * Moving a candidate to a point OUTSIDE the canonical AOI is REJECTED:
+ * the returned list is unchanged and `accepted` is false — the candidate
+ * remains at its last valid position. Moving inside the AOI updates the
+ * coordinates and clears any stale `outsideAoi` flag.
+ */
+export function applyCandidateMove<T extends CandidateLocation & { outsideAoi?: boolean }>(
+  sites: T[],
+  locationId: string,
+  point: LocationPoint,
+  aoi: PolygonAOI | null | undefined,
+): { sites: T[]; accepted: boolean; reason?: 'NOT_FOUND' | 'OUTSIDE_AOI' } {
+  const site = sites.find((s) => s.locationId === locationId);
+  if (!site) return { sites, accepted: false, reason: 'NOT_FOUND' };
+  if (aoi && !isPointInAoi(point, aoi)) {
+    // REJECTED — never silently moved, never clamped (Section 7).
+    return { sites, accepted: false, reason: 'OUTSIDE_AOI' };
+  }
+  return {
+    sites: sites.map((s) =>
+      s.locationId === locationId
+        ? {
+            ...s,
+            location: {
+              latitude: Number(point.latitude.toFixed(6)),
+              longitude: Number(point.longitude.toFixed(6)),
+            },
+            outsideAoi: false,
+          }
+        : s
+    ),
+    accepted: true,
+  };
+}
+
 export function useCandidateSites() {
   const [sites, setSites] = useState<CandidateSite[]>([]);
   const nextIdRef = useRef(1);
+  const sitesRef = useRef<CandidateSite[]>([]);
+  useEffect(() => {
+    sitesRef.current = sites;
+  }, [sites]);
 
   const addSiteAt = useCallback((lat: number, lng: number, name?: string, origin: CandidateSite['origin'] = 'map-click'): CandidateSite => {
     const id = `SITE-${String(nextIdRef.current++).padStart(2, '0')}`;
@@ -46,6 +91,23 @@ export function useCandidateSites() {
     setSites((prev) => prev.map((s) => (s.locationId === locationId ? { ...s, name } : s)));
   }, []);
 
+  /**
+   * Move a candidate to a new point (drag commit). When an AOI is provided
+   * and the point lies OUTSIDE it, the move is REJECTED and the candidate
+   * stays at its last valid position (returns false).
+   */
+  const moveSite = useCallback((locationId: string, lat: number, lng: number, aoi?: PolygonAOI | null): boolean => {
+    const result = applyCandidateMove(
+      sitesRef.current,
+      locationId,
+      { latitude: lat, longitude: lng },
+      aoi,
+    );
+    if (!result.accepted) return false;
+    setSites(result.sites as CandidateSite[]);
+    return true;
+  }, []);
+
   const clearSites = useCallback(() => {
     setSites([]);
   }, []);
@@ -56,5 +118,5 @@ export function useCandidateSites() {
     setSites((prev) => prev.map((s) => ({ ...s, outsideAoi: !isPointInAoi(s.location, aoi) })));
   }, []);
 
-  return { sites, addSiteAt, removeSite, renameSite, clearSites, validateAgainstAoi };
+  return { sites, addSiteAt, removeSite, renameSite, moveSite, clearSites, validateAgainstAoi };
 }

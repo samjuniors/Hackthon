@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Map, Marker, Popup, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl';
+import { Map, Marker, Popup, NavigationControl, type GeoJSONSource, type MapMouseEvent } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { LocationPoint, PolygonAOI, CandidateLocation } from '@/types/domain';
 import { useTheme } from '@/components/ThemeProvider';
@@ -12,10 +12,12 @@ import {
   tempUnitSuffix,
 } from '@/lib/temperature';
 import type { MapLayerVisibility, AnalysisAreaShape } from '@/lib/user-preferences';
-import { moveAoiToCenter, getAoiCenter } from '@/lib/spatial/aoi';
+import { moveAoiToCenter, getAoiCenter, isPointInAoi } from '@/lib/spatial/aoi';
+import { validateAnalysisAoi } from '@/lib/spatial/aoi-validation';
 import type { SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
-import { Flame, MapPin, Maximize2, Map as MapIcon, ZoomIn, Sun, Moon, Crosshair } from 'lucide-react';
+import { Flame, MapPin, Maximize2, Map as MapIcon } from 'lucide-react';
 import type { FeatureCollection } from 'geojson';
+import type { Map as MapLibreMap } from 'maplibre-gl';
 
 // Minimal inline type for MapLibre GeoJSON source data casts.
 type GeoJSONFC = FeatureCollection;
@@ -46,6 +48,32 @@ interface ThermalMapProps {
    * object (Section 4): the moved geometry becomes canonical.
    */
   analysisAoi: PolygonAOI | null;
+  /**
+   * True when the canonical AOI currently FAILS validation (Section 6).
+   * The geometry is RETAINED visibly as invalid: the outline turns red,
+   * an inline map banner explains the reason, and Generate is disabled.
+   */
+  aoiInvalid?: boolean;
+  /** Human reason shown in the invalid-AOI map banner (from validateAnalysisAoi). */
+  aoiInvalidMessage?: string;
+  /**
+   * DEMO only: span label for the CAPTURED analysis area (e.g. "≈2.4km × 2.4km").
+   * Rendered as an explicit small label on the map so the ONE canonical
+   * boundary reads as "Captured FortyGuard AOI · …" (Section 9).
+   */
+  captureAoiLabel?: string;
+  /**
+   * Whether the OPERATING LOCATION marker is draggable (LIVE only — the
+   * canonical location coordinates update on drag; a new FortyGuard request
+   * still requires explicit Generate).
+   */
+  locationDraggable?: boolean;
+  /** Fired when the user finishes dragging the operating-location marker. */
+  onMoveOperatingLocation?: (point: LocationPoint) => void;
+  /** Whether candidate markers are draggable (LIVE only — DEMO candidates are application-defined fixed points). */
+  candidatesDraggable?: boolean;
+  /** Fired when a candidate is dragged to a point INSIDE the AOI (drag commit). */
+  onMoveCandidate?: (locationId: string, lat: number, lng: number) => void;
   /** FortyGuard thermal field — genuine provider/captured cells only. */
   spatialField: PolygonAOI | null;
   selectedTileId?: string | number;
@@ -78,17 +106,10 @@ interface ThermalMapProps {
   /** Add-candidate-site mode: map clicks place a candidate at the clicked point. */
   addSiteMode?: boolean;
   onAddSiteAt?: (lng: number, lat: number) => void;
-  onToggleAddSiteMode?: () => void;
   /** Camera behavior requested by the page; applied when cameraNonce changes. */
   cameraBehavior?: CameraBehavior;
   /** Bump to re-apply cameraBehavior (also refits on location changes). */
   cameraNonce?: number;
-  /**
-   * DEMO captured-field extent (dashed outline). Shown in FIXTURE mode so the
-   * user can see the FIXED extent of the captured provider data — moving the
-   * AOI outside it cannot produce new thermal data.
-   */
-  captureExtent?: PolygonAOI | null;
 }
 
 /** Empty FeatureCollection sentinel for source initialization / clear. */
@@ -228,6 +249,28 @@ function hasRenderableTemperatureData(aoi: PolygonAOI | null | undefined): boole
 }
 
 /**
+ * Apply valid/invalid paint to the canonical AOI layers (Section 6).
+ *   valid   → subtle outline (theme-aware rose) + barely-there fill
+ *   invalid → red, thicker outline + visible red tint (geometry RETAINED,
+ *            never moved or shrunk — the user sees exactly what is wrong).
+ * Shared by the committed-validity effect and the live drag preview.
+ */
+function applyAoiValidityPaint(map: MapLibreMap, invalid: boolean, isDark: boolean): void {
+  try {
+    if (map.getLayer('aoi-outline')) {
+      map.setPaintProperty('aoi-outline', 'line-color', invalid ? '#ef4444' : (isDark ? '#fb7185' : '#be123c'));
+      map.setPaintProperty('aoi-outline', 'line-width', invalid ? 4 : 2.5);
+    }
+    if (map.getLayer('aoi-fill')) {
+      map.setPaintProperty('aoi-fill', 'fill-color', invalid ? '#ef4444' : '#f43f5e');
+      map.setPaintProperty('aoi-fill', 'fill-opacity', invalid ? (isDark ? 0.10 : 0.08) : (isDark ? 0.04 : 0.03));
+    }
+  } catch {
+    /* safe */
+  }
+}
+
+/**
  * Drag-affordance anchor for the AOI handle: the NORTH-EAST point of the AOI
  * boundary — the exact NE corner vertex for squares, the 45° boundary point
  * for circles.
@@ -279,6 +322,13 @@ export function ThermalMap({
   regionMask,
   regionDisplayName,
   analysisAoi,
+  aoiInvalid = false,
+  aoiInvalidMessage,
+  captureAoiLabel,
+  locationDraggable = false,
+  onMoveOperatingLocation,
+  candidatesDraggable = false,
+  onMoveCandidate,
   spatialField,
   selectedTileId,
   candidates,
@@ -293,32 +343,62 @@ export function ThermalMap({
   emptyMapMessage = 'Select a location to render the thermal field',
   addSiteMode = false,
   onAddSiteAt,
-  onToggleAddSiteMode,
   cameraBehavior = 'fit-aoi',
   cameraNonce = 0,
-  captureExtent,
 }: ThermalMapProps) {
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const markersRef = useRef<Marker[]>([]);
   const aoiHandleRef = useRef<Marker | null>(null);
   const draggingAoiRef = useRef(false);
-  // Latest AOI geometry + move callback for the handle's drag listeners. The
+  // Latest AOI geometry + move callbacks for the drag listeners. The
   // listeners attach ONCE at marker creation — reading through refs keeps them
   // free of stale closures as the AOI moves/resizes.
   const aoiGeometryRef = useRef<{ aoi: PolygonAOI; center: LocationPoint } | null>(null);
   const aoiMoveCallbackRef = useRef<((center: LocationPoint) => void) | undefined>(undefined);
   const [mapReady, setMapReady] = useState(false);
   const [showRegionBoundary, setShowRegionBoundary] = useState(true);
+  // Compact in-map feedback when a candidate drop is REJECTED (outside the
+  // AOI) — the candidate stays at its last valid position (Section 7).
+  const [candidateRejectedToast, setCandidateRejectedToast] = useState<string | null>(null);
+  const candidateToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs for values read inside map event callbacks (avoid stale closures).
   const addSiteModeRef = useRef(addSiteMode);
   const onAddSiteAtRef = useRef(onAddSiteAt);
+  const onMoveOperatingLocationRef = useRef(onMoveOperatingLocation);
+  const onMoveCandidateRef = useRef(onMoveCandidate);
+  const regionBoundaryRef = useRef(regionBoundary);
+  const regionDisplayNameRef = useRef(regionDisplayName);
+  const themeRef = useRef(theme);
   useEffect(() => {
     addSiteModeRef.current = addSiteMode;
     onAddSiteAtRef.current = onAddSiteAt;
-  }, [addSiteMode, onAddSiteAt]);
+    onMoveOperatingLocationRef.current = onMoveOperatingLocation;
+    onMoveCandidateRef.current = onMoveCandidate;
+    regionBoundaryRef.current = regionBoundary;
+    regionDisplayNameRef.current = regionDisplayName;
+    themeRef.current = theme;
+  }, [addSiteMode, onAddSiteAt, onMoveOperatingLocation, onMoveCandidate, regionBoundary, regionDisplayName, theme]);
+
+  // Auto-dismiss the candidate-rejection toast.
+  useEffect(() => {
+    if (!candidateRejectedToast) return;
+    if (candidateToastTimerRef.current) clearTimeout(candidateToastTimerRef.current);
+    candidateToastTimerRef.current = setTimeout(() => setCandidateRejectedToast(null), 2600);
+    return () => {
+      if (candidateToastTimerRef.current) clearTimeout(candidateToastTimerRef.current);
+    };
+  }, [candidateRejectedToast]);
+
+  // The AOI geometry is ALWAYS tracked in a ref (not only when draggable) so
+  // candidate-marker drag commits can validate containment against the
+  // CURRENT canonical AOI — including the fixed DEMO captured area.
+  useEffect(() => {
+    const center = analysisAoi ? getAoiCenter(analysisAoi) : null;
+    aoiGeometryRef.current = analysisAoi && center ? { aoi: analysisAoi, center } : null;
+  }, [analysisAoi]);
 
   // Function to apply theme styles to all map layers
   const applyThemeToMap = useCallback((isDark: boolean) => {
@@ -346,6 +426,7 @@ export function ThermalMap({
       }
       if (map.getLayer('aoi-outline')) {
         map.setPaintProperty('aoi-outline', 'line-color', isDark ? '#fb7185' : '#be123c');
+        map.setPaintProperty('aoi-outline', 'line-width', 2.5);
       }
       if (map.getLayer('aoi-fill')) {
         map.setPaintProperty('aoi-fill', 'fill-color', '#f43f5e');
@@ -495,12 +576,6 @@ export function ThermalMap({
           data: (regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC,
         });
       }
-      if (!map.getSource('capture-extent')) {
-        map.addSource('capture-extent', {
-          type: 'geojson',
-          data: (captureExtent ?? EMPTY_FC) as unknown as GeoJSONFC,
-        });
-      }
       if (!map.getSource('analysis-aoi')) {
         map.addSource('analysis-aoi', {
           type: 'geojson',
@@ -518,6 +593,8 @@ export function ThermalMap({
 
       // 2. Register GeoJSON Layers in strict visual hierarchy (Section 11):
       //    basemap → region context → thermal cells → AOI boundary → (markers on top)
+      //    ONE canonical analysis-area boundary (Section 9): the AOI outline is
+      //    the ONLY analysis-extent rectangle — no second competing square.
       // Layer A: Outside-region Dimming Mask (GEOGRAPHIC context, not coverage)
       if (!map.getLayer('region-mask-fill')) {
         map.addLayer({
@@ -540,23 +617,6 @@ export function ThermalMap({
           paint: {
             'fill-color': '#000000',
             'fill-opacity': 0.0,
-          },
-        });
-      }
-
-      // Layer B2: DEMO captured-field extent — dashed amber outline marking the
-      // FIXED extent of the captured provider data (FIXTURE mode only). The
-      // boundary is context: thermal cells render on top of it.
-      if (!map.getLayer('capture-extent-outline')) {
-        map.addLayer({
-          id: 'capture-extent-outline',
-          type: 'line',
-          source: 'capture-extent',
-          paint: {
-            'line-color': isDark ? '#fbbf24' : '#b45309',
-            'line-width': 2,
-            'line-opacity': 0.9,
-            'line-dasharray': [2, 2],
           },
         });
       }
@@ -601,7 +661,8 @@ export function ThermalMap({
         });
       }
 
-      // Layer E: Local Analysis AOI Interior Tint (very low opacity — never a solid overlay)
+      // Layer E: Local Analysis AOI Interior Tint (very low opacity — never a
+      // solid overlay; the thermal cells beneath remain the visual hero)
       if (!map.getLayer('aoi-fill')) {
         map.addLayer({
           id: 'aoi-fill',
@@ -642,20 +703,9 @@ export function ThermalMap({
         });
       }
 
-      // Layer G: Canonical Analysis AOI outline (strong local focus)
-      if (!map.getLayer('aoi-glow')) {
-        map.addLayer({
-          id: 'aoi-glow',
-          type: 'line',
-          source: 'analysis-aoi',
-          paint: {
-            'line-color': '#f43f5e',
-            'line-width': 8,
-            'line-opacity': 0.5,
-            'line-blur': 4,
-          },
-        });
-      }
+      // Layer G: Canonical Analysis AOI outline — a SUBTLE crisp boundary over
+      // the thermal field (NOT a second filled square). Turns red when the
+      // geometry is invalid (Section 6; see applyAoiValidityPaint).
       if (!map.getLayer('aoi-outline')) {
         map.addLayer({
           id: 'aoi-outline',
@@ -663,7 +713,7 @@ export function ThermalMap({
           source: 'analysis-aoi',
           paint: {
             'line-color': isDark ? '#fb7185' : '#be123c',
-            'line-width': 3.5,
+            'line-width': 2.5,
             'line-opacity': 1.0,
           },
         });
@@ -677,13 +727,11 @@ export function ThermalMap({
       try {
         const maskSource = map.getSource('region-mask') as GeoJSONSource | undefined;
         const regionSource = map.getSource('region-boundary') as GeoJSONSource | undefined;
-        const captureSource = map.getSource('capture-extent') as GeoJSONSource | undefined;
         const thermalSource = map.getSource('thermal-tiles') as GeoJSONSource | undefined;
         const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
 
         if (maskSource) maskSource.setData((regionMask ?? EMPTY_FC) as unknown as GeoJSONFC);
         if (regionSource) regionSource.setData((regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC);
-        if (captureSource) captureSource.setData((captureExtent ?? EMPTY_FC) as unknown as GeoJSONFC);
         if (thermalSource && spatialField && hasRenderableTemperatureData(spatialField)) {
           thermalSource.setData(spatialField as unknown as GeoJSONFC);
         }
@@ -694,6 +742,11 @@ export function ThermalMap({
     };
 
     map.on('load', initMapLayersAndSources);
+
+    // Zoom / navigation controls — the one control family that genuinely
+    // belongs ON the map (Section 8). Positioned bottom-right, above the
+    // native basemap attribution.
+    map.addControl(new NavigationControl({ showCompass: false }), 'bottom-right');
 
     // Add-candidate-site mode: map click places a candidate (Section 8).
     const handleMapClick = (e: MapMouseEvent) => {
@@ -783,7 +836,6 @@ export function ThermalMap({
       if (map.getLayer('aoi-fill')) {
         map.setLayoutProperty('aoi-fill', 'visibility', showAoi ? 'visible' : 'none');
         map.setLayoutProperty('aoi-outline', 'visibility', showAoi ? 'visible' : 'none');
-        map.setLayoutProperty('aoi-glow', 'visibility', showAoi ? 'visible' : 'none');
       }
 
       if (map.getLayer('thermal-tiles-fill')) {
@@ -814,7 +866,6 @@ export function ThermalMap({
       try {
         const maskSource = map.getSource('region-mask') as GeoJSONSource | undefined;
         const regionSource = map.getSource('region-boundary') as GeoJSONSource | undefined;
-        const captureSource = map.getSource('capture-extent') as GeoJSONSource | undefined;
         const thermalSource = map.getSource('thermal-tiles') as GeoJSONSource | undefined;
         const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
 
@@ -824,10 +875,6 @@ export function ThermalMap({
 
         if (regionSource) {
           regionSource.setData((regionBoundary ?? EMPTY_FC) as unknown as GeoJSONFC);
-        }
-
-        if (captureSource) {
-          captureSource.setData((captureExtent ?? EMPTY_FC) as unknown as GeoJSONFC);
         }
 
         if (thermalSource) {
@@ -855,7 +902,18 @@ export function ThermalMap({
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [mapReady, spatialField, analysisAoi, regionBoundary, regionMask, captureExtent]);
+  }, [mapReady, spatialField, analysisAoi, regionBoundary, regionMask]);
+
+  // ─────────────────────────────────────────────────────────────────
+  // Committed AOI validity paint (Section 6): when the canonical AOI is
+  // invalid the RETAINED geometry renders red — never moved or shrunk.
+  // Runs AFTER the theme effect so validity always wins the AOI paint.
+  // ─────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    applyAoiValidityPaint(map, aoiInvalid, theme === 'dark');
+  }, [mapReady, aoiInvalid, theme]);
 
   // ─────────────────────────────────────────────────────────────────────
   // Draggable AOI handle (Section 4 — the AOI moves as ONE object)
@@ -895,8 +953,8 @@ export function ThermalMap({
       return;
     }
 
-    // Keep the drag listeners on the latest geometry + callback.
-    aoiGeometryRef.current = { aoi: analysisAoi, center };
+    // Keep the drag callback on the latest value (the geometry itself is
+    // tracked by the dedicated aoiGeometryRef effect above).
     aoiMoveCallbackRef.current = onMoveAoi;
 
     const isDark = theme === 'dark';
@@ -973,6 +1031,15 @@ export function ThermalMap({
         const preview = moveAoiToCenter(state.aoi, newCenter);
         const aoiSource = map.getSource('analysis-aoi') as GeoJSONSource | undefined;
         if (aoiSource) aoiSource.setData(preview as unknown as GeoJSONFC);
+        // IMMEDIATE validation while dragging (Section 6): the outline turns
+        // red the moment the geometry leaves the honest constraint set
+        // (documented provider limit / geographic bounds / active region
+        // boundary). Nothing is silently clamped or reverted.
+        const previewValidation = validateAnalysisAoi(preview, {
+          regionBoundary: regionBoundaryRef.current,
+          regionDisplayName: regionDisplayNameRef.current,
+        });
+        applyAoiValidityPaint(map, !previewValidation.valid, themeRef.current === 'dark');
         el.style.cursor = 'grabbing';
       };
 
@@ -996,7 +1063,17 @@ export function ThermalMap({
   }, [mapReady, analysisAoi, onMoveAoi, theme]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // Markers effect (candidate sites + selected point)
+  // Markers effect (operating location + candidate sites)
+  //
+  // The map communicates exactly the canonical spatial story (Section 8):
+  //   1. OPERATING LOCATION — a distinct pin, DRAGGABLE in LIVE (drag updates
+  //      the canonical location coordinates + recomputes the AOI; Generate is
+  //      still required — no automatic provider request).
+  //   2. ANALYSIS AOI — the boundary polygon (handled by layers above).
+  //   3. THERMAL FIELD — genuine provider/captured cells (layers above).
+  //   4. CANDIDATE SITES — draggable in LIVE; an outside-AOI drop is REJECTED
+  //      (snapped back to the last valid position) with immediate feedback.
+  //   5. RECOMMENDED SITE — the winner styling.
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -1007,26 +1084,94 @@ export function ThermalMap({
     }
     markersRef.current = [];
 
+    const isDark = theme === 'dark';
+
+    // ── 1. Operating location marker (always visible when a location exists) ──
+    if (
+      showLocationMarker &&
+      location &&
+      Number.isFinite(location.latitude) && location.latitude >= -90 && location.latitude <= 90 &&
+      Number.isFinite(location.longitude) && location.longitude >= -180 && location.longitude <= 180
+    ) {
+      const el = document.createElement('div');
+      el.style.cssText = [
+        'position:relative',
+        'width:26px',
+        'height:26px',
+        `cursor:${locationDraggable ? 'grab' : 'pointer'}`,
+        'z-index:22',
+      ].join(';');
+      el.innerHTML = `
+        <span style="
+          position:absolute;inset:0;border-radius:50% 50% 50% 0;
+          transform:rotate(-45deg);
+          background:#14b8a6;
+          border:3px solid #ffffff;
+          box-shadow:0 2px 8px rgba(0,0,0,0.45);
+        "></span>
+        <span style="
+          position:absolute;inset:7px;border-radius:50%;
+          background:#ffffff;
+        "></span>
+      `;
+      if (locationDraggable) {
+        el.setAttribute('role', 'button');
+        el.setAttribute('aria-label', 'Operating location — drag to move it; a new LIVE analysis still requires Generate');
+        el.title = 'Operating location — drag to move';
+      } else {
+        el.title = 'Operating location';
+      }
+
+      const operatingPopup = new Popup({ offset: 20, closeButton: false }).setHTML(`
+        <div style="
+          background:${isDark ? '#0f172a' : '#ffffff'};
+          border:1px solid ${isDark ? 'rgba(30,45,69,0.9)' : 'rgba(226,232,240,0.9)'};
+          border-radius:8px;
+          padding:8px 12px;
+          min-width:160px;
+          font-family:system-ui,sans-serif;
+          box-shadow:0 4px 16px rgba(0,0,0,0.25);
+        ">
+          <div style="
+            color:#14b8a6;
+            font-weight:700;
+            font-size:10px;
+            margin-bottom:3px;
+            letter-spacing:0.05em;
+            text-transform:uppercase;
+          ">Operating Location</div>
+          <div style="color:${isDark ? '#f1f5f9' : '#0f172a'};font-size:13px;font-weight:700;">${(locationName || 'Selected location').split(' (')[0]}</div>
+          ${locationDraggable ? `<div style="color:${isDark ? '#94a3b8' : '#64748b'};font-size:10px;margin-top:3px;">Drag to move · Generate runs the next LIVE request</div>` : ''}
+        </div>
+      `);
+
+      const operatingMarker = new Marker({ element: el, draggable: !!locationDraggable })
+        .setLngLat([location.longitude, location.latitude])
+        .setPopup(operatingPopup)
+        .addTo(map);
+
+      if (locationDraggable) {
+        operatingMarker.on('dragend', () => {
+          const ll = operatingMarker.getLngLat();
+          onMoveOperatingLocationRef.current?.({ latitude: ll.lat, longitude: ll.lng });
+        });
+      }
+      markersRef.current.push(operatingMarker);
+    }
+
     if (layerVisibility.candidates === false) {
       return;
     }
 
-    const isDark = theme === 'dark';
-
+    // ── 2. Candidate + recommended-site markers ──
     const locsToRender: Array<{
       id: string; name: string; loc: LocationPoint; isWinner: boolean;
-    }> = candidates && candidates.length > 0
-      ? candidates.map((c) => ({
-          id: c.locationId,
-          name: c.name,
-          loc: c.location,
-          isWinner: c.locationId === recommendedLocationId,
-        }))
-      : showLocationMarker && location
-        ? [
-            { id: 'analysis-center', name: 'Selected Analysis Area', loc: location, isWinner: false },
-          ]
-        : [];
+    }> = (candidates ?? []).map((c) => ({
+      id: c.locationId,
+      name: c.name,
+      loc: c.location,
+      isWinner: c.locationId === recommendedLocationId,
+    }));
 
     for (const item of locsToRender) {
       if (
@@ -1043,7 +1188,7 @@ export function ThermalMap({
           'position:relative',
           'width:40px',
           'height:40px',
-          'cursor:pointer',
+          `cursor:${candidatesDraggable ? 'grab' : 'pointer'}`,
           'z-index:30',
         ].join(';');
         el.innerHTML = `
@@ -1067,9 +1212,12 @@ export function ThermalMap({
           'border:2.5px solid ' + (isDark ? '#cbd5e1' : '#0f172a'),
           'border-radius:50%',
           'box-shadow:0 2px 8px rgba(0,0,0,0.4)',
-          'cursor:pointer',
+          `cursor:${candidatesDraggable ? 'grab' : 'pointer'}`,
           'z-index:20',
         ].join(';');
+      }
+      if (candidatesDraggable) {
+        el.title = 'Candidate site — drag to move (must stay inside the analysis area)';
       }
 
       const popup = new Popup({ offset: 20, closeButton: false }).setHTML(`
@@ -1091,17 +1239,40 @@ export function ThermalMap({
             text-transform:uppercase;
           ">${item.isWinner ? '★ Recommended Site' : 'Candidate Site'}</div>
           <div style="color:${isDark ? '#f1f5f9' : '#0f172a'};font-size:13px;font-weight:700;">${item.name.split(' (')[0]}</div>
+          ${candidatesDraggable ? `<div style="color:${isDark ? '#94a3b8' : '#64748b'};font-size:10px;margin-top:3px;">Drag to move — must stay inside the analysis area</div>` : ''}
         </div>
       `);
 
-      const marker = new Marker({ element: el })
+      const marker = new Marker({ element: el, draggable: !!candidatesDraggable })
         .setLngLat([item.loc.longitude, item.loc.latitude])
         .setPopup(popup)
         .addTo(map);
 
+      if (candidatesDraggable) {
+        // The site's CURRENT position is the last valid position. A drop
+        // OUTSIDE the canonical AOI is REJECTED: the marker snaps back, the
+        // site is never silently moved (Section 7), and immediate in-map
+        // feedback explains why.
+        const lastValid: [number, number] = [item.loc.longitude, item.loc.latitude];
+        marker.on('dragend', () => {
+          const ll = marker.getLngLat();
+          const aoi = aoiGeometryRef.current?.aoi;
+          const inside = !aoi || isPointInAoi({ latitude: ll.lat, longitude: ll.lng }, aoi);
+          if (!inside) {
+            marker.setLngLat(lastValid);
+            setCandidateRejectedToast(item.name.split(' (')[0]);
+            return;
+          }
+          const moved =
+            Math.abs(ll.lng - lastValid[0]) > 1e-9 ||
+            Math.abs(ll.lat - lastValid[1]) > 1e-9;
+          if (moved) onMoveCandidateRef.current?.(item.id, ll.lat, ll.lng);
+        });
+      }
+
       markersRef.current.push(marker);
     }
-  }, [mapReady, candidates, recommendedLocationId, location, theme, layerVisibility.candidates]);
+  }, [mapReady, candidates, recommendedLocationId, location, locationName, theme, layerVisibility.candidates, locationDraggable, candidatesDraggable, showLocationMarker]);
 
   // ─────────────────────────────────────────────────────────────────────
   // Camera behavior (Section 12)
@@ -1202,11 +1373,13 @@ export function ThermalMap({
       `}</style>
 
       {/* ─────────────────────────────────────────────────────────────
-          TOP PRODUCTION MAP CONTROLS TOOLBAR
+          TOP MAP CONTROLS TOOLBAR (Section 8 — reduced)
+          Visualization toggles + camera only. Configuration lives in the
+          ControlRail; no duplicate add-site/AOI-size controls on the map.
           ───────────────────────────────────────────────────────────── */}
       <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-2 flex-wrap pointer-events-none z-20">
 
-        {/* Left Side: Geographic Region + Analysis Area */}
+        {/* Left: Geographic Region + Analysis Area visualization toggles */}
         <div className="pointer-events-auto flex items-center gap-1.5 flex-wrap">
 
           {/* Geographic region context toggle (geographic context, not provider coverage) */}
@@ -1269,26 +1442,8 @@ export function ThermalMap({
           </button>
         </div>
 
-        {/* Right Side: Add-site mode, Heatmap, Sites, Theme, Region View, Fit AOI */}
+        {/* Right: Thermal / Sites visualization toggles + Fit camera */}
         <div className="pointer-events-auto flex items-center gap-1.5 bg-surface-card/95 backdrop-blur-md p-1 rounded-xl border border-border shadow-lg">
-
-          {/* Add candidate site mode (LIVE workflow — Section 8) */}
-          {onToggleAddSiteMode && (
-            <button
-              type="button"
-              data-testid="add-site-mode-btn"
-              onClick={onToggleAddSiteMode}
-              title="Add candidate site: click the map to place a site inside the analysis area"
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                addSiteMode
-                  ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 animate-pulse'
-                  : 'text-text-muted hover:text-text-primary opacity-70 border border-transparent'
-              }`}
-            >
-              <Crosshair className="size-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">+ Site</span>
-            </button>
-          )}
 
           {/* Thermal Heatmap layer toggle */}
           <button
@@ -1324,29 +1479,6 @@ export function ThermalMap({
 
           <div className="w-[1px] h-4 bg-border my-auto mx-0.5" />
 
-          {/* Light / Dark Theme toggle directly on map */}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch map to Light Mode' : 'Switch map to Dark Mode'}
-            className="p-1.5 rounded-lg text-xs text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-all flex items-center cursor-pointer"
-          >
-            {theme === 'dark' ? <Sun className="size-3.5 text-amber-400" /> : <Moon className="size-3.5 text-slate-500" />}
-          </button>
-
-          {/* Zoom to Geographic Region View Button */}
-          {regionBoundary && (
-            <button
-              type="button"
-              onClick={fitToRegion}
-              title={`Zoom to the entire ${stateDisplayName || 'selected'} geographic region`}
-              className="px-2.5 py-1.5 rounded-lg text-xs text-rose-300 bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 transition-all flex items-center gap-1 cursor-pointer font-semibold"
-            >
-              <ZoomIn className="size-3.5 text-rose-400" />
-              <span className="hidden sm:inline text-[11px]">Region View</span>
-            </button>
-          )}
-
           {/* Fit / Center Local AOI View Button */}
           <button
             type="button"
@@ -1363,7 +1495,7 @@ export function ThermalMap({
       {/* Add-site mode hint banner */}
       {addSiteMode && (
         <div
-          className="absolute top-16 left-1/2 -translate-x-1/2 px-3.5 py-2 rounded-lg text-xs font-semibold z-20 pointer-events-none"
+          className="absolute top-16 left-1/2 -translate-x-1/2 px-3.5 py-2 rounded-lg text-xs font-semibold z-20 pointer-events-none max-w-md text-center"
           style={{
             background: 'rgba(5,150,105,0.92)',
             color: '#ffffff',
@@ -1371,11 +1503,45 @@ export function ThermalMap({
           }}
           data-testid="add-site-mode-hint"
         >
-          Click the map to place a candidate site · click “+ Site” to exit
+          Click the map inside the analysis area to place a candidate site · click “Add on map” again to exit
         </div>
       )}
 
-      {/* Thermal legend — bottom-left overlay */}
+      {/* Invalid-AOI banner (Section 6) — the retained geometry is visibly
+          invalid; Generate is disabled until the user fixes the area. */}
+      {aoiInvalid && (
+        <div
+          className="absolute top-16 left-1/2 -translate-x-1/2 px-3.5 py-2 rounded-lg text-xs font-semibold z-20 pointer-events-none max-w-md text-center"
+          style={{
+            background: 'rgba(190,18,60,0.95)',
+            color: '#ffffff',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+          }}
+          role="alert"
+          data-testid="aoi-invalid-banner"
+        >
+          ⚠ {aoiInvalidMessage || 'Analysis area invalid'} · Generate disabled
+        </div>
+      )}
+
+      {/* Candidate-drop rejection feedback (Section 7) — the candidate stays
+          at its last valid position (never silently moved). */}
+      {candidateRejectedToast && (
+        <div
+          className="absolute top-16 left-1/2 -translate-x-1/2 px-3.5 py-2 rounded-lg text-xs font-semibold z-20 pointer-events-none max-w-md text-center"
+          style={{
+            background: 'rgba(190,18,60,0.95)',
+            color: '#ffffff',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+          }}
+          role="alert"
+          data-testid="candidate-rejected-toast"
+        >
+          “{candidateRejectedToast}” must stay inside the analysis area — kept at its last valid position
+        </div>
+      )}
+
+      {/* Thermal legend — bottom-left overlay (provenance integrated) */}
       <div
         className="absolute bottom-3 left-3 bg-surface-card/95 backdrop-blur-md px-3.5 py-2.5 rounded-xl shadow-xl border border-border z-10"
         data-testid="map-legend-ticks"
@@ -1404,15 +1570,31 @@ export function ThermalMap({
             </div>
           ))}
         </div>
+        {/* FortyGuard provenance line (integrated — no competing badge) */}
+        <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-border/60">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse flex-shrink-0" />
+          <span className="text-[9px] text-text-dimmed font-mono uppercase tracking-wide">
+            FortyGuard Hyperlocal Thermal
+          </span>
+        </div>
       </div>
 
-      {/* Source attribution — bottom-right */}
-      <div className="absolute bottom-3 right-3 bg-surface-card/85 backdrop-blur-sm px-2.5 py-1 rounded-md border border-border z-10 flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-accent-emerald animate-pulse" />
-        <span className="text-[9px] text-text-dimmed font-mono uppercase tracking-wide">
-          FortyGuard Hyperlocal Thermal
-        </span>
-      </div>
+      {/* DEMO captured analysis-area label (Section 9): the ONE canonical
+          boundary is the captured FortyGuard request AOI — labeled explicitly
+          so the thermal field and the analysis area read as the same extent. */}
+      {captureAoiLabel && (
+        <div
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold z-10 pointer-events-none flex items-center gap-1.5 whitespace-nowrap"
+          style={{
+            background: 'rgba(180,83,9,0.92)',
+            color: '#ffffff',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+          }}
+          data-testid="captured-aoi-label"
+        >
+          ⬡ Captured FortyGuard AOI · {captureAoiLabel}
+        </div>
+      )}
 
       {/* Empty state overlay (shown only when no spatialField AND no AOI) */}
       {!spatialField && !analysisAoi && (

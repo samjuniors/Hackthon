@@ -19,6 +19,12 @@ interface LocationSearchProps {
   mode: DataSourceMode;
   onSelectLocation: (loc: NamedLocation) => void;
   onSwitchToLive?: () => void;
+  /**
+   * Clear the selected operating location — returns the workspace to EMPTY
+   * (marker removed, AOI/candidates/thermal cleared). The search field stays
+   * available to select a new location.
+   */
+  onClearLocation?: () => void;
   /** Compact variant: search input + dropdown only (used for candidate-site search). */
   compact?: boolean;
 }
@@ -40,6 +46,7 @@ export function LocationSearch({
   mode,
   onSelectLocation,
   onSwitchToLive,
+  onClearLocation,
   compact = false,
 }: LocationSearchProps) {
   const [query, setQuery] = useState('');
@@ -153,7 +160,9 @@ export function LocationSearch({
       </div>
       )}
 
-      {/* Selected Location Card (EMPTY state: instruction to select one) */}
+      {/* Selected Location Card (EMPTY state: instruction to select one).
+          SELECTED state: name + coordinates + a compact Clear affordance —
+          the location is an EDITABLE input, never a permanent state. */}
       {!compact && (
       <div className="bg-surface-deep p-3 rounded-xl border border-border space-y-1.5">
         <div className="flex items-center justify-between gap-2">
@@ -163,14 +172,28 @@ export function LocationSearch({
               {selectedLocation ? selectedLocation.name : 'No location selected'}
             </span>
           </div>
-          {selectedLocation && (
-            <Badge
-              variant="outline"
-              className="text-[10px] font-mono shrink-0 border-accent-cyan/40 text-accent-cyan bg-accent-cyan-bg"
-            >
-              {selectedLocation.category}
-            </Badge>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {selectedLocation && (
+              <Badge
+                variant="outline"
+                className="text-[10px] font-mono border-accent-cyan/40 text-accent-cyan bg-accent-cyan-bg"
+              >
+                {selectedLocation.category}
+              </Badge>
+            )}
+            {selectedLocation && onClearLocation && (
+              <button
+                type="button"
+                data-testid="clear-location-btn"
+                onClick={onClearLocation}
+                title="Clear location — return to an empty workspace"
+                aria-label="Clear location"
+                className="min-h-[28px] px-2 py-1 rounded-md text-[10px] font-bold border border-red-400/50 text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer"
+              >
+                ✕ Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {selectedLocation ? (

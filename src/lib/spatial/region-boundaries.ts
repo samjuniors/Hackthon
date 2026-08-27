@@ -331,6 +331,24 @@ export function getRegionBoundaryPolygon(
 }
 
 /**
+ * Resolve the canonical geographic-region DISPLAY NAME for a point, by
+ * coordinates only (proximity resolution against the product's authoritative
+ * boundary catalog). Returns a short region label such as "New York" or
+ * "California", or undefined when the point lies outside every known region.
+ *
+ * Used when the operating location is DRAGGED on the map: the geographic
+ * region context follows the point honestly instead of staying stale.
+ */
+export function resolveRegionDisplayName(lat: number, lng: number): string | undefined {
+  const boundary = getRegionBoundaryPolygon(undefined, undefined, lat, lng);
+  const name = (
+    boundary?.features?.[0]?.properties as { name?: string } | undefined
+  )?.name;
+  if (!name) return undefined;
+  return name.replace(/\s*(State|Regional)\s*Boundary$/i, '').trim() || undefined;
+}
+
+/**
  * Calculates signed polygon ring area to check winding direction.
  * Positive = Counter-Clockwise (CCW), Negative = Clockwise (CW).
  */

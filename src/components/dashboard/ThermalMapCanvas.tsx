@@ -5,19 +5,10 @@ import type { NamedLocation, ProviderStatus, FortyGuardHealthResponse, AIHealthR
 import type { CandidateLocation, JointDecisionResult, LocationPoint } from '@/types/domain';
 import type { AnalysisTemporalInput } from '@/lib/temporal/analysis-window';
 import { formatTemporalForHeader, FIXTURE_TEMPORAL_METADATA } from '@/lib/temporal/analysis-window';
+import type { WorkflowStage } from '@/lib/workspace/stage';
 
-/**
- * Explicit workspace state machine (DEMO and LIVE are DATA SOURCES, not
- * workflow stages):
- *   EMPTY → LOCATION_SELECTED → (AOI_CONFIGURED → TEMPORAL_CONFIGURED →)
- *   ANALYZING → RESULTS   …or… NO_DEMO_CAPTURE (DEMO source, no capture).
- */
-export type WorkflowStage =
-  | 'EMPTY'
-  | 'LOCATION_SELECTED'
-  | 'NO_DEMO_CAPTURE'
-  | 'ANALYZING'
-  | 'RESULTS';
+// Re-exported for backwards compatibility (page.tsx imports from the lib now).
+export type { WorkflowStage };
 
 interface ThermalMapCanvasProps {
   /** Current workspace stage (drives the EMPTY overlay + status copy). */

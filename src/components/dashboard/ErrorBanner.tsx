@@ -55,18 +55,17 @@ export function ErrorBanner({
             <strong className="text-text-primary">Action:</strong> {errorDetails.recoverySuggestion}
           </p>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex flex-col sm:flex-row gap-2 shrink-0">
           <button
             onClick={onRetry}
-            className="px-3 py-1.5 min-h-[36px] text-xs rounded-lg border border-border bg-surface-elevated text-text-primary hover:bg-surface-deep transition-colors"
+            className="px-3 py-1.5 min-h-[36px] text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-xs"
           >
             {mode === 'LIVE' ? 'Retry Live' : 'Retry'}
           </button>
           {mode === 'LIVE' && (
             <button
               onClick={onSwitchToDemo}
-              className="px-3 py-1.5 min-h-[36px] text-xs rounded-lg border text-accent-amber hover:bg-accent-amber-bg transition-colors"
-              style={{ borderColor: 'var(--accent-amber)', background: 'var(--accent-amber-bg)' }}
+              className="px-3 py-1.5 min-h-[36px] text-xs font-semibold rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 hover:bg-amber-200 transition-colors shadow-xs"
             >
               Continue with Verified Demo
             </button>
@@ -75,8 +74,7 @@ export function ErrorBanner({
             <button
               onClick={onSwitchToLive}
               data-testid="switch-to-live-btn"
-              className="px-3 py-1.5 min-h-[36px] text-xs rounded-lg border font-semibold transition-colors text-white hover:opacity-90"
-              style={{ borderColor: 'var(--accent-emerald)', background: 'var(--accent-emerald)' }}
+              className="px-3 py-1.5 min-h-[36px] text-xs font-bold rounded-lg border border-emerald-600 dark:border-emerald-500 bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-xs"
             >
               Switch to LIVE
             </button>

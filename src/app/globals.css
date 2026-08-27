@@ -11,66 +11,66 @@
    Light mode = clean, readable product surface (intentional, not inverted dark).
    ============================================================================ */
 
-/* ── Light theme (default) ─────────────────────────────────────────────────── */
+/* ── Light theme (Apple, Linear, Stripe, Notion inspired high-contrast palette) ─ */
 :root {
   --radius: 0.625rem;
 
-  /* shadcn / base tokens */
-  --background:        #f8fafc;
-  --foreground:        #0f172a;
-  --card:              #ffffff;
+  /* Base surface and typography tokens */
+  --background:        #f8fafc;       /* slate-50 */
+  --foreground:        #0f172a;       /* slate-900 high contrast */
+  --card:              #ffffff;       /* pure card */
   --card-foreground:   #0f172a;
   --popover:           #ffffff;
   --popover-foreground:#0f172a;
-  --primary:           #0ea5e9;       /* cyan-500 — primary action */
+  --primary:           #0f172a;       /* deep slate primary button (Linear / Apple style) */
   --primary-foreground:#ffffff;
   --secondary:         #f1f5f9;       /* slate-100 */
-  --secondary-foreground:#334155;
+  --secondary-foreground:#0f172a;
   --muted:             #f1f5f9;
-  --muted-foreground:  #64748b;
-  --accent:            #e0f2fe;       /* sky-100 */
-  --accent-foreground: #0369a1;
-  --destructive:       #dc2626;
+  --muted-foreground:  #475569;       /* slate-600 high contrast */
+  --accent:            #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive:       #e11d48;       /* rose-600 */
   --destructive-foreground:#ffffff;
-  --border:            #e2e8f0;
-  --input:             #e2e8f0;
-  --ring:              #0ea5e9;
+  --border:            #cbd5e1;       /* slate-300 crisp border */
+  --input:             #cbd5e1;
+  --ring:              #0f172a;
 
-  /* Surface hierarchy — the key semantic tokens for this product */
-  --surface-bg:        #f0f4f8;       /* page background */
-  --surface-card:      #ffffff;       /* primary cards */
-  --surface-elevated:  #f8fafc;       /* elevated / hover surface */
-  --surface-deep:      #f1f5f9;       /* nested / inset content */
-  --surface-header:    rgba(255,255,255,0.92);
+  /* Surface hierarchy */
+  --surface-bg:        #f8fafc;       /* crisp page canvas */
+  --surface-card:      #ffffff;       /* clean card surface */
+  --surface-elevated:  #ffffff;       /* clean elevated elements */
+  --surface-deep:      #f1f5f9;       /* inset panels */
+  --surface-header:    rgba(255,255,255,0.98);
 
-  /* Text hierarchy */
-  --text-primary:      #0f172a;
-  --text-secondary:    #334155;
-  --text-muted:        #64748b;
-  --text-dimmed:       #94a3b8;
+  /* High contrast text hierarchy */
+  --text-primary:      #0f172a;       /* slate-900 */
+  --text-secondary:    #1e293b;       /* slate-800 */
+  --text-muted:        #475569;       /* slate-600 */
+  --text-dimmed:       #64748b;       /* slate-500 */
 
-  /* Brand accent palette */
-  --accent-cyan:       #0ea5e9;
-  --accent-cyan-bg:    #e0f2fe;
-  --accent-cyan-text:  #0c4a6e;
-  --accent-emerald:    #059669;
-  --accent-emerald-bg: #ecfdf5;
-  --accent-emerald-text:#065f46;
-  --accent-amber:      #d97706;
-  --accent-amber-bg:   #fffbeb;
-  --accent-amber-text: #78350f;
-  --accent-indigo:     #4f46e5;
-  --accent-indigo-bg:  #eef2ff;
-  --accent-indigo-text:#312e81;
-  --accent-red:        #dc2626;
-  --accent-red-bg:     #fef2f2;
-  --accent-red-text:   #7f1d1d;
+  /* Curated brand accents (Matte, non-glowing) */
+  --accent-cyan:       #0284c7;       /* sky-600 */
+  --accent-cyan-bg:    #f0f9ff;       /* sky-50 */
+  --accent-cyan-text:  #0369a1;       /* sky-700 */
+  --accent-emerald:    #059669;       /* emerald-600 */
+  --accent-emerald-bg: #ecfdf5;       /* emerald-50 */
+  --accent-emerald-text:#047857;      /* emerald-700 */
+  --accent-amber:      #d97706;       /* amber-600 */
+  --accent-amber-bg:   #fffbeb;       /* amber-50 */
+  --accent-amber-text: #b45309;       /* amber-700 */
+  --accent-indigo:     #4f46e5;       /* indigo-600 */
+  --accent-indigo-bg:  #eef2ff;       /* indigo-50 */
+  --accent-indigo-text:#3730a3;       /* indigo-800 */
+  --accent-red:        #e11d48;       /* rose-600 */
+  --accent-red-bg:     #fff1f2;       /* rose-50 */
+  --accent-red-text:   #9f1239;       /* rose-800 */
 
   /* Status indicators */
-  --status-live:       #10b981;
-  --status-demo:       #f59e0b;
-  --status-error:      #ef4444;
-  --status-unknown:    #94a3b8;
+  --status-live:       #059669;
+  --status-demo:       #d97706;
+  --status-error:      #e11d48;
+  --status-unknown:    #64748b;
 }
 
 /* ── Dark theme ──────────────────────────────────────────────────────────────── */

@@ -108,14 +108,14 @@ export function Header({
         </div>
 
         {/* Controls — wrap gracefully on mobile */}
-        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3 shrink-0">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2.5 shrink-0">
           {/* Mode badge — provenance-explicit */}
           {mode === 'LIVE' ? (
-            <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent-emerald-bg text-accent-emerald border border-border whitespace-nowrap">
+            <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700 whitespace-nowrap">
               LIVE · FortyGuard
             </span>
           ) : (
-            <span className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent-amber-bg text-accent-amber whitespace-nowrap">
+            <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700 whitespace-nowrap">
               DEMO · Captured FortyGuard
             </span>
           )}
@@ -124,7 +124,7 @@ export function Header({
           <div
             role="group"
             aria-label="Temperature unit selection"
-            className="flex items-center bg-surface-elevated p-1 rounded-full border border-border"
+            className="flex items-center bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-300 dark:border-slate-700"
             data-testid="temp-unit-toggle"
           >
             {(['F', 'C'] as const).map((u) => (
@@ -134,10 +134,10 @@ export function Header({
                 aria-pressed={unit === u}
                 data-testid={`temp-unit-${u.toLowerCase()}`}
                 onClick={() => onToggleUnit(u)}
-                className={`min-h-[36px] min-w-[36px] px-3 py-1 rounded-full text-xs font-bold font-mono transition-all flex items-center justify-center ${
+                className={`min-h-[32px] min-w-[32px] px-2.5 py-0.5 rounded-md text-xs font-bold font-mono transition-all flex items-center justify-center ${
                   unit === u
-                    ? 'bg-accent-cyan text-white shadow-sm'
-                    : 'text-text-muted hover:text-text-primary'
+                    ? 'bg-slate-900 text-white dark:bg-cyan-400 dark:text-slate-950 shadow-xs'
+                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white'
                 }`}
               >
                 °{u}
@@ -145,10 +145,10 @@ export function Header({
             ))}
           </div>
 
-          {/* Status indicators — hidden on mobile */}
+          {/* Status indicators — visible on sm screens */}
           <div className="hidden sm:flex items-center gap-3">
             <div className="flex flex-col items-end gap-0.5">
-              <span className="text-[9px] text-text-dimmed uppercase tracking-wider font-medium">
+              <span className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">
                 FortyGuard
               </span>
               <StatusDot
@@ -157,10 +157,10 @@ export function Header({
               />
             </div>
 
-            <div className="w-px h-7 bg-border" />
+            <div className="w-px h-7 bg-slate-200 dark:bg-slate-800" />
 
             <div className="flex flex-col items-end gap-0.5">
-              <span className="text-[9px] text-text-dimmed uppercase tracking-wider font-medium">
+              <span className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">
                 AI · {aiProviderLabel(aiProvider)}
               </span>
               <StatusDot status={aiStatus} />
@@ -173,7 +173,7 @@ export function Header({
             onClick={onToggleTheme}
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-border bg-surface-elevated hover:bg-surface-deep text-text-muted hover:text-text-primary transition-all"
+            className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all shadow-xs"
           >
             {theme === 'dark' ? (
               <Sun className="size-4" aria-hidden="true" />
@@ -188,7 +188,7 @@ export function Header({
             onClick={onOpenSettings}
             aria-label="Open settings"
             data-testid="settings-open-btn"
-            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-border bg-surface-elevated hover:bg-surface-deep text-text-muted hover:text-text-primary transition-all"
+            className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all shadow-xs"
           >
             <Settings className="size-4" aria-hidden="true" />
           </button>

@@ -296,10 +296,10 @@ export function ControlRail({
                     key={shape}
                     data-testid={`aoi-shape-${shape}`}
                     onClick={() => setters.setAnalysisAreaShape(shape)}
-                    className={`min-h-[40px] rounded-lg text-xs font-semibold capitalize transition-all border ${
+                    className={`min-h-[40px] rounded-lg text-xs transition-all border ${
                       prefs.analysisAreaShape === shape
-                        ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
-                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                        ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-400 dark:bg-cyan-500/20 dark:text-cyan-300 font-bold shadow-xs'
+                        : 'border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 font-medium'
                     }`}
                   >
                     {shape === 'polygon' ? 'Square' : 'Circle'}
@@ -316,10 +316,10 @@ export function ControlRail({
                       key={size}
                       data-testid={`aoi-size-${size}`}
                       onClick={() => setters.setAnalysisAoiSpanMetres(size)}
-                      className={`min-h-[36px] rounded-md text-[10px] font-mono font-bold transition-all border ${
+                      className={`min-h-[38px] rounded-md text-[10px] font-mono transition-all border ${
                         active
-                          ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
-                          : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                          ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-400 dark:bg-cyan-500/20 dark:text-cyan-300 font-bold shadow-xs'
+                          : 'border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 font-medium'
                       }`}
                       aria-pressed={active}
                     >
@@ -328,9 +328,9 @@ export function ControlRail({
                   );
                 })}
               </div>
-              <div className="mt-1.5 px-2 py-1 rounded bg-surface-deep/60 border border-border/50 text-[10px] font-mono text-text-muted flex items-center justify-between">
-                <span>Size:</span>
-                <span className="text-accent-cyan font-bold" data-testid="aoi-span-label">
+              <div className="mt-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                <span className="font-semibold text-slate-600 dark:text-slate-400">Span:</span>
+                <span className="text-slate-950 dark:text-cyan-300 font-bold" data-testid="aoi-span-label">
                   {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
                 </span>
               </div>
@@ -344,18 +344,18 @@ export function ControlRail({
         {/* ── Thermal Cell resolution (Section 2 — granularity, NOT zoom) ── */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-text-secondary">Thermal Cell</span>
+            <span className="text-sm font-semibold text-text-primary">Thermal Cell</span>
             <span className="text-[10px] font-mono text-text-dimmed">
               {mode === 'LIVE' ? 'FortyGuard granularity' : `fixture captured at ${fixtureGranularity ?? 100}m`}
             </span>
           </div>
           {mode === 'FIXTURE' ? (
             <div
-              className="rounded-lg bg-surface-deep/60 border border-border/50 px-2 py-2 flex items-center justify-between"
+              className="rounded-lg bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between"
               data-testid="captured-resolution"
             >
-              <span className="text-[10px] font-mono text-text-muted">Captured resolution:</span>
-              <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--accent-amber)' }}>
+              <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400 font-medium">Captured resolution:</span>
+              <span className="text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400">
                 {fixtureGranularity ?? 100}m × {fixtureGranularity ?? 100}m
               </span>
             </div>
@@ -369,10 +369,10 @@ export function ControlRail({
                   data-testid={`resolution-${r}`}
                   onClick={() => setters.setAnalysisResolution(r)}
                   title={`FortyGuard thermal-cell granularity ${r}m × ${r}m (does not change map zoom)`}
-                  className={`min-h-[40px] rounded-lg text-xs font-semibold transition-all border leading-tight ${
+                  className={`min-h-[40px] rounded-lg text-xs transition-all border leading-tight ${
                     active
-                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
-                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                      ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-400 dark:bg-cyan-500/20 dark:text-cyan-300 font-bold shadow-xs'
+                      : 'border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 font-medium'
                   }`}
                 >
                   {r}m × {r}m
@@ -592,10 +592,10 @@ export function ControlRail({
                     key={opt.value}
                     data-testid={`evaluation-window-${opt.value}`}
                     onClick={() => handleTimeModeChange(opt.value)}
-                    className={`min-h-[36px] rounded-md text-[10px] font-bold transition-all border leading-tight px-1 ${
+                    className={`min-h-[38px] rounded-lg text-[10px] transition-all border leading-tight px-1 ${
                       active
-                        ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
-                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+                        ? 'border-slate-900 bg-slate-900 text-white dark:border-cyan-400 dark:bg-cyan-500/20 dark:text-cyan-300 font-bold shadow-xs'
+                        : 'border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 font-medium'
                     }`}
                     aria-pressed={active}
                     title={opt.description}
@@ -618,8 +618,8 @@ export function ControlRail({
               value={temporalInput.date}
               onChange={(e) => update({ date: e.target.value })}
               disabled={isFixtureAnchored}
-              className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
-                dateValid ? 'border-border' : 'border-red-400'
+              className={`mt-1 w-full min-h-[42px] rounded-lg border bg-white dark:bg-slate-900 px-3 text-sm font-mono text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:border-slate-900 dark:focus:border-cyan-400 focus:ring-1 focus:ring-slate-900/20 transition-colors ${
+                dateValid ? 'border-slate-300 dark:border-slate-700' : 'border-rose-500'
               } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
               aria-label="Analysis date"
             />
@@ -645,8 +645,8 @@ export function ControlRail({
                 value={temporalInput.startTime}
                 onChange={(e) => update({ startTime: e.target.value })}
                 disabled={isFixtureAnchored}
-                className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
-                  startValid ? 'border-border' : 'border-red-400'
+                className={`mt-1 w-full min-h-[42px] rounded-lg border bg-white dark:bg-slate-900 px-3 text-sm font-mono text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:border-slate-900 dark:focus:border-cyan-400 focus:ring-1 focus:ring-slate-900/20 transition-colors ${
+                  startValid ? 'border-slate-300 dark:border-slate-700' : 'border-rose-500'
                 } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
                 aria-label="Analysis start time"
               />
@@ -659,8 +659,8 @@ export function ControlRail({
                   value={temporalInput.endTime}
                   onChange={(e) => update({ endTime: e.target.value })}
                   disabled={isFixtureAnchored}
-                  className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
-                    endValid ? 'border-border' : 'border-red-400'
+                  className={`mt-1 w-full min-h-[42px] rounded-lg border bg-white dark:bg-slate-900 px-3 text-sm font-mono text-slate-900 dark:text-slate-100 font-medium focus:outline-none focus:border-slate-900 dark:focus:border-cyan-400 focus:ring-1 focus:ring-slate-900/20 transition-colors ${
+                    endValid ? 'border-slate-300 dark:border-slate-700' : 'border-rose-500'
                   } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
                   aria-label="Analysis end time"
                 />
@@ -669,13 +669,12 @@ export function ControlRail({
           </div>
 
           {/* Derived duration (read-only) */}
-          <div className="flex items-center justify-between rounded-lg bg-surface-deep px-3 py-2 border border-border">
+          <div className="flex items-center justify-between rounded-lg bg-slate-100 dark:bg-slate-900/80 px-3 py-2 border border-slate-200 dark:border-slate-800">
             <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
               Duration
             </span>
             <span
-              className="text-base font-black font-mono"
-              style={{ color: 'var(--accent-cyan)' }}
+              className="text-base font-black font-mono text-slate-950 dark:text-cyan-300"
               data-testid="duration-display"
             >
               {derivedDuration}h
@@ -684,7 +683,7 @@ export function ControlRail({
 
           {/* Inline validation hint */}
           {!allValid && (
-            <p className="text-[10px] text-red-400 mt-1.5">
+            <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-1.5 font-medium">
               {!dateValid && 'Enter a valid date (YYYY-MM-DD). '}
               {!rangeValid && 'End time must be after start time.'}
             </p>
@@ -692,7 +691,7 @@ export function ControlRail({
 
           {/* Honest future-date note */}
           {mode === 'LIVE' && isFutureDate && (
-            <p className="text-[10px] mt-1.5" style={{ color: 'var(--accent-amber)' }}>
+            <p className="text-[10px] mt-1.5 font-medium text-amber-700 dark:text-amber-300">
               Future date selected — subject to FortyGuard forecast availability. The provider reports any unsupported window verbatim.
             </p>
           )}
@@ -702,19 +701,18 @@ export function ControlRail({
               Conservative wording: no exact credit cost is claimed. */}
           {mode === 'LIVE' && allValid && (
             <div
-              className="rounded-lg px-3 py-2 mt-2 border"
-              style={{ background: 'rgba(5,150,105,0.08)', borderColor: 'rgba(5,150,105,0.35)' }}
+              className="rounded-lg px-3 py-2 mt-2 border border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/80 dark:bg-emerald-950/20"
               data-testid="live-request-disclosure"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#059669' }}>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-800 dark:text-emerald-400">
                   LIVE · {derivedDuration}-hour evaluation
                 </span>
-                <span className="text-[10px] font-mono font-bold" style={{ color: '#059669' }}>
+                <span className="text-[10px] font-mono font-bold text-emerald-800 dark:text-emerald-300">
                   {liveHourlyRequestCount} FortyGuard hourly request{liveHourlyRequestCount > 1 ? 's' : ''}
                 </span>
               </div>
-              <p className="text-[9px] text-text-muted mt-0.5 leading-relaxed">
+              <p className="text-[9px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
                 Each evaluated hour is submitted as its own single-hour FortyGuard /v1/heatmap request (cached results are
                 reused, not re-billed). Repeat requests may consume provider credits.
               </p>
@@ -723,7 +721,7 @@ export function ControlRail({
 
           {/* Human-readable window preview */}
           {allValid && (
-            <p className="text-[10px] font-mono text-text-muted mt-2 leading-relaxed">
+            <p className="text-[10px] font-mono text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
               {formatTemporalForHeader(temporalInput, tz)}
             </p>
           )}
@@ -731,7 +729,7 @@ export function ControlRail({
 
         {/* Selected Analysis Area indicator — coordinates track AOI drag */}
         <div
-          className="rounded-lg p-3 bg-surface-deep border border-border space-y-1"
+          className="rounded-lg p-3 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-1"
           data-testid="active-analysis-location-indicator"
         >
           <div className="flex items-center justify-between">
@@ -739,53 +737,45 @@ export function ControlRail({
             <span
               className="px-2 py-0.5 rounded text-[10px] font-bold border"
               style={mode === 'LIVE'
-                ? { background: 'var(--accent-cyan-bg)', color: 'var(--accent-cyan)', borderColor: 'var(--accent-cyan)' }
-                : { background: 'var(--accent-amber-bg)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)' }
+                ? { background: 'var(--accent-emerald-bg)', color: 'var(--accent-emerald-text)', borderColor: 'var(--accent-emerald)' }
+                : { background: 'var(--accent-amber-bg)', color: 'var(--accent-amber-text)', borderColor: 'var(--accent-amber)' }
               }
               data-testid="analysis-mode-badge"
             >
               {mode === 'LIVE' ? 'LIVE · FortyGuard' : 'DEMO · Captured FortyGuard'}
             </span>
           </div>
-          <div className="text-sm font-bold text-text-primary leading-tight" data-testid="active-analysis-location-name">
+          <div className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight" data-testid="active-analysis-location-name">
             {selectedLocation ? selectedLocation.name : 'No location selected'}
           </div>
           {selectedLocation && centerCoords && (
-            <div className="text-[11px] font-mono flex items-center justify-between" style={{ color: 'var(--accent-cyan)' }} data-testid="active-analysis-location-coords">
-              <span>{centerCoords.latitude.toFixed(4)}°, {centerCoords.longitude.toFixed(4)}°</span>
-              <span className="text-text-muted font-sans text-[10px]">
+            <div className="text-[11px] font-mono flex items-center justify-between text-slate-700 dark:text-cyan-300" data-testid="active-analysis-location-coords">
+              <span className="font-semibold">{centerCoords.latitude.toFixed(4)}°, {centerCoords.longitude.toFixed(4)}°</span>
+              <span className="text-slate-500 font-sans text-[10px]">
                 {selectedLocation.city ? `${selectedLocation.city}, ${selectedLocation.state || selectedLocation.country}` : selectedLocation.state || ''}
               </span>
             </div>
           )}
         </div>
 
-        {/* Generate button — enabled ONLY when the full analysis contract
-            holds (Section 11): valid location + valid AOI + valid WHEN +
-            valid candidate state. The reason is surfaced inline. */}
+        {/* Generate button — solid Apple / Linear / Stripe high contrast styling */}
         <motion.button
           whileTap={{ scale: 0.99 }}
           disabled={loading || generateDisabled}
           onClick={onGenerate}
           data-testid="recalculate-decision-btn"
           title={generateDisabled && !loading ? generateDisabledReason : undefined}
-          className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+          className={`w-full min-h-[48px] rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 border shadow-xs ${
             loading || generateDisabled
-              ? 'bg-surface-elevated text-text-dimmed cursor-not-allowed'
-              : 'text-white hover:scale-[1.01] active:scale-[0.99] cursor-pointer'
+              ? 'bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+              : mode === 'LIVE'
+                ? 'bg-slate-900 hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white border-slate-900 dark:border-emerald-500 cursor-pointer active:bg-black'
+                : 'bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 text-white border-slate-900 dark:border-sky-500 cursor-pointer active:bg-black'
           }`}
-          style={loading || generateDisabled ? {} : {
-            background: mode === 'LIVE'
-              ? 'linear-gradient(135deg, var(--accent-emerald), #0d9488)'
-              : 'linear-gradient(135deg, var(--accent-cyan), #0284c7)',
-            boxShadow: mode === 'LIVE'
-              ? '0 4px 16px rgba(5,150,105,0.3)'
-              : '0 4px 16px rgba(14,165,233,0.3)',
-          }}
         >
           {loading ? (
             <span className="flex items-center gap-2">
-              <span className="w-4 h-4 border-2 border-text-dimmed rounded-full animate-spin" style={{ borderTopColor: 'var(--accent-cyan)' }} />
+              <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
               Generating thermal field…
             </span>
           ) : (
@@ -796,8 +786,7 @@ export function ControlRail({
         {/* Inline reason when Generate is blocked (validation feedback) */}
         {generateDisabled && !loading && generateDisabledReason && (
           <p
-            className="text-[10px] leading-relaxed text-center -mt-1"
-            style={{ color: 'var(--accent-amber)' }}
+            className="text-[10px] leading-relaxed text-center -mt-1 font-medium text-amber-700 dark:text-amber-400"
             data-testid="generate-blocked-reason"
           >
             ⚠ {generateDisabledReason}

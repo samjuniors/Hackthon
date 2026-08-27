@@ -403,15 +403,15 @@ export function ThermalMap({
       'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     ];
     const lightBaseTiles = [
-      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
     ];
     const darkLabelTiles = [
       'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
     ];
     const lightLabelTiles = [
-      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
     ];
-    const esriAttribution = 'Basemap © Esri, HERE, Garmin, FAO, NOAA, USGS';
+    const basemapAttribution = '© Esri, HERE, Garmin, OpenStreetMap contributors';
 
     const map = new Map({
       container: mapContainerRef.current,
@@ -423,14 +423,14 @@ export function ThermalMap({
             tiles: darkBaseTiles,
             tileSize: 256,
             maxzoom: 16,
-            attribution: esriAttribution,
+            attribution: basemapAttribution,
           },
           'carto-base-light': {
             type: 'raster',
             tiles: lightBaseTiles,
             tileSize: 256,
             maxzoom: 16,
-            attribution: esriAttribution,
+            attribution: basemapAttribution,
           },
           'carto-labels-dark': {
             type: 'raster',

@@ -191,8 +191,8 @@ describe('FortyGuard Adapter Unit Tests', () => {
         mode: 'LIVE',
         apiKey: 'mock-valid-key',
         concurrencyLimit: 2,
-        pollingMaxAttempts: 5,
-        pollingIntervalMs: 5,
+        pollingMaxAttempts: 10,
+        pollingIntervalMs: 20,
       });
 
       const sixTimestamps = [

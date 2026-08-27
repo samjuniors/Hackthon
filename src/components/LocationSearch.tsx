@@ -27,6 +27,8 @@ interface LocationSearchProps {
   onClearLocation?: () => void;
   /** Compact variant: search input + dropdown only (used for candidate-site search). */
   compact?: boolean;
+  /** Active geographic region or state code to filter preset suggestions. */
+  activeStateFilter?: string;
 }
 
 /** Human label for a geocode result type (camera semantics hint). */
@@ -48,6 +50,7 @@ export function LocationSearch({
   onSwitchToLive,
   onClearLocation,
   compact = false,
+  activeStateFilter,
 }: LocationSearchProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -59,10 +62,10 @@ export function LocationSearch({
   const [showCoords, setShowCoords] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // Derive instant local results
+  // Derive instant local results (filtered by state if active)
   const localResults = query.trim()
-    ? searchLocations(query)
-    : getPresetLocations(mode === 'FIXTURE');
+    ? searchLocations(query, 8, activeStateFilter)
+    : getPresetLocations(mode === 'FIXTURE', activeStateFilter);
 
   // Debounced remote geocoding fetch for arbitrary global addresses and landmarks
   useEffect(() => {

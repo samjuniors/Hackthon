@@ -112,10 +112,21 @@ export function useCandidateSites() {
     setSites([]);
   }, []);
 
-  /** Re-validate every site against the current AOI (flags outsideAoi). */
+  /** Re-validate every site against the current AOI (flags outsideAoi only if changed). */
   const validateAgainstAoi = useCallback((aoi: PolygonAOI | null) => {
     if (!aoi) return;
-    setSites((prev) => prev.map((s) => ({ ...s, outsideAoi: !isPointInAoi(s.location, aoi) })));
+    setSites((prev) => {
+      let changed = false;
+      const next = prev.map((s) => {
+        const outside = !isPointInAoi(s.location, aoi);
+        if (s.outsideAoi !== outside) {
+          changed = true;
+          return { ...s, outsideAoi: outside };
+        }
+        return s;
+      });
+      return changed ? next : prev;
+    });
   }, []);
 
   return { sites, addSiteAt, removeSite, renameSite, moveSite, clearSites, validateAgainstAoi };

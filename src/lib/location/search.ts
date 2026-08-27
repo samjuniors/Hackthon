@@ -294,7 +294,156 @@ export const METROPOLITAN_LOCATIONS: NamedLocation[] = [
     isDemoOnly: false,
     description: 'High-desert thermal extreme corridor',
   },
-
+  {
+    id: 'US-SJC',
+    name: 'San Jose, CA',
+    displayName: 'San Jose, CA (Downtown / Silicon Valley Core)',
+    category: 'Metropolitan Area',
+    latitude: 37.3382,
+    longitude: -121.8863,
+    city: 'San Jose',
+    state: 'CA',
+    country: 'USA',
+    zipCode: '95113',
+    timezone: 'America/Los_Angeles',
+    isDemoOnly: false,
+    description: 'Silicon Valley urban technology corridor',
+  },
+  {
+    id: 'US-OAK',
+    name: 'Oakland, CA',
+    displayName: 'Oakland, CA (Downtown / Uptown)',
+    category: 'Metropolitan Area',
+    latitude: 37.8044,
+    longitude: -122.2712,
+    city: 'Oakland',
+    state: 'CA',
+    country: 'USA',
+    zipCode: '94612',
+    timezone: 'America/Los_Angeles',
+    isDemoOnly: false,
+    description: 'East Bay coastal urban center',
+  },
+  {
+    id: 'US-SAT',
+    name: 'San Antonio, TX',
+    displayName: 'San Antonio, TX (Downtown / River Walk)',
+    category: 'Metropolitan Area',
+    latitude: 29.4241,
+    longitude: -98.4936,
+    city: 'San Antonio',
+    state: 'TX',
+    country: 'USA',
+    zipCode: '78205',
+    timezone: 'America/Chicago',
+    isDemoOnly: false,
+    description: 'South Texas urban thermal corridor',
+  },
+  {
+    id: 'US-FTW',
+    name: 'Fort Worth, TX',
+    displayName: 'Fort Worth, TX (Downtown / Sundance Square)',
+    category: 'Metropolitan Area',
+    latitude: 32.7555,
+    longitude: -97.3308,
+    city: 'Fort Worth',
+    state: 'TX',
+    country: 'USA',
+    zipCode: '76102',
+    timezone: 'America/Chicago',
+    isDemoOnly: false,
+    description: 'North Texas commercial center',
+  },
+  {
+    id: 'US-ELP',
+    name: 'El Paso, TX',
+    displayName: 'El Paso, TX (Downtown / Border Corridor)',
+    category: 'Metropolitan Area',
+    latitude: 31.7619,
+    longitude: -106.4850,
+    city: 'El Paso',
+    state: 'TX',
+    country: 'USA',
+    zipCode: '79901',
+    timezone: 'America/Denver',
+    isDemoOnly: false,
+    description: 'Chihuahuan desert urban border microclimate',
+  },
+  {
+    id: 'US-MCO',
+    name: 'Orlando, FL',
+    displayName: 'Orlando, FL (Downtown / Lake Eola)',
+    category: 'Metropolitan Area',
+    latitude: 28.5383,
+    longitude: -81.3792,
+    city: 'Orlando',
+    state: 'FL',
+    country: 'USA',
+    zipCode: '32801',
+    timezone: 'America/New_York',
+    isDemoOnly: false,
+    description: 'Central Florida subtropical urban core',
+  },
+  {
+    id: 'US-TPA',
+    name: 'Tampa, FL',
+    displayName: 'Tampa, FL (Downtown / Channelside)',
+    category: 'Metropolitan Area',
+    latitude: 27.9506,
+    longitude: -82.4572,
+    city: 'Tampa',
+    state: 'FL',
+    country: 'USA',
+    zipCode: '33602',
+    timezone: 'America/New_York',
+    isDemoOnly: false,
+    description: 'Tampa Bay coastal urban heat corridor',
+  },
+  {
+    id: 'US-JAX',
+    name: 'Jacksonville, FL',
+    displayName: 'Jacksonville, FL (Downtown / St. Johns River)',
+    category: 'Metropolitan Area',
+    latitude: 30.3322,
+    longitude: -81.6557,
+    city: 'Jacksonville',
+    state: 'FL',
+    country: 'USA',
+    zipCode: '32202',
+    timezone: 'America/New_York',
+    isDemoOnly: false,
+    description: 'Northeast Florida maritime urban center',
+  },
+  {
+    id: 'US-PHL',
+    name: 'Philadelphia, PA',
+    displayName: 'Philadelphia, PA (Center City)',
+    category: 'Metropolitan Area',
+    latitude: 39.9526,
+    longitude: -75.1652,
+    city: 'Philadelphia',
+    state: 'PA',
+    country: 'USA',
+    zipCode: '19107',
+    timezone: 'America/New_York',
+    isDemoOnly: false,
+    description: 'Mid-Atlantic dense urban core',
+  },
+  {
+    id: 'US-PDX',
+    name: 'Portland, OR',
+    displayName: 'Portland, OR (Downtown / Pearl District)',
+    category: 'Metropolitan Area',
+    latitude: 45.5152,
+    longitude: -122.6784,
+    city: 'Portland',
+    state: 'OR',
+    country: 'USA',
+    zipCode: '97201',
+    timezone: 'America/Los_Angeles',
+    isDemoOnly: false,
+    description: 'Pacific Northwest Willamette Valley hub',
+  },
 ];
 
 const US_STATE_NAMES: Record<string, string> = {
@@ -351,17 +500,43 @@ const US_STATE_NAMES: Record<string, string> = {
   DC: 'District of Columbia',
 };
 
+/** Normalize state string to 2-letter uppercase code */
+export function normalizeStateCode(stateNameOrCode?: string): string | undefined {
+  if (!stateNameOrCode) return undefined;
+  const s = stateNameOrCode.trim();
+  if (s.length === 2) return s.toUpperCase();
+  for (const [code, name] of Object.entries(US_STATE_NAMES)) {
+    if (name.toLowerCase() === s.toLowerCase()) return code;
+  }
+  return undefined;
+}
+
 /**
  * Search locations by query string (city, state, ZIP, name, or country).
+ * Optionally filters or prioritizes matches in the active state.
  */
-export function searchLocations(query: string, maxResults = 8): NamedLocation[] {
+export function searchLocations(query: string, maxResults = 8, stateFilter?: string): NamedLocation[] {
   const q = query.trim().toLowerCase();
+  const normalizedState = normalizeStateCode(stateFilter);
+
+  let pool = METROPOLITAN_LOCATIONS;
+  if (normalizedState) {
+    const stateMatches = pool.filter((loc) => loc.state?.toUpperCase() === normalizedState);
+    if (stateMatches.length > 0) {
+      pool = [...stateMatches, ...pool.filter((loc) => loc.state?.toUpperCase() !== normalizedState)];
+    }
+  }
+
   if (!q) {
-    return METROPOLITAN_LOCATIONS.slice(0, maxResults);
+    if (normalizedState) {
+      const filtered = pool.filter((loc) => loc.state?.toUpperCase() === normalizedState);
+      if (filtered.length > 0) return filtered.slice(0, maxResults);
+    }
+    return pool.slice(0, maxResults);
   }
 
   // Exact ZIP search
-  const zipMatch = METROPOLITAN_LOCATIONS.filter(
+  const zipMatch = pool.filter(
     (loc) => loc.zipCode && loc.zipCode.toLowerCase().startsWith(q)
   );
   if (zipMatch.length > 0 && /^\d+$/.test(q)) {
@@ -369,7 +544,7 @@ export function searchLocations(query: string, maxResults = 8): NamedLocation[] 
   }
 
   // Multi-term substring and keyword matching
-  const matched = METROPOLITAN_LOCATIONS.filter((loc) => {
+  const matched = pool.filter((loc) => {
     const stateFullName = loc.state ? US_STATE_NAMES[loc.state.toUpperCase()] || '' : '';
     const haystack = [
       loc.name,
@@ -391,12 +566,21 @@ export function searchLocations(query: string, maxResults = 8): NamedLocation[] 
 
 /**
  * Returns preset location options for quick selection in the UI.
+ * When stateFilter is provided, filters or prioritizes locations matching that state.
  */
-export function getPresetLocations(isFixtureMode?: boolean): NamedLocation[] {
+export function getPresetLocations(isFixtureMode?: boolean, stateFilter?: string): NamedLocation[] {
   if (isFixtureMode) {
     return METROPOLITAN_LOCATIONS.filter((l) => l.isDemoOnly);
   }
-  return METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly);
+  const nonDemo = METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly);
+  const normalizedState = normalizeStateCode(stateFilter);
+  if (normalizedState) {
+    const matching = nonDemo.filter((l) => l.state?.toUpperCase() === normalizedState);
+    if (matching.length > 0) {
+      return matching;
+    }
+  }
+  return nonDemo;
 }
 
 /**

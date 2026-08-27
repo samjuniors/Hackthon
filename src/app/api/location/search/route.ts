@@ -1,6 +1,5 @@
-import { NextResponse } from 'next/server';
-import { geocodeSearch } from '@/lib/location/geocode';
-import { getPresetLocations, resolveLocationPoint } from '@/lib/location/search';
+import { geocodeSearch, reverseGeocode } from '@/lib/location/geocode';
+import { getPresetLocations } from '@/lib/location/search';
 import { lookupTimezone } from '@/lib/location/timezone-lookup';
 
 /**
@@ -22,12 +21,12 @@ export async function GET(req: Request) {
   const latStr = searchParams.get('lat');
   const lonStr = searchParams.get('lon');
 
-  // Reverse point resolution if lat & lon provided (GPS / map-click naming)
+  // Reverse point resolution if lat & lon provided (GPS / map-click / drag naming)
   if (latStr && lonStr) {
     const lat = parseFloat(latStr);
     const lon = parseFloat(lonStr);
     if (!isNaN(lat) && !isNaN(lon)) {
-      const loc = resolveLocationPoint(lat, lon);
+      const loc = await reverseGeocode(lat, lon);
       loc.timezone = loc.timezone || lookupTimezone(lat, lon);
       return NextResponse.json({ success: true, location: loc });
     }

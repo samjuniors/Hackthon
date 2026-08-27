@@ -268,3 +268,137 @@ export async function geocodeSearch(query: string, options: GeocodeOptions = {})
   // catalog entries — not inventions. Marked source for UI transparency.
   return { results: searchLocations(q, limit), source: 'catalog-fallback' };
 }
+
+/**
+ * Reverse geocode a latitude/longitude coordinate to a human-readable NamedLocation.
+ * Uses Photon reverse -> Nominatim reverse -> offline catalog/coordinate resolution.
+ */
+export async function reverseGeocode(lat: number, lon: number, timeoutMs = 4000): Promise<NamedLocation> {
+  // 1. Try Photon reverse
+  try {
+    const photonUrl = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}`;
+    const res = await fetchWithTimeout(photonUrl, timeoutMs);
+    if (res && res.ok) {
+      const data = (await res.json()) as PhotonResponse;
+      const f = data.features?.[0];
+      if (f && f.properties) {
+        const p = f.properties;
+        const name = buildName({
+          primary: p.name,
+          street: p.street,
+          housenumber: p.housenumber,
+          city: p.city,
+          county: p.county,
+          state: p.state,
+          country: p.country,
+        });
+        const city = p.city || p.county;
+        const state = stateCode(p.state);
+        return {
+          id: `REV-${lat.toFixed(5)}-${lon.toFixed(5)}`,
+          name,
+          displayName: [name, city && city !== name ? city : null, state, p.country].filter(Boolean).join(', '),
+          category: 'Custom Location',
+          latitude: lat,
+          longitude: lon,
+          city,
+          state,
+          country: p.country,
+          zipCode: p.postcode,
+          timezone: lookupTimezone(lat, lon),
+          isDemoOnly: false,
+          resultType: classifyPhoton(p),
+        };
+      }
+    }
+  } catch {
+    // Fall through to Nominatim
+  }
+
+  // 2. Try Nominatim reverse
+  try {
+    const nomUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`;
+    const res = await fetchWithTimeout(nomUrl, timeoutMs, {
+      'User-Agent': 'ThermalDecisionEngine/1.0 (hackathon demo)',
+      'Accept-Language': 'en',
+    });
+    if (res && res.ok) {
+      const data = (await res.json()) as NominatimResult;
+      if (data && (data.display_name || data.name || data.address)) {
+        const a = data.address ?? {};
+        const name = data.name || buildName({
+          street: a.road,
+          housenumber: a.house_number,
+          city: a.city || a.town || a.village || a.municipality,
+          county: a.county,
+          state: a.state,
+          country: a.country,
+        });
+        const city = a.city || a.town || a.village || a.municipality || a.county;
+        const displayNameParts = data.display_name?.split(',').map((s) => s.trim()) ?? [];
+        return {
+          id: `REV-${lat.toFixed(5)}-${lon.toFixed(5)}`,
+          name,
+          displayName: displayNameParts.slice(0, 4).join(', ') || [name, city, a.state, a.country].filter(Boolean).join(', '),
+          category: 'Custom Location',
+          latitude: lat,
+          longitude: lon,
+          city,
+          state: a.state,
+          country: a.country ?? (displayNameParts[displayNameParts.length - 1] || undefined),
+          zipCode: a.postcode,
+          timezone: lookupTimezone(lat, lon),
+          isDemoOnly: false,
+          resultType: classifyNominatim(data),
+        };
+      }
+    }
+  } catch {
+    // Fall through to local resolver
+  }
+
+  // 3. Fallback to local catalog and coordinate resolution
+  const local = searchLocations('', 50);
+  let bestDist = Infinity;
+  let bestLoc: NamedLocation | null = null;
+  for (const item of local) {
+    const dLat = item.latitude - lat;
+    const dLon = (item.longitude - lon) * Math.cos((lat * Math.PI) / 180);
+    const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestLoc = item;
+    }
+  }
+
+  // If within ~30km (~0.3 degrees), use nearest city context
+  if (bestLoc && bestDist < 0.3) {
+    return {
+      id: `GEO-${lat.toFixed(5)}-${lon.toFixed(5)}`,
+      name: `${bestLoc.city || bestLoc.name} Area (${lat.toFixed(4)}°, ${lon.toFixed(4)}°)`,
+      displayName: `${bestLoc.city || bestLoc.name}, ${bestLoc.state || ''} (${lat.toFixed(4)}°, ${lon.toFixed(4)}°)`.trim(),
+      category: 'Custom Location',
+      latitude: lat,
+      longitude: lon,
+      city: bestLoc.city,
+      state: bestLoc.state,
+      country: bestLoc.country || 'USA',
+      timezone: lookupTimezone(lat, lon),
+      isDemoOnly: false,
+      resultType: 'neighborhood',
+    };
+  }
+
+  return {
+    id: `GEO-${lat.toFixed(5)}-${lon.toFixed(5)}`,
+    name: `Location (${lat.toFixed(4)}°, ${lon.toFixed(4)}°)`,
+    displayName: `Custom Coordinates (${lat.toFixed(4)}°, ${lon.toFixed(4)}°)`,
+    category: 'Custom Location',
+    latitude: lat,
+    longitude: lon,
+    timezone: lookupTimezone(lat, lon),
+    isDemoOnly: false,
+    resultType: 'address',
+  };
+}
+

@@ -21,6 +21,20 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 // Minimal inline type for MapLibre GeoJSON source data casts.
 type GeoJSONFC = FeatureCollection;
 
+export const CANDIDATE_COLOR_PALETTE = [
+  '#3b82f6', // Blue
+  '#8b5cf6', // Purple/Violet
+  '#06b6d4', // Cyan
+  '#10b981', // Emerald
+  '#f59e0b', // Amber
+  '#f97316', // Orange
+];
+
+export function getCandidateColor(index: number, isWinner?: boolean): string {
+  if (isWinner) return '#ec4899';
+  return CANDIDATE_COLOR_PALETTE[index % CANDIDATE_COLOR_PALETTE.length];
+}
+
 interface ThermalMapProps {
   /**
    * User-selected analysis center (operating location).
@@ -993,12 +1007,12 @@ function alignThermalCellsToAoi(spatialField: PolygonAOI, aoi: PolygonAOI | null
     }
 
     // Add or update candidate markers
-    for (const item of activeCandidates) {
+    activeCandidates.forEach((item, index) => {
       if (
         !Number.isFinite(item.location.latitude) || item.location.latitude < -90 || item.location.latitude > 90 ||
         !Number.isFinite(item.location.longitude) || item.location.longitude < -180 || item.location.longitude > 180
       ) {
-        continue;
+        return;
       }
 
       const isWinner = item.locationId === recommendedLocationId;
@@ -1049,6 +1063,8 @@ function alignThermalCellsToAoi(spatialField: PolygonAOI, aoi: PolygonAOI | null
         </div>
       `;
 
+      const siteColor = getCandidateColor(index, isWinner);
+
       const markerInnerHtml = isWinner
         ? `
           <span style="
@@ -1068,12 +1084,12 @@ function alignThermalCellsToAoi(spatialField: PolygonAOI, aoi: PolygonAOI | null
         : `
           <span style="
             position:absolute;inset:0;border-radius:50%;
-            background:${isDark ? '#3b82f6' : '#2563eb'};
+            background:${siteColor};
             border:2.5px solid #ffffff;
             box-shadow:0 2px 8px rgba(0,0,0,0.45);
             display:flex;align-items:center;justify-content:center;
-            color:#ffffff;font-size:10px;font-weight:800;line-height:1;
-          ">●</span>
+            color:#ffffff;font-size:11px;font-weight:800;line-height:1;
+          ">${index + 1}</span>
         `;
 
       if (existing) {
@@ -1088,19 +1104,24 @@ function alignThermalCellsToAoi(spatialField: PolygonAOI, aoi: PolygonAOI | null
         el.className = 'candidate-marker';
         el.setAttribute('data-testid', isWinner ? 'recommended-site-marker' : 'candidate-site-marker');
         el.setAttribute('data-location-id', item.locationId);
-        el.style.cssText = [
-          'position:relative',
-          'width:28px',
-          'height:28px',
-          `cursor:${candidatesDraggable ? 'grab' : 'pointer'}`,
-          `z-index:${isWinner ? 30 : 20}`,
-        ].join(';');
-        el.innerHTML = markerInnerHtml;
+        el.style.zIndex = isWinner ? '30' : '20';
+        el.style.cursor = candidatesDraggable ? 'grab' : 'pointer';
+
+        // Only update innerHTML if winner state or site index changed, preventing DOM destruction during drag
+        const prevWinner = el.getAttribute('data-is-winner') === 'true';
+        const prevIndex = el.getAttribute('data-site-index');
+        if (prevWinner !== isWinner || prevIndex !== String(index)) {
+          el.setAttribute('data-is-winner', String(isWinner));
+          el.setAttribute('data-site-index', String(index));
+          el.innerHTML = markerInnerHtml;
+        }
       } else {
         const el = document.createElement('div');
         el.className = 'candidate-marker';
         el.setAttribute('data-testid', isWinner ? 'recommended-site-marker' : 'candidate-site-marker');
         el.setAttribute('data-location-id', item.locationId);
+        el.setAttribute('data-is-winner', String(isWinner));
+        el.setAttribute('data-site-index', String(index));
         el.style.cssText = [
           'position:relative',
           'width:28px',
@@ -1161,7 +1182,7 @@ function alignThermalCellsToAoi(spatialField: PolygonAOI, aoi: PolygonAOI | null
 
         candidateMarkersRef.current.set(item.locationId, entry);
       }
-    }
+    });
   }, [mapReady, candidates, recommendedLocationId, candidatesDraggable, layerVisibility.candidates, theme, showToast]);
 
   // ─────────────────────────────────────────────────────────────────────

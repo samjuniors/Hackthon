@@ -651,7 +651,13 @@ export default function WorkspacePage() {
 
     activeRequestIdRef.current++; // Invalidate any in-flight requests
 
-    const nextLoc: NamedLocation = { ...loc, latitude: point.latitude, longitude: point.longitude };
+    const nextLoc: NamedLocation = {
+      ...loc,
+      name: `Location (${point.latitude.toFixed(4)}°, ${point.longitude.toFixed(4)}°)`,
+      displayName: `Coordinates (${point.latitude.toFixed(4)}°, ${point.longitude.toFixed(4)}°)`,
+      latitude: point.latitude,
+      longitude: point.longitude,
+    };
     setSelectedLocation(nextLoc);
     selectedLocationRef.current = nextLoc;
 
@@ -667,13 +673,41 @@ export default function WorkspacePage() {
     // Invalidate any previous analysis
     clearResults();
 
-    // Re-validate candidates against the recomputed AOI
-    candidateSites.validateAgainstAoi(
-      createAoiFromSpan(nextCenter, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)
-    );
+    // Clear candidate sites on operating location move (spatial context change)
+    candidateSites.clearSites();
+
+    // Asynchronously reverse geocode to resolve place/city/street/state dynamically
+    const moveEpoch = activeRequestIdRef.current;
+    fetch(`/api/location/search?lat=${point.latitude}&lon=${point.longitude}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (moveEpoch !== activeRequestIdRef.current) return; // Stale move
+        if (data?.success && data.location) {
+          const resolved = data.location as NamedLocation;
+          setSelectedLocation((current) => {
+            if (!current) return null;
+            return {
+              ...current,
+              name: resolved.name || current.name,
+              displayName: resolved.displayName || current.displayName,
+              city: resolved.city || current.city,
+              state: resolved.state || current.state,
+              country: resolved.country || current.country,
+              zipCode: resolved.zipCode || current.zipCode,
+              timezone: resolved.timezone || current.timezone,
+            };
+          });
+          if (resolved.state) {
+            setRegionName(resolved.state);
+          }
+        }
+      })
+      .catch(() => {
+        // Silently preserve coordinate naming on network failure
+      });
 
     requestCamera('fit-aoi');
-  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape, requestCamera]);
+  }, [candidateSites, clearResults, requestCamera]);
 
   /**
    * Candidate site DRAGGED to a new point INSIDE the AOI.
@@ -801,7 +835,8 @@ export default function WorkspacePage() {
     candidateSites.addSiteAt(loc.latitude, loc.longitude, loc.name.split(',')[0], 'search');
     activeRequestIdRef.current++;
     clearResults();
-  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+    requestCamera('fit-aoi');
+  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape, requestCamera]);
 
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -999,13 +1034,16 @@ export default function WorkspacePage() {
   //             captured sites). No capture → NO candidates (never synthetic,
   //             never Manhattan candidates for another location).
   //   LIVE    → the user's real candidate sites only.
-  const displayCandidates: CandidateLocation[] = mode === 'FIXTURE'
-    ? (demoCaptureAvailable ? DEMO_CANDIDATE_SITES : [])
-    : candidateSites.sites.map((s) => ({
-        locationId: s.locationId,
-        name: s.name,
-        location: s.location,
-      }));
+  const displayCandidates: CandidateLocation[] = useMemo(() => {
+    if (mode === 'FIXTURE') {
+      return demoCaptureAvailable ? DEMO_CANDIDATE_SITES : [];
+    }
+    return candidateSites.sites.map((s) => ({
+      locationId: s.locationId,
+      name: s.name,
+      location: s.location,
+    }));
+  }, [mode, demoCaptureAvailable, candidateSites.sites]);
 
   // Resolution display (Section 2): DEMO shows the fixture's ACTUAL captured
   // granularity; LIVE shows the provider granularity that will be sent.
@@ -1137,6 +1175,7 @@ export default function WorkspacePage() {
               addSiteMode={addSiteMode}
               onAddSiteFromSearch={handleAddSiteFromSearch}
               fixtureGranularity={FIXTURE_DISPLAY_GRANULARITY}
+              activeStateFilter={regionDisplayName || selectedLocation?.state}
             />
           </div>
 

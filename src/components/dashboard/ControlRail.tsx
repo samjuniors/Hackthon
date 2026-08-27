@@ -9,6 +9,7 @@ import type { NamedLocation, ProviderStatus, FortyGuardHealthResponse, AIHealthR
 import type { DataSourceMode } from '@/types/provenance';
 import type { LocationPoint } from '@/types/domain';
 import type { CandidateSite } from '@/hooks/use-candidate-sites';
+import { getCandidateColor } from '@/components/ThermalMap';
 import { useUserPreferences, AOI_SPAN_PRESETS_LOCAL } from '@/lib/user-preferences';
 import { aoiSpanLabel } from '@/lib/spatial/aoi';
 import { isLocationCoveredByFixture } from '@/lib/location/search';
@@ -86,6 +87,8 @@ interface ControlRailProps {
   generateDisabled?: boolean;
   /** Human reason shown next to a disabled Generate (Section 11). */
   generateDisabledReason?: string;
+  /** Active geographic region or state code (e.g. 'TX', 'CA', 'New York') for preset filtering. */
+  activeStateFilter?: string;
 }
 
 /** Format a metres value as a compact label (1000 → "1km"). */
@@ -128,6 +131,7 @@ export function ControlRail({
   generateDisabled = false,
   generateDisabledReason,
   demoCaptureAvailable = false,
+  activeStateFilter,
 }: ControlRailProps) {
   const [prefs, setters] = useUserPreferences();
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -227,6 +231,7 @@ export function ControlRail({
           onSelectLocation={onSelectLocation}
           onSwitchToLive={onSwitchToLive}
           onClearLocation={onClearLocation}
+          activeStateFilter={activeStateFilter}
         />
 
         {/* ── State-level selection context (Section 13) ── */}
@@ -452,6 +457,7 @@ export function ControlRail({
                     }}
                     onSwitchToLive={undefined}
                     compact
+                    activeStateFilter={activeStateFilter}
                   />
                   <p className="text-[9px] text-text-dimmed mt-1">
                     Only sites inside the analysis area can be added.
@@ -476,7 +482,13 @@ export function ControlRail({
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-mono font-bold text-text-dimmed flex-shrink-0">{idx + 1}.</span>
+                        <span
+                          className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-mono font-bold text-white flex-shrink-0 shadow-sm"
+                          style={{ backgroundColor: getCandidateColor(idx) }}
+                          title={`Site ${idx + 1}`}
+                        >
+                          {idx + 1}
+                        </span>
                         {renamingId === site.locationId ? (
                           <input
                             autoFocus

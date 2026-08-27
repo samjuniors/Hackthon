@@ -1,0 +1,1336 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+     4→import dynamic from 'next/dynamic';
+     5→
+     6→import { Header } from '@/components/dashboard/Header';
+     7→import { ControlRail } from '@/components/dashboard/ControlRail';
+     8→import { ThermalMapCanvas } from '@/components/dashboard/ThermalMapCanvas';
+     9→import { RecommendedOperation } from '@/components/dashboard/RecommendedOperation';
+    10→import { TopCandidates } from '@/components/dashboard/TopCandidates';
+    11→import { WhatIfPanel } from '@/components/dashboard/WhatIfPanel';
+    12→import { GroundedExplanation } from '@/components/dashboard/GroundedExplanation';
+    13→import { ErrorBanner } from '@/components/dashboard/ErrorBanner';
+    14→import { SettingsDrawer } from '@/components/SettingsDrawer';
+    15→import { useTheme } from '@/components/ThemeProvider';
+    16→
+    17→import type {
+    18→  DecisionResult,
+    19→  SpatialDecisionResult,
+    20→  JointDecisionResult,
+    21→  ScenarioAnalysisResult,
+    22→  WhatIfScenarioResult,
+    23→  PolygonAOI,
+    24→  CandidateLocation,
+    25→  LocationPoint,
+    26→} from '@/types/domain';
+    27→import type { DecisionExplanation } from '@/types/explanation';
+    28→import type { DataSourceMode } from '@/types/provenance';
+    29→import type {
+    30→  ProviderStatus,
+    31→  FortyGuardHealthResponse,
+    32→  AIHealthResponse,
+    33→  NamedLocation,
+    34→  ProductionErrorDetails,
+    35→} from '@/types/provider';
+    36→import type { ProviderCapability } from '@/types/fortyguard-capability';
+    37→import { METROPOLITAN_LOCATIONS, isLocationCoveredByFixture } from '@/lib/location/search';
+    38→import { useTempUnit } from '@/lib/temperature';
+    39→import { useUserPreferences } from '@/lib/user-preferences';
+    40→import { useCandidateSites } from '@/hooks/use-candidate-sites';
+    41→import {
+    42→  createAoiFromSpan,
+    43→  isPointInAoi,
+    44→} from '@/lib/spatial/aoi';
+    45→import { validateAnalysisAoi } from '@/lib/spatial/aoi-validation';
+    46→import { getRegionBoundaryPolygon, getInvertedMaskPolygon, resolveRegionDisplayName } from '@/lib/spatial/region-boundaries';
+    47→import { deriveWorkflowStage, deriveGenerateReadiness } from '@/lib/workspace/stage';
+    48→import { cameraForResultType, type SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
+    49→import {
+    50→  FIXTURE_DISPLAY_GRANULARITY,
+    51→  FIXTURE_CAPTURE_REQUEST_AOI,
+    52→  FIXTURE_CAPTURE_CENTER,
+    53→  DEMO_CANDIDATE_SITES,
+    54→  fixtureCaptureSpanLabel,
+    55→  doesAoiIntersectFixtureExtent,
+    56→} from '@/lib/fortyguard/fixture-display';
+    57→import type { WorkflowStage } from '@/lib/workspace/stage';
+    58→import {
+    59→  type AnalysisTemporalInput,
+    60→  defaultTemporalInput,
+    61→  buildFixtureTemporalInput,
+    62→  deriveDurationHours,
+    63→  effectiveTimeBounds,
+    64→  isValidDateStr,
+    65→  isValidTimeStr,
+    66→  FIXTURE_TIMEZONE,
+    67→} from '@/lib/temporal/analysis-window';
+    68→
+    69→// Dynamically import MapLibre map component to bypass SSR canvas requirement
+    70→const ThermalMap = dynamic(() => import('@/components/ThermalMap'), {
+    71→  ssr: false,
+    72→  loading: () => (
+    73→    <div className="w-full h-[420px] sm:h-[480px] lg:h-[520px] rounded-xl bg-surface-card flex items-center justify-center border border-border">
+    74→      <span className="text-text-muted text-xs font-mono animate-pulse">
+    75→        Initializing Hyperlocal Thermal Canvas…
+    76→      </span>
+    77→    </div>
+    78→  ),
+    79→});
+    80→
+    81→// ─────────────────────────────────────────────────────────────────────────────
+    82→// Utilities
+    83→// ─────────────────────────────────────────────────────────────────────────────
+    84→
+    85→/** Neutral continental-US center for the EMPTY workspace (no implied analysis). */
+    86→const DEFAULT_EMPTY_CENTER: LocationPoint = { latitude: 39.8283, longitude: -98.5795 };
+    87→
+    88→async function safeJsonFetch<T = Record<string, unknown>>(
+    89→  url: string,
+    90→  init?: RequestInit
+    91→): Promise<{ ok: boolean; data: T | null }> {
+    92→  try {
+    93→    const res = await fetch(url, init);
+    94→    const text = await res.text();
+    95→    if (!text || !text.trim()) return { ok: res.ok, data: null };
+    96→    try {
+    97→      return { ok: res.ok, data: JSON.parse(text) as T };
+    98→    } catch {
+    99→      return { ok: false, data: null };
+   100→    }
+   101→  } catch {
+   102→    return { ok: false, data: null };
+   103→  }
+   104→}
+   105→
+   106→// ─────────────────────────────────────────────────────────────────────────────
+   107→// Page
+   108→// ─────────────────────────────────────────────────────────────────────────────
+   109→
+   110→export default function WorkspacePage() {
+   111→  const [prefs, prefSetters] = useUserPreferences();
+   112→  const [unit, setUnit] = useTempUnit();
+   113→  const { theme, toggleTheme } = useTheme();
+   114→
+   115→  const mode: DataSourceMode = prefs.dataSourceMode;
+   116→
+   117→  // ── Input state ──
+   118→  // EMPTY workspace state: NO location is pre-selected. The captured DEMO
+   119→  // dataset exists as a DATA SOURCE, but the app must NOT open with the
+   120→  // Manhattan analysis already loaded — the user explicitly selects a
+   121→  // location to begin (DEMO capture for it, or LIVE).
+   122→  const [selectedLocation, setSelectedLocation] = useState<NamedLocation | null>(null);
+   123→
+   124→  // ── Explicit WHEN inputs (Section 14) ──
+   125→  const [temporalInput, setTemporalInput] = useState<AnalysisTemporalInput>(() =>
+   126→    buildFixtureTemporalInput()
+   127→  );
+   128→
+   129→  // ── Canonical AOI center (movable in LIVE — Section 4) ──
+   130→  // Neutral continental-US view until a location is selected. On selection the
+   131→  // AOI centers on the location (LIVE) or on the captured analysis area (DEMO).
+   132→  // In LIVE the moved geometry is canonical: rendered == sent to FortyGuard.
+   133→  const [aoiCenter, setAoiCenter] = useState<LocationPoint>(() => ({
+   134→    latitude: DEFAULT_EMPTY_CENTER.latitude,
+   135→    longitude: DEFAULT_EMPTY_CENTER.longitude,
+   136→  }));
+   137→
+   138→  // ── Geographic region context (Section 5 + 13) ──
+   139→  // A state/region selection sets CONTEXT ONLY — it never moves the analysis
+   140→  // point to the state's geographic center.
+   141→  const [regionName, setRegionName] = useState<string | undefined>(undefined);
+   142→  const [stateLevelSelection, setStateLevelSelection] = useState<NamedLocation | null>(null);
+   143→
+   144→  // ── Camera control (Section 12) ──
+   145→  const [cameraBehavior, setCameraBehavior] = useState<CameraBehavior>('fit-aoi');
+   146→  const [cameraNonce, setCameraNonce] = useState(0);
+   147→  const requestCamera = useCallback((behavior: CameraBehavior) => {
+   148→    setCameraBehavior(behavior);
+   149→    setCameraNonce((n) => n + 1);
+   150→  }, []);
+   151→
+   152→  // ── Add-candidate-site mode (Section 8) ──
+   153→  const [addSiteMode, setAddSiteMode] = useState(false);
+   154→
+   155→  // ── Candidate sites (REAL sites only — never generated) ──
+   156→  const candidateSites = useCandidateSites();
+   157→
+   158→  // ── DEMO capture availability (DEMO is a DATA SOURCE, not a default state) ──
+   159→  // A genuine capture exists ONLY for locations inside the captured field
+   160→  // (Lower Manhattan). Everything else in DEMO is an honest no-capture state.
+   161→  const demoCaptureAvailable =
+   162→    mode === 'FIXTURE' && !!selectedLocation && isLocationCoveredByFixture(selectedLocation);
+   163→
+   164→  // ── Canonical Analysis AOI (ONE geometry: rendered == sent) ──
+   165→  //   EMPTY            → none (no analysis without a location).
+   166→  //   DEMO (captured)  → the CAPTURED REQUEST AREA (fixture metadata mirror):
+   167→  //                      the exact polygon_aoi the genuine FortyGuard capture
+   168→  //                      was requested with. Fixed — never resized/dragged.
+   169→  //   DEMO (no capture)→ none (no captured analysis area for this location).
+   170→  //   LIVE             → the user's span-based AOI (draggable, canonical).
+   171→  const analysisAoi: PolygonAOI | null = useMemo(() => {
+   172→    if (!selectedLocation) return null;
+   173→    if (mode === 'FIXTURE') return demoCaptureAvailable ? FIXTURE_CAPTURE_REQUEST_AOI : null;
+   174→    return createAoiFromSpan(
+   175→      { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude },
+   176→      prefs.analysisAoiSpanMetres,
+   177→      prefs.analysisAreaShape
+   178→    );
+   179→  }, [selectedLocation, mode, demoCaptureAvailable, prefs.analysisAreaShape, prefs.analysisAoiSpanMetres]);
+   180→
+   181→  // Geographic region boundary polygon (geographic CONTEXT — never provider coverage)
+   182→  const regionBoundary: PolygonAOI | null = useMemo(
+   183→    () => getRegionBoundaryPolygon(
+   184→      regionName,
+   185→      selectedLocation?.city,
+   186→      aoiCenter.latitude,
+   187→      aoiCenter.longitude,
+   188→    ),
+   189→    [regionName, selectedLocation, aoiCenter.latitude, aoiCenter.longitude],
+   190→  );
+   191→
+   192→  // Human display name of the active geographic region ("New York", "California"…).
+   193→  const regionDisplayName = useMemo(() => {
+   194→    const name = (regionBoundary?.features?.[0]?.properties as { name?: string } | undefined)?.name;
+   195→    return name ? name.replace(/\s*(State|Regional)\s*Boundary$/i, '').trim() : regionName;
+   196→  }, [regionBoundary, regionName]);
+   197→
+   198→  // Inverted mask polygon that dims everything OUTSIDE the selected region
+   199→  const regionMask: PolygonAOI | null = useMemo(
+   200→    () => getInvertedMaskPolygon(regionBoundary),
+   201→    [regionBoundary],
+   202→  );
+   203→
+   204→  // ── Provider health + capability state ──
+   205→  const [fgStatus, setFgStatus] = useState<ProviderStatus>('UNKNOWN');
+   206→  const [fgHealth, setFgHealth] = useState<FortyGuardHealthResponse | null>(null);
+   207→  const [capability, setCapability] = useState<ProviderCapability | null>(null);
+   208→  const [aiStatus, setAiStatus] = useState<ProviderStatus>('UNKNOWN');
+   209→  const [aiHealth, setAiHealth] = useState<AIHealthResponse | null>(null);
+   210→
+   211→  // ── Decision pipeline state ──
+   212→  const [loading, setLoading] = useState(false);
+   213→  const [decision, setDecision] = useState<DecisionResult | null>(null);
+   214→  const [spatialDecision, setSpatialDecision] = useState<SpatialDecisionResult | null>(null);
+   215→  const [jointDecision, setJointDecision] = useState<JointDecisionResult | null>(null);
+   216→  const [scenarioAnalysis, setScenarioAnalysis] = useState<ScenarioAnalysisResult | null>(null);
+   217→  const [selectedScenarioId, setSelectedScenarioId] = useState('scenario-temporal-shift');
+   218→  const [explanation, setExplanation] = useState<DecisionExplanation | null>(null);
+   219→  const [explaining, setExplaining] = useState(false);
+   220→  const [spatialField, setSpatialField] = useState<PolygonAOI | null>(null);
+   221→  const [spatialFieldMeta, setSpatialFieldMeta] = useState<{
+   222→    baseTimestamp: string;
+   223→    coverageType: string;
+   224→    description: string;
+   225→    totalEvaluatedHours: number;
+   226→  } | null>(null);
+   227→  const [errorDetails, setErrorDetails] = useState<ProductionErrorDetails | null>(null);
+   228→
+   229→  // ── UI state ──
+   230→  const [settingsOpen, setSettingsOpen] = useState(false);
+   231→
+   232→  // ── Refs (stable values read inside async callbacks) ──
+   233→  const activeRequestIdRef = useRef(0);
+   234→  const modeRef = useRef(mode);
+   235→  const selectedLocationRef = useRef(selectedLocation);
+   236→  const aoiCenterRef = useRef(aoiCenter);
+   237→  const temporalInputRef = useRef(temporalInput);
+   238→  const preferredProviderRef = useRef(prefs.preferredAIProvider);
+   239→  const selectedScenarioIdRef = useRef(selectedScenarioId);
+   240→  const jointDecisionRef = useRef<JointDecisionResult | null>(null);
+   241→  const scenarioAnalysisRef = useRef<ScenarioAnalysisResult | null>(null);
+   242→  const didMountRef = useRef(false);
+   243→  const candidateSitesRef = useRef(candidateSites.sites);
+   244→  const regionBoundaryRef = useRef(regionBoundary);
+   245→  const regionDisplayNameRef = useRef(regionDisplayName);
+   246→
+   247→  // Sync refs whenever the source values change
+   248→  useEffect(() => {
+   249→    modeRef.current = mode;
+   250→    selectedLocationRef.current = selectedLocation;
+   251→    aoiCenterRef.current = aoiCenter;
+   252→    temporalInputRef.current = temporalInput;
+   253→    preferredProviderRef.current = prefs.preferredAIProvider;
+   254→    selectedScenarioIdRef.current = selectedScenarioId;
+   255→    jointDecisionRef.current = jointDecision;
+   256→    scenarioAnalysisRef.current = scenarioAnalysis;
+   257→    candidateSitesRef.current = candidateSites.sites;
+   258→    regionBoundaryRef.current = regionBoundary;
+   259→    regionDisplayNameRef.current = regionDisplayName;
+   260→  }, [mode, selectedLocation, aoiCenter, temporalInput, prefs.preferredAIProvider, selectedScenarioId, jointDecision, scenarioAnalysis, candidateSites.sites, regionBoundary, regionDisplayName]);
+   261→
+   262→  // ───────────────────────────────────────────────────────────────────────────
+   263→  // Clear stale results (Section 20: stale thermal cleared on location/AOI change)
+   264→  // ───────────────────────────────────────────────────────────────────────────
+   265→  const clearResults = useCallback(() => {
+   266→    setDecision(null);
+   267→    setSpatialDecision(null);
+   268→    setJointDecision(null);
+   269→    setScenarioAnalysis(null);
+   270→    setExplanation(null);
+   271→    setSpatialField(null);
+   272→    setSpatialFieldMeta(null);
+   273→    setErrorDetails(null);
+   274→  }, []);
+   275→
+   276→  // ───────────────────────────────────────────────────────────────────────────
+   277→  // Data-fetching handlers (stable; read fresh values via refs)
+   278→  // ───────────────────────────────────────────────────────────────────────────
+   279→
+   280→  const checkFortyGuardHealth = useCallback(async (checkMode?: DataSourceMode) => {
+   281→    const m = checkMode ?? modeRef.current;
+   282→    setFgStatus('CHECKING');
+   283→    const { ok, data } = await safeJsonFetch<{
+   284→      success: boolean;
+   285→      health: FortyGuardHealthResponse;
+   286→      capability?: ProviderCapability | null;
+   287→    }>('/api/health/fortyguard', {
+   288→      method: 'POST',
+   289→      headers: { 'content-type': 'application/json' },
+   290→      body: JSON.stringify({ mode: m }),
+   291→    });
+   292→    if (ok && data?.success && data.health) {
+   293→      setFgHealth(data.health);
+   294→      setFgStatus(data.health.connected ? 'CONNECTED' : 'ERROR');
+   295→      if (data.capability) setCapability(data.capability);
+   296→    } else {
+   297→      setFgStatus('ERROR');
+   298→    }
+   299→  }, []);
+   300→
+   301→  const checkAIHealth = useCallback(async () => {
+   302→    setAiStatus('CHECKING');
+   303→    const { ok, data } = await safeJsonFetch<{ success: boolean; health: AIHealthResponse }>('/api/health/ai', {
+   304→      method: 'POST',
+   305→      headers: { 'content-type': 'application/json' },
+   306→      body: JSON.stringify({ preferredProvider: preferredProviderRef.current }),
+   307→    });
+   308→    if (ok && data?.success && data.health) {
+   309→      setAiHealth(data.health);
+   310→      setAiStatus(data.health.connected ? 'CONNECTED' : (data.health.configured ? 'ERROR' : 'UNKNOWN'));
+   311→    } else {
+   312→      setAiStatus('ERROR');
+   313→    }
+   314→  }, []);
+   315→
+   316→  const fetchExplanation = useCallback(async (jointDec: JointDecisionResult, activeScen?: WhatIfScenarioResult) => {
+   317→    // Capture the request epoch so a Reset / location change invalidates the
+   318→    // explanation response exactly like the decision response.
+   319→    const requestId = activeRequestIdRef.current;
+   320→    setExplaining(true);
+   321→    try {
+   322→      const { ok, data } = await safeJsonFetch<{ success: boolean; explanation: DecisionExplanation }>('/api/explain', {
+   323→        method: 'POST',
+   324→        headers: { 'content-type': 'application/json' },
+   325→        body: JSON.stringify({
+   326→          jointDecision: jointDec,
+   327→          activeScenario: activeScen,
+   328→          preferredProvider: preferredProviderRef.current,
+   329→        }),
+   330→      });
+   331→      if (requestId !== activeRequestIdRef.current) return; // stale — discarded
+   332→      if (ok && data?.success && data.explanation) {
+   333→        setExplanation(data.explanation);
+   334→      }
+   335→    } catch {
+   336→      // Silently keep the previous explanation; the deterministic fallback is server-side.
+   337→    } finally {
+   338→      if (requestId === activeRequestIdRef.current) setExplaining(false);
+   339→    }
+   340→  }, []);
+   341→
+   342→  /**
+   343→   * Run the decision pipeline with an EXPLICIT canonical AOI geometry.
+   344→   * The geometry passed here is EXACTLY what is rendered on the map — the
+   345→   * rendered AOI == the API AOI, including after the user drags it.
+   346→   */
+   347→  const runDecisionPipeline = useCallback(async (
+   348→    loc: NamedLocation | null,
+   349→    aoi: PolygonAOI,
+   350→    temporal: AnalysisTemporalInput,
+   351→    tz: string,
+   352→    dataSourceMode: DataSourceMode,
+   353→    candidates?: CandidateLocation[],
+   354→  ) => {
+   355→    const requestId = ++activeRequestIdRef.current;
+   356→    setLoading(true);
+   357→    setErrorDetails(null);
+   358→
+   359→    // EMPTY state guard: no location selected → nothing to analyse.
+   360→    if (!loc) {
+   361→      setLoading(false);
+   362→      setErrorDetails({
+   363→        code: 'NO_LOCATION_SELECTED',
+   364→        message: 'No location selected yet.',
+   365→        recoverySuggestion: 'Search a city, street, or address (or pick a preset) to select the location to analyse, then Generate again.',
+   366→        category: 'VALIDATION',
+   367→      });
+   368→      return;
+   369→    }
+   370→
+   371→    // DEMO data-source gate: a location without a genuine capture NEVER gets
+   372→    // Manhattan cells, translated cells, synthetic candidates, or any request.
+   373→    if (dataSourceMode === 'FIXTURE' && !isLocationCoveredByFixture(loc)) {
+   374→      setLoading(false);
+   375→      setErrorDetails({
+   376→        code: 'NO_DEMO_CAPTURE',
+   377→        message: 'NO DEMO CAPTURE AVAILABLE FOR THIS LOCATION',
+   378→        recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate sites, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
+   379→        category: 'COVERAGE',
+   380→      });
+   381→      return;
+   382→    }
+   383→
+   384→    // Validate the AOI against every honest constraint (Section 6):
+   385→    //   documented provider limit · geographic bounds · region containment
+   386→    //   (only when a canonical region boundary is active).
+   387→    // The geometry is NEVER silently adjusted — an invalid AOI is reported
+   388→    // with a recovery action and no provider request is made.
+   389→    const aoiCheck = validateAnalysisAoi(aoi, {
+   390→      regionBoundary: regionBoundaryRef.current,
+   391→      regionDisplayName: regionDisplayNameRef.current,
+   392→    });
+   393→    if (!aoiCheck.valid) {
+   394→      setLoading(false);
+   395→      setErrorDetails({
+   396→        code: aoiCheck.code ?? 'INVALID_AOI',
+   397→        message: aoiCheck.message,
+   398→        recoverySuggestion: aoiCheck.recovery,
+   399→        category: 'VALIDATION',
+   400→      });
+   401→      return;
+   402→    }
+   403→
+   404→    // Validate the explicit temporal input before sending (Section 14).
+   405→    if (!isValidDateStr(temporal.date) || !isValidTimeStr(temporal.startTime) || !isValidTimeStr(temporal.endTime)) {
+   406→      setLoading(false);
+   407→      setErrorDetails({
+   408→        code: 'TEMPORAL_INPUT_INVALID',
+   409→        message: 'The WHEN inputs are incomplete or invalid. Set a valid date and HH:MM times.',
+   410→        recoverySuggestion: 'Set the Date, Start, and End fields in the WHEN section.',
+   411→        category: 'VALIDATION',
+   412→      });
+   413→      return;
+   414→    }
+   415→
+   416→    // LIVE mode: candidates are REQUIRED (Section 8 — never fabricated).
+   417→    if (dataSourceMode === 'LIVE' && (!candidates || candidates.length === 0)) {
+   418→      setLoading(false);
+   419→      setErrorDetails({
+   420→        code: 'CANDIDATES_REQUIRED',
+   421→        message: 'No candidate sites provided. LIVE mode never fabricates candidate sites — add at least one candidate site inside the analysis area.',
+   422→        recoverySuggestion: 'Use "+ Site" on the map (click inside the analysis area) or add a site from search, then Generate again.',
+   423→        category: 'VALIDATION',
+   424→      });
+   425→      return;
+   426→    }
+   427→
+   428→    // LIVE mode: every candidate must lie INSIDE the canonical AOI (Section 9).
+   429→    if (dataSourceMode === 'LIVE' && candidates) {
+   430→      const outside = candidates.find((c) => !isPointInAoi(c.location, aoi));
+   431→      if (outside) {
+   432→        setLoading(false);
+   433→        setErrorDetails({
+   434→          code: 'CANDIDATE_OUTSIDE_AOI',
+   435→          message: `Candidate site "${outside.name}" is outside the analysis area.`,
+   436→          recoverySuggestion: 'Move the candidate inside the analysis area (or drag the AOI to cover it), then Generate again.',
+   437→          category: 'VALIDATION',
+   438→        });
+   439→        return;
+   440→      }
+   441→    }
+   442→
+   443→    // DEMO capture-extent gate (P2): DEMO replays ONE fixed captured field.
+   444→    // If the AOI was dragged outside the captured extent, no provider data can
+   445→    // exist for it — we do NOT invent thermal data and do NOT call the API.
+   446→    if (dataSourceMode === 'FIXTURE' && !doesAoiIntersectFixtureExtent(aoi)) {
+   447→      setLoading(false);
+   448→      setErrorDetails({
+   449→        code: 'AOI_OUTSIDE_DEMO_CAPTURE',
+   450→        message: 'The selected analysis area is outside the captured DEMO dataset. DEMO uses one fixed captured FortyGuard field — moving the AOI does not produce new provider data.',
+   451→        recoverySuggestion: 'The captured analysis area is fixed to the genuine capture — switch to LIVE mode to request fresh FortyGuard data for a different area.',
+   452→        category: 'COVERAGE',
+   453→      });
+   454→      return;
+   455→    }
+   456→
+   457→    // DEMO canonical AOI: the CAPTURED REQUEST AREA (the genuine polygon_aoi
+   458→    // the capture was requested with — mirrored from the fixture metadata).
+   459→    // The captured field is replayed verbatim inside it; DEMO never submits a
+   460→    // client-invented geometry for the capture. (LIVE submits the user's
+   461→    // canonical AOI exactly as rendered — including any drag.)
+   462→    const requestAoi = dataSourceMode === 'FIXTURE' ? FIXTURE_CAPTURE_REQUEST_AOI : aoi;
+   463→
+   464→    try {
+   465→      const body: Record<string, unknown> = {
+   466→        latitude: loc.latitude,
+   467→        longitude: loc.longitude,
+   468→        durationHours: deriveDurationHours(temporal),
+   469→        mode: dataSourceMode,
+   470→        // DEMO sends the capture's ACTUAL granularity (100m); LIVE sends the
+   471→        // user-selected provider granularity.
+   472→        granularity: dataSourceMode === 'FIXTURE' ? FIXTURE_DISPLAY_GRANULARITY : prefs.analysisResolution,
+   473→        analysisAreaShape: prefs.analysisAreaShape,
+   474→        // Canonical analysis AOI — the EXACT geometry rendered on the map
+   475→        // (including any drag the user performed).
+   476→        analysisAoi: requestAoi,
+   477→        temporalInput: temporal,
+   478→        timezone: tz,
+   479→      };
+   480→
+   481→      // FIXTURE mode sends NO candidates — the server uses the actual three
+   482→      // captured Manhattan sites. LIVE sends the user's real candidates.
+   483→      if (dataSourceMode === 'LIVE' && candidates && candidates.length > 0) {
+   484→        body.candidates = candidates.map((c) => ({
+   485→          locationId: c.locationId,
+   486→          name: c.name,
+   487→          latitude: c.location.latitude,
+   488→          longitude: c.location.longitude,
+   489→        }));
+   490→      }
+   491→
+   492→      const { ok, data } = await safeJsonFetch<{
+   493→        success: boolean;
+   494→        decision?: DecisionResult;
+   495→        spatialDecision?: SpatialDecisionResult;
+   496→        jointDecision?: JointDecisionResult;
+   497→        scenarioAnalysis?: ScenarioAnalysisResult;
+   498→        spatialField?: PolygonAOI | null;
+   499→        spatialFieldMetadata?: typeof spatialFieldMeta;
+   500→        error?: ProductionErrorDetails;
+   501→      }>('/api/decision', {
+   502→        method: 'POST',
+   503→        headers: { 'content-type': 'application/json' },
+   504→        body: JSON.stringify(body),
+   505→      });
+   506→
+   507→      // Discard stale responses
+   508→      if (requestId !== activeRequestIdRef.current) return;
+   509→
+   510→      if (!ok || !data || !data.success || data.error) {
+   511→        setDecision(null);
+   512→        setSpatialDecision(null);
+   513→        setJointDecision(null);
+   514→        setScenarioAnalysis(null);
+   515→        setExplanation(null);
+   516→        setSpatialField(null);
+   517→        setSpatialFieldMeta(null);
+   518→        if (data?.error) {
+   519→          setErrorDetails(data.error);
+   520→        }
+   521→        if (dataSourceMode === 'LIVE') setFgStatus('ERROR');
+   522→        return;
+   523→      }
+   524→
+   525→      setDecision(data.decision ?? null);
+   526→      setSpatialDecision(data.spatialDecision ?? null);
+   527→      setJointDecision(data.jointDecision ?? null);
+   528→      setScenarioAnalysis(data.scenarioAnalysis ?? null);
+   529→      setSpatialField(data.spatialField ?? null);
+   530→      setSpatialFieldMeta(data.spatialFieldMetadata ?? null);
+   531→      setErrorDetails(null);
+   532→
+   533→      if (data.jointDecision) {
+   534→        const activeScen = data.scenarioAnalysis?.scenarios?.find(
+   535→          (s) => s.scenarioId === selectedScenarioIdRef.current
+   536→        ) ?? data.scenarioAnalysis?.scenarios?.[0];
+   537→        fetchExplanation(data.jointDecision, activeScen);
+   538→      }
+   539→    } catch {
+   540→      if (requestId !== activeRequestIdRef.current) return;
+   541→      setDecision(null);
+   542→      setSpatialDecision(null);
+   543→      setJointDecision(null);
+   544→      setScenarioAnalysis(null);
+   545→      setExplanation(null);
+   546→      setSpatialField(null);
+   547→      setSpatialFieldMeta(null);
+   548→      setErrorDetails({
+   549→        code: 'PIPELINE_NETWORK_ERROR',
+   550→        message: 'Could not reach the decision engine. Please retry.',
+   551→        recoverySuggestion: 'Check your connection and try again, or switch to DEMO mode.',
+   552→        category: 'PROVIDER',
+   553→      });
+   554→    } finally {
+   555→      if (requestId === activeRequestIdRef.current) setLoading(false);
+   556→    }
+   557→  }, [fetchExplanation, prefs.analysisResolution, prefs.analysisAreaShape]);
+   558→
+   559→  /**
+   560→   * Location selection (Section 7 + 13) — the DEMO/LIVE data-source semantics:
+   561→   *   - STATE/REGION result → geographic context ONLY: show boundary, dim the
+   562→   *     outside, fit the region. The analysis point does NOT move.
+   563→   *   - CITY/NEIGHBORHOOD/STREET/ADDRESS/POI:
+   564→   *       DEMO + genuine capture for the location → load the CAPTURED dataset
+   565→   *         (captured analysis area + 425 verbatim cells + application-defined
+   566→   *         DEMO candidates + deterministic analysis; zero provider requests).
+   567→   *       DEMO + NO capture → honest NO_DEMO_CAPTURE state: no cells, no
+   568→   *         candidates, no Manhattan data — "Switch to LIVE" offered.
+   569→   *       LIVE → configure the user's own analysis (AOI, WHEN, candidates);
+   570→   *         Generate spends credits only when explicitly pressed.
+   571→   */
+   572→  const handleSelectLocation = useCallback((loc: NamedLocation) => {
+   573→    // ── State-level selection: context only, no analysis-point move ──
+   574→    if (loc.resultType === 'state' || loc.resultType === 'region') {
+   575→      setStateLevelSelection(loc);
+   576→      setRegionName(loc.state || loc.name);
+   577→      requestCamera('fit-region');
+   578→      return;
+   579→    }
+   580→
+   581→    // ── City / neighborhood / street / address / POI selection ──
+   582→    setStateLevelSelection(null);
+   583→    setSelectedLocation(loc);
+   584→    selectedLocationRef.current = loc;
+   585→
+   586→    const nextCenter = { latitude: loc.latitude, longitude: loc.longitude };
+   587→    setAoiCenter(nextCenter);
+   588→    aoiCenterRef.current = nextCenter;
+   589→
+   590→    if (loc.state) setRegionName(loc.state);
+   591→
+   592→    // Clear stale model state (Section 20)
+   593→    clearResults();
+   594→
+   595→    // Camera: streets/addresses zoom to the point; cities fit the AOI context.
+   596→    requestCamera(cameraForResultType(loc.resultType));
+   597→
+   598→    if (modeRef.current === 'FIXTURE') {
+   599→      if (isLocationCoveredByFixture(loc)) {
+   600→        // ── Genuine capture available: load the CAPTURED dataset ──
+   601→        // The analysis area becomes the captured request AOI (fixed); the
+   602→        // WHEN anchors to the captured hour; the pipeline replays the capture
+   603→        // (zero provider requests).
+   604→        const fixtureTemporal = buildFixtureTemporalInput();
+   605→        setTemporalInput(fixtureTemporal);
+   606→        temporalInputRef.current = fixtureTemporal;
+   607→        const captureCenter = { ...FIXTURE_CAPTURE_CENTER };
+   608→        setAoiCenter(captureCenter);
+   609→        aoiCenterRef.current = captureCenter;
+   610→        // DEMO times are UTC-anchored (the capture's request hour) — never
+   611→        // silently re-anchored to the selected location's timezone.
+   612→        runDecisionPipeline(loc, FIXTURE_CAPTURE_REQUEST_AOI, fixtureTemporal, FIXTURE_TIMEZONE, 'FIXTURE');
+   613→      } else {
+   614→        // ── No capture for this location: honest NO_DEMO_CAPTURE state ──
+   615→        // No cells, no candidates, no recommendation, zero requests.
+   616→        setErrorDetails({
+   617→          code: 'NO_DEMO_CAPTURE',
+   618→          message: 'NO DEMO CAPTURE AVAILABLE FOR THIS LOCATION',
+   619→          recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate sites, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
+   620→          category: 'COVERAGE',
+   621→        });
+   622→      }
+   623→    } else {
+   624→      // LIVE: require explicit Generate (never silently spend credits)
+   625→      const liveDefault = defaultTemporalInput(loc.timezone);
+   626→      setTemporalInput(liveDefault);
+   627→      temporalInputRef.current = liveDefault;
+   628→    }
+   629→  }, [clearResults, requestCamera, runDecisionPipeline]);
+   630→
+   631→  const handleTemporalChange = useCallback((next: AnalysisTemporalInput) => {
+   632→    setTemporalInput(next);
+   633→    temporalInputRef.current = next;
+   634→  }, []);
+   635→
+   636→  const handleModeChange = useCallback((newMode: DataSourceMode) => {
+   637→    prefSetters.setDataSourceMode(newMode);
+   638→    // Side effects handled by the mode-change effect below.
+   639→  }, [prefSetters]);
+   640→
+   641→  /**
+   642→   * Operating-location marker DRAGGED on the map (Section 2 — LIVE control).
+   643→   *   drag marker → update canonical location coordinates → update location
+   644→   *   state → recompute AOI around the new point → invalidate old analysis.
+   645→   * NO automatic FortyGuard request — a new LIVE request requires explicit
+   646→   * Generate. The geographic region context follows the point honestly.
+   647→   */
+   648→  const handleMoveOperatingLocation = useCallback((point: LocationPoint) => {
+   649→    const loc = selectedLocationRef.current;
+   650→    if (!loc) return;
+   651→
+   652→    activeRequestIdRef.current++; // Invalidate any in-flight requests
+   653→
+   654→    const nextLoc: NamedLocation = {
+   655→      ...loc,
+   656→      name: `Location (${point.latitude.toFixed(4)}°, ${point.longitude.toFixed(4)}°)`,
+   657→      displayName: `Coordinates (${point.latitude.toFixed(4)}°, ${point.longitude.toFixed(4)}°)`,
+   658→      latitude: point.latitude,
+   659→      longitude: point.longitude,
+   660→    };
+   661→    setSelectedLocation(nextLoc);
+   662→    selectedLocationRef.current = nextLoc;
+   663→
+   664→    const nextCenter = { latitude: point.latitude, longitude: point.longitude };
+   665→    setAoiCenter(nextCenter);
+   666→    aoiCenterRef.current = nextCenter;
+   667→
+   668→    // Geographic region context follows the point
+   669→    const nextRegion = resolveRegionDisplayName(point.latitude, point.longitude);
+   670→    setRegionName(nextRegion);
+   671→    setStateLevelSelection(null);
+   672→
+   673→    // Invalidate any previous analysis
+   674→    clearResults();
+   675→
+   676→    // Clear candidate sites on operating location move (spatial context change)
+   677→    candidateSites.clearSites();
+   678→
+   679→    // Asynchronously reverse geocode to resolve place/city/street/state dynamically
+   680→    const moveEpoch = activeRequestIdRef.current;
+   681→    fetch(`/api/location/search?lat=${point.latitude}&lon=${point.longitude}`)
+   682→      .then((res) => (res.ok ? res.json() : null))
+   683→      .then((data) => {
+   684→        if (moveEpoch !== activeRequestIdRef.current) return; // Stale move
+   685→        if (data?.success && data.location) {
+   686→          const resolved = data.location as NamedLocation;
+   687→          setSelectedLocation((current) => {
+   688→            if (!current) return null;
+   689→            return {
+   690→              ...current,
+   691→              name: resolved.name || current.name,
+   692→              displayName: resolved.displayName || current.displayName,
+   693→              city: resolved.city || current.city,
+   694→              state: resolved.state || current.state,
+   695→              country: resolved.country || current.country,
+   696→              zipCode: resolved.zipCode || current.zipCode,
+   697→              timezone: resolved.timezone || current.timezone,
+   698→            };
+   699→          });
+   700→          if (resolved.state) {
+   701→            setRegionName(resolved.state);
+   702→          }
+   703→        }
+   704→      })
+   705→      .catch(() => {
+   706→        // Silently preserve coordinate naming on network failure
+   707→      });
+   708→
+   709→    requestCamera('fit-aoi');
+   710→  }, [candidateSites, clearResults, requestCamera]);
+   711→
+   712→  /**
+   713→   * Candidate site DRAGGED to a new point INSIDE the AOI.
+   714→   * Updates site position and invalidates previous analysis — no automatic provider request.
+   715→   */
+   716→  const handleMoveCandidate = useCallback((locationId: string, lat: number, lng: number) => {
+   717→    const loc = selectedLocationRef.current;
+   718→    if (!loc) return;
+   719→    const aoi = createAoiFromSpan(
+   720→      { latitude: loc.latitude, longitude: loc.longitude },
+   721→      prefs.analysisAoiSpanMetres,
+   722→      prefs.analysisAreaShape
+   723→    );
+   724→    const accepted = candidateSites.moveSite(locationId, lat, lng, aoi);
+   725→    if (accepted) {
+   726→      activeRequestIdRef.current++;
+   727→      clearResults();
+   728→    }
+   729→  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+   730→
+   731→  /**
+   732→   * ONE compact Reset: clears the ENTIRE analysis workspace and
+   733→   * returns to EMPTY — no page reload, no navigation.
+   734→   */
+   735→  const handleResetAnalysis = useCallback(() => {
+   736→    // Invalidate any in-flight async request FIRST
+   737→    activeRequestIdRef.current++;
+   738→    setLoading(false);
+   739→    setExplaining(false);
+   740→
+   741→    // Operating location → null
+   742→    setSelectedLocation(null);
+   743→    selectedLocationRef.current = null;
+   744→
+   745→    // AOI → reset to neutral EMPTY view
+   746→    const emptyCenter = { latitude: DEFAULT_EMPTY_CENTER.latitude, longitude: DEFAULT_EMPTY_CENTER.longitude };
+   747→    setAoiCenter(emptyCenter);
+   748→    aoiCenterRef.current = emptyCenter;
+   749→
+   750→    // Geographic region context → cleared
+   751→    setRegionName(undefined);
+   752→    setStateLevelSelection(null);
+   753→
+   754→    // Candidate sites → removed
+   755→    candidateSites.clearSites();
+   756→
+   757→    // Thermal field / decision / recommendation / explanation / errors → removed
+   758→    clearResults();
+   759→
+   760→    // WHEN → default
+   761→    const defaultTemporal = buildFixtureTemporalInput();
+   762→    setTemporalInput(defaultTemporal);
+   763→    temporalInputRef.current = defaultTemporal;
+   764→    setSelectedScenarioId('scenario-temporal-shift');
+   765→    selectedScenarioIdRef.current = 'scenario-temporal-shift';
+   766→
+   767→    // Exit add-site mode
+   768→    setAddSiteMode(false);
+   769→
+   770→    // Camera → neutral continental EMPTY view
+   771→    requestCamera('fit-aoi');
+   772→  }, [candidateSites, clearResults, requestCamera]);
+   773→
+   774→  /** Clearing the location returns the workspace to EMPTY. */
+   775→  const handleClearLocation = useCallback(() => {
+   776→    handleResetAnalysis();
+   777→  }, [handleResetAnalysis]);
+   778→
+   779→  /** Map click while in PLACE_SITE mode. */
+   780→  const handleAddSiteAt = useCallback((lng: number, lat: number) => {
+   781→    const loc = selectedLocationRef.current;
+   782→    if (!loc) return;
+   783→    const aoi = createAoiFromSpan(
+   784→      { latitude: loc.latitude, longitude: loc.longitude },
+   785→      prefs.analysisAoiSpanMetres,
+   786→      prefs.analysisAreaShape
+   787→    );
+   788→    const inside = isPointInAoi({ latitude: lat, longitude: lng }, aoi);
+   789→    if (!inside) {
+   790→      setErrorDetails({
+   791→        code: 'CANDIDATE_OUTSIDE_AOI',
+   792→        message: 'Candidate site must be inside the analysis area.',
+   793→        recoverySuggestion: 'Click inside the analysis-area boundary to place a candidate site.',
+   794→        category: 'VALIDATION',
+   795→      });
+   796→      return;
+   797→    }
+   798→    setErrorDetails(null);
+   799→    candidateSites.addSiteAt(lat, lng);
+   800→    activeRequestIdRef.current++;
+   801→    clearResults();
+   802→    setAddSiteMode(false);
+   803→  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+   804→
+   805→  const handleRemoveSite = useCallback((locationId: string) => {
+   806→    activeRequestIdRef.current++;
+   807→    candidateSites.removeSite(locationId);
+   808→    clearResults();
+   809→  }, [candidateSites, clearResults]);
+   810→
+   811→  const handleRenameSite = useCallback((locationId: string, name: string) => {
+   812→    candidateSites.renameSite(locationId, name);
+   813→  }, [candidateSites]);
+   814→
+   815→  /** Add a candidate from a searched location. */
+   816→  const handleAddSiteFromSearch = useCallback((loc: NamedLocation) => {
+   817→    const activeLoc = selectedLocationRef.current;
+   818→    if (!activeLoc) return;
+   819→    const aoi = createAoiFromSpan(
+   820→      { latitude: activeLoc.latitude, longitude: activeLoc.longitude },
+   821→      prefs.analysisAoiSpanMetres,
+   822→      prefs.analysisAreaShape
+   823→    );
+   824→    const inside = isPointInAoi({ latitude: loc.latitude, longitude: loc.longitude }, aoi);
+   825→    if (!inside) {
+   826→      setErrorDetails({
+   827→        code: 'CANDIDATE_OUTSIDE_AOI',
+   828→        message: `"${loc.name}" is outside the analysis area.`,
+   829→        recoverySuggestion: 'Pick a site inside the analysis area.',
+   830→        category: 'VALIDATION',
+   831→      });
+   832→      return;
+   833→    }
+   834→    setErrorDetails(null);
+   835→    candidateSites.addSiteAt(loc.latitude, loc.longitude, loc.name.split(',')[0], 'search');
+   836→    activeRequestIdRef.current++;
+   837→    clearResults();
+   838→    requestCamera('fit-aoi');
+   839→  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape, requestCamera]);
+   840→
+   841→
+   842→  // ───────────────────────────────────────────────────────────────────────────
+   843→  // Effects
+   844→  // ───────────────────────────────────────────────────────────────────────────
+   845→
+   846→  // Initial mount: EMPTY workspace state. NO analysis is auto-loaded — the
+   847→  // DEMO capture is a DATA SOURCE the user explicitly selects a location for,
+   848→  // never the implicit opening state. Only provider health checks run here.
+   849→  useEffect(() => {
+   850→    let isMounted = true;
+   851→
+   852→    // Provider health checks in the background (non-blocking)
+   853→    safeJsonFetch<{
+   854→      success: boolean;
+   855→      health: FortyGuardHealthResponse;
+   856→      capability?: ProviderCapability | null;
+   857→    }>('/api/health/fortyguard', {
+   858→      method: 'POST',
+   859→      headers: { 'content-type': 'application/json' },
+   860→      body: JSON.stringify({ mode: 'FIXTURE' }),
+   861→    }).then(({ ok, data }) => {
+   862→      if (isMounted && ok && data?.success && data.health) {
+   863→        setFgHealth(data.health);
+   864→        setFgStatus(data.health.connected ? 'CONNECTED' : 'ERROR');
+   865→        if (data.capability) setCapability(data.capability);
+   866→      }
+   867→    }).catch(() => {});
+   868→
+   869→    safeJsonFetch('/api/health/ai', {
+   870→      method: 'POST',
+   871→      headers: { 'content-type': 'application/json' },
+   872→      body: JSON.stringify({ preferredProvider: preferredProviderRef.current }),
+   873→    }).then(({ ok, data }) => {
+   874→      if (isMounted && ok && data?.success && (data as { health: AIHealthResponse }).health) {
+   875→        const h = (data as { health: AIHealthResponse }).health;
+   876→        setAiHealth(h);
+   877→        setAiStatus(h.connected ? 'CONNECTED' : (h.configured ? 'ERROR' : 'UNKNOWN'));
+   878→      }
+   879→    }).catch(() => {});
+   880→
+   881→    return () => { isMounted = false; };
+   882→     
+   883→  }, []);
+   884→
+   885→  // React to data-source mode changes (Settings drawer or "Switch to LIVE").
+   886→  // DEMO and LIVE are DATA SOURCES, not separate workflows: switching never
+   887→  // invents a location and never silently spends credits.
+   888→  useEffect(() => {
+   889→    if (!didMountRef.current) {
+   890→      didMountRef.current = true;
+   891→      return; // initial mount handled above (EMPTY state, nothing loaded)
+   892→    }
+   893→    const newMode = mode;
+   894→    // Clear model state on mode switch — LIVE never reuses DEMO thermal data
+   895→    // and DEMO never reuses LIVE cells.
+   896→    clearResults();
+   897→
+   898→    checkFortyGuardHealth(newMode);
+   899→
+   900→    const loc = selectedLocationRef.current;
+   901→
+   902→    // EMPTY stays EMPTY: the data source alone never loads data.
+   903→    if (!loc) return;
+   904→
+   905→    if (newMode === 'FIXTURE') {
+   906→      if (isLocationCoveredByFixture(loc)) {
+   907→        // DEMO with a genuine capture for this location → load the captured
+   908→        // dataset (free fixture replay, zero provider requests).
+   909→        const fixtureTemporal = buildFixtureTemporalInput();
+   910→        setTemporalInput(fixtureTemporal);
+   911→        temporalInputRef.current = fixtureTemporal;
+   912→        const captureCenter = { ...FIXTURE_CAPTURE_CENTER };
+   913→        setAoiCenter(captureCenter);
+   914→        aoiCenterRef.current = captureCenter;
+   915→        runDecisionPipeline(loc, FIXTURE_CAPTURE_REQUEST_AOI, fixtureTemporal, FIXTURE_TIMEZONE, 'FIXTURE');
+   916→      } else {
+   917→        // DEMO with NO capture for this location → honest gate (never swaps
+   918→        // the user's location to Manhattan implicitly).
+   919→        setErrorDetails({
+   920→          code: 'NO_DEMO_CAPTURE',
+   921→          message: 'NO DEMO CAPTURE AVAILABLE FOR THIS LOCATION',
+   922→          recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate sites, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
+   923→          category: 'COVERAGE',
+   924→        });
+   925→      }
+   926→    } else {
+   927→      // LIVE from a DEMO location: RETAIN the location's coordinates. The AOI
+   928→      // becomes the user-configurable analysis area centered on the location;
+   929→      // the WHEN defaults to the location's timezone. A NEW FortyGuard request
+   930→      // is made only when the user presses Generate — DEMO data is never reused.
+   931→      const nextCenter = { latitude: loc.latitude, longitude: loc.longitude };
+   932→      setAoiCenter(nextCenter);
+   933→      aoiCenterRef.current = nextCenter;
+   934→      const liveDefault = defaultTemporalInput(loc.timezone);
+   935→      setTemporalInput(liveDefault);
+   936→      temporalInputRef.current = liveDefault;
+   937→    }
+   938→  }, [mode]);
+   939→
+   940→  // React to preferred-AI-provider changes (from Settings drawer).
+   941→  useEffect(() => {
+   942→    if (!didMountRef.current) return;
+   943→    checkAIHealth();
+   944→    if (jointDecisionRef.current) {
+   945→      const activeScen = scenarioAnalysisRef.current?.scenarios?.find(
+   946→        (s) => s.scenarioId === selectedScenarioIdRef.current
+   947→      ) ?? scenarioAnalysisRef.current?.scenarios?.[0];
+   948→      fetchExplanation(jointDecisionRef.current, activeScen);
+   949→    }
+   950→     
+   951→  }, [prefs.preferredAIProvider]);
+   952→
+   953→  // React to AOI shape / size / resolution changes (LIVE analysis controls):
+   954→  //   ALWAYS clear stale thermal data (Section 20) — the LIVE geometry changes
+   955→  //   exactly. LIVE requires explicit Generate (credit safety). DEMO is
+   956→  //   unaffected: the captured analysis area is fixed and the captured dataset
+   957→  //   never pretends a different provider capture exists.
+   958→  useEffect(() => {
+   959→    if (!didMountRef.current) return;
+   960→    clearResults();
+   961→    candidateSites.validateAgainstAoi(
+   962→      createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)
+   963→    );
+   964→     
+   965→  }, [prefs.analysisAreaShape, prefs.analysisAoiSpanMetres, prefs.analysisResolution]);
+   966→
+   967→  // ───────────────────────────────────────────────────────────────────────────
+   968→  // Derived values
+   969→  // ───────────────────────────────────────────────────────────────────────────
+   970→
+   971→  const activeScenario = scenarioAnalysis?.scenarios?.find((s) => s.scenarioId === selectedScenarioId) ?? scenarioAnalysis?.scenarios?.[0];
+   972→  const fieldReady = !!spatialField && !loading;
+   973→  const altLocations = METROPOLITAN_LOCATIONS.filter((l) => !l.isDemoOnly).slice(0, 4);
+   974→  const thermalCellCount = spatialField?.features?.length ?? 0;
+   975→  const aiProvider = aiHealth?.provider;
+   976→
+   977→  // ── AOI validation (Section 6 — immediate, on every geometry change) ──
+   978→  // Runs on drag-end / size / shape / location changes. An invalid geometry
+   979→  // is RETAINED visibly as invalid (red outline + map banner) and Generate is
+   980→  // disabled — never silently shrunk, clipped, or moved.
+   981→  const aoiValidation = useMemo(
+   982→    () => validateAnalysisAoi(analysisAoi, {
+   983→      regionBoundary,
+   984→      regionDisplayName,
+   985→    }),
+   986→    [analysisAoi, regionBoundary, regionDisplayName],
+   987→  );
+   988→  const aoiInvalid = !!analysisAoi && !aoiValidation.valid;
+   989→
+   990→  // ── Explicit WHEN validity (Section 11 prerequisite) ──
+   991→  const temporalValid = useMemo(() => {
+   992→    const t = temporalInput;
+   993→    if (!isValidDateStr(t.date) || !isValidTimeStr(t.startTime) || !isValidTimeStr(t.endTime)) return false;
+   994→    if (t.timeMode === 'range-of-hours') {
+   995→      const bounds = effectiveTimeBounds(t);
+   996→      return bounds.end > bounds.start;
+   997→    }
+   998→    return true;
+   999→  }, [temporalInput]);
+  1000→
+  1001→  // ── Generate readiness (Section 11 — explicit, contract-gated) ──
+  1002→  const outsideCandidateCount = candidateSites.sites.filter((s) => s.outsideAoi).length;
+  1003→  const generateReadiness = useMemo(
+  1004→    () => deriveGenerateReadiness({
+  1005→      mode,
+  1006→      hasLocation: !!selectedLocation,
+  1007→      aoiValidation: analysisAoi ? aoiValidation : null,
+  1008→      temporalValid,
+  1009→      candidateCount: candidateSites.sites.length,
+  1010→      outsideCandidateCount,
+  1011→      demoCaptureAvailable,
+  1012→    }),
+  1013→    [mode, selectedLocation, analysisAoi, aoiValidation, temporalValid, candidateSites.sites.length, outsideCandidateCount, demoCaptureAvailable],
+  1014→  );
+  1015→
+  1016→  // ── Explicit workspace state machine (Section 1) ──
+  1017→  //   EMPTY → LOCATION_SELECTED → AOI_VALID → READY → GENERATING → RESULT,
+  1018→  //   with AOI_INVALID (retained visibly + Generate disabled) and ERROR /
+  1019→  //   NO_DEMO_CAPTURE recovery states. DEMO and LIVE are DATA SOURCES that
+  1020→  //   feed the SAME workflow — never implicit workspace states.
+  1021→  const workflowStage: WorkflowStage = deriveWorkflowStage({
+  1022→    hasLocation: !!selectedLocation,
+  1023→    hasAoi: !!analysisAoi,
+  1024→    aoiValid: aoiValidation.valid,
+  1025→    ready: generateReadiness.enabled,
+  1026→    loading,
+  1027→    hasResult: !!jointDecision,
+  1028→    errorCode: errorDetails?.code ?? null,
+  1029→  });
+  1030→
+  1031→  // Candidates to display on the map + evaluate:
+  1032→  //   FIXTURE + genuine capture → the three application-defined DEMO
+  1033→  //             candidates (evaluated against the captured field — NOT
+  1034→  //             captured sites). No capture → NO candidates (never synthetic,
+  1035→  //             never Manhattan candidates for another location).
+  1036→  //   LIVE    → the user's real candidate sites only.
+  1037→  const displayCandidates: CandidateLocation[] = useMemo(() => {
+  1038→    if (mode === 'FIXTURE') {
+  1039→      return demoCaptureAvailable ? DEMO_CANDIDATE_SITES : [];
+  1040→    }
+  1041→    return candidateSites.sites.map((s) => ({
+  1042→      locationId: s.locationId,
+  1043→      name: s.name,
+  1044→      location: s.location,
+  1045→    }));
+  1046→  }, [mode, demoCaptureAvailable, candidateSites.sites]);
+  1047→
+  1048→  // Resolution display (Section 2): DEMO shows the fixture's ACTUAL captured
+  1049→  // granularity; LIVE shows the provider granularity that will be sent.
+  1050→  const resolutionDisplay = mode === 'FIXTURE' ? FIXTURE_DISPLAY_GRANULARITY : prefs.analysisResolution;
+  1051→
+  1052→  // Display timezone: DEMO is UTC-anchored (the capture's request hour is a
+  1053→  // UTC instant) — displaying it in the selected location's timezone would
+  1054→  // MISLABEL the captured wall-clock. LIVE uses the location's timezone.
+  1055→  const displayTimezone = mode === 'FIXTURE' ? FIXTURE_TIMEZONE : (selectedLocation?.timezone || 'UTC');
+  1056→
+  1057→  const handleSelectScenario = useCallback((scenarioId: string) => {
+  1058→    setSelectedScenarioId(scenarioId);
+  1059→    selectedScenarioIdRef.current = scenarioId;
+  1060→    if (jointDecisionRef.current) {
+  1061→      const sc = scenarioAnalysisRef.current?.scenarios?.find((s) => s.scenarioId === scenarioId);
+  1062→      fetchExplanation(jointDecisionRef.current, sc);
+  1063→    }
+  1064→  }, [fetchExplanation]);
+  1065→
+  1066→  const handleRefreshExplanation = useCallback(() => {
+  1067→    if (jointDecisionRef.current) {
+  1068→      const activeScen = scenarioAnalysisRef.current?.scenarios?.find(
+  1069→        (s) => s.scenarioId === selectedScenarioIdRef.current
+  1070→      ) ?? scenarioAnalysisRef.current?.scenarios?.[0];
+  1071→      fetchExplanation(jointDecisionRef.current, activeScen);
+  1072→    }
+  1073→  }, [fetchExplanation]);
+  1074→
+  1075→  const handleGenerate = useCallback(() => {
+  1076→    setAddSiteMode(false);
+  1077→    const m = modeRef.current;
+  1078→    const loc = selectedLocationRef.current;
+  1079→    runDecisionPipeline(
+  1080→      loc,
+  1081→      m === 'FIXTURE' ? FIXTURE_CAPTURE_REQUEST_AOI : createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape),
+  1082→      temporalInputRef.current,
+  1083→      m === 'FIXTURE' ? FIXTURE_TIMEZONE : (loc?.timezone || 'UTC'),
+  1084→      m,
+  1085→      m === 'LIVE'
+  1086→        ? candidateSitesRef.current.map((s) => ({
+  1087→            locationId: s.locationId,
+  1088→            name: s.name,
+  1089→            location: s.location,
+  1090→          }))
+  1091→        : undefined
+  1092→    );
+  1093→  }, [runDecisionPipeline, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+  1094→
+  1095→  const handleRetry = useCallback(() => {
+  1096→    const m = modeRef.current;
+  1097→    const loc = selectedLocationRef.current;
+  1098→    runDecisionPipeline(
+  1099→      loc,
+  1100→      m === 'FIXTURE' ? FIXTURE_CAPTURE_REQUEST_AOI : createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape),
+  1101→      temporalInputRef.current,
+  1102→      m === 'FIXTURE' ? FIXTURE_TIMEZONE : (loc?.timezone || 'UTC'),
+  1103→      m,
+  1104→      m === 'LIVE'
+  1105→        ? candidateSitesRef.current.map((s) => ({
+  1106→            locationId: s.locationId,
+  1107→            name: s.name,
+  1108→            location: s.location,
+  1109→          }))
+  1110→        : undefined
+  1111→    );
+  1112→  }, [runDecisionPipeline, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+  1113→
+  1114→  // Alternative-location buttons share the FULL location-selection semantics:
+  1115→  // DEMO + capture → load the captured dataset (free); DEMO without capture →
+  1116→  // honest NO_DEMO_CAPTURE; LIVE → configure, Generate spends credits only
+  1117→  // when explicitly pressed (credit safety).
+  1118→  const handleSelectAltLocation = useCallback((loc: NamedLocation) => {
+  1119→    handleSelectLocation(loc);
+  1120→  }, [handleSelectLocation]);
+  1121→
+  1122→  // ───────────────────────────────────────────────────────────────────────────
+  1123→  // RENDER
+  1124→  // ───────────────────────────────────────────────────────────────────────────
+  1125→
+  1126→  return (
+  1127→    <main
+  1128→      className="min-h-screen flex flex-col bg-surface-bg text-text-primary"
+  1129→      style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
+  1130→      data-workflow-stage={workflowStage}
+  1131→    >
+  1132→      <Header
+  1133→        mode={mode}
+  1134→        unit={unit}
+  1135→        onToggleUnit={setUnit}
+  1136→        theme={theme}
+  1137→        onToggleTheme={toggleTheme}
+  1138→        onOpenSettings={() => setSettingsOpen(true)}
+  1139→        fortyGuardStatus={fgStatus}
+  1140→        aiStatus={aiStatus}
+  1141→        aiProvider={aiProvider}
+  1142→      />
+  1143→
+  1144→      <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-5 lg:py-6">
+  1145→        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
+  1146→          {/* LEFT CONTROL RAIL */}
+  1147→          <div className="lg:col-span-4 xl:col-span-3">
+  1148→            <ControlRail
+  1149→              mode={mode}
+  1150→              selectedLocation={selectedLocation}
+  1151→              analysisCenter={selectedLocation ? aoiCenter : undefined}
+  1152→              demoCaptureAvailable={demoCaptureAvailable}
+  1153→              stateLevelSelection={stateLevelSelection}
+  1154→              temporalInput={temporalInput}
+  1155→              onTemporalChange={handleTemporalChange}
+  1156→              onGenerate={handleGenerate}
+  1157→              loading={loading}
+  1158→              generateDisabled={!generateReadiness.enabled}
+  1159→              generateDisabledReason={generateReadiness.reason}
+  1160→              onReset={handleResetAnalysis}
+  1161→              onClearLocation={handleClearLocation}
+  1162→              onSelectLocation={handleSelectLocation}
+  1163→              onSwitchToLive={() => handleModeChange('LIVE')}
+  1164→              fortyGuardStatus={fgStatus}
+  1165→              fortyGuardHealth={fgHealth}
+  1166→              aiStatus={aiStatus}
+  1167→              aiHealth={aiHealth}
+  1168→              fieldReady={fieldReady}
+  1169→              onTestFortyGuard={() => checkFortyGuardHealth(mode)}
+  1170→              onTestAI={checkAIHealth}
+  1171→              candidateSites={candidateSites.sites}
+  1172→              onRemoveSite={handleRemoveSite}
+  1173→              onRenameSite={handleRenameSite}
+  1174→              onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
+  1175→              addSiteMode={addSiteMode}
+  1176→              onAddSiteFromSearch={handleAddSiteFromSearch}
+  1177→              fixtureGranularity={FIXTURE_DISPLAY_GRANULARITY}
+  1178→              activeStateFilter={regionDisplayName || selectedLocation?.state}
+  1179→            />
+  1180→          </div>
+  1181→
+  1182→          {/* MAIN CANVAS */}
+  1183→          <div className="lg:col-span-8 xl:col-span-9 space-y-5">
+  1184→            {/* Error banner (highest priority in main canvas when present) */}
+  1185→            {errorDetails && (
+  1186→              <ErrorBanner
+  1187→                errorDetails={errorDetails}
+  1188→                mode={mode}
+  1189→                altLocations={altLocations}
+  1190→                onRetry={handleRetry}
+  1191→                onSwitchToDemo={() => handleModeChange('FIXTURE')}
+  1192→                onSwitchToLive={() => handleModeChange('LIVE')}
+  1193→                onSelectAltLocation={handleSelectAltLocation}
+  1194→              />
+  1195→            )}
+  1196→
+  1197→            {/* 1. FORTYGUARD THERMAL FIELD — the visual hero */}
+  1198→            <ThermalMapCanvas
+  1199→              stage={workflowStage}
+  1200→              locationName={selectedLocation?.name ?? 'No location selected'}
+  1201→              baseTimestamp={spatialFieldMeta?.baseTimestamp}
+  1202→              thermalCellCount={thermalCellCount}
+  1203→              resolution={selectedLocation ? resolutionDisplay : undefined}
+  1204→              mode={mode}
+  1205→              loading={loading}
+  1206→              selectedLocation={selectedLocation ?? undefined}
+  1207→              analysisCenter={selectedLocation ? aoiCenter : undefined}
+  1208→              temporalInput={temporalInput}
+  1209→              timezone={displayTimezone}
+  1210→              rankedCandidates={spatialDecision?.rankedLocations.map((r) => ({
+  1211→                locationId: r.locationId,
+  1212→                name: r.name,
+  1213→                location: r.location,
+  1214→              }))}
+  1215→              recommendedLocationId={spatialDecision?.recommendedLocation.locationId}
+  1216→            >
+  1217→              <ThermalMap
+  1218→                location={selectedLocation ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude } : null}
+  1219→                locationState={selectedLocation?.state}
+  1220→                locationName={selectedLocation?.name}
+  1221→                locationDraggable={mode === 'LIVE'}
+  1222→                onMoveOperatingLocation={handleMoveOperatingLocation}
+  1223→                regionBoundary={regionBoundary}
+  1224→                regionMask={regionMask}
+  1225→                regionDisplayName={regionDisplayName}
+  1226→                analysisAoi={analysisAoi}
+  1227→                aoiInvalid={aoiInvalid}
+  1228→                aoiInvalidMessage={aoiValidation.valid ? undefined : aoiValidation.message}
+  1229→                captureAoiLabel={mode === 'FIXTURE' && demoCaptureAvailable ? fixtureCaptureSpanLabel() : undefined}
+  1230→                spatialField={spatialField}
+  1231→                selectedTileId={decision?.evidenceBundle.selectedTileId}
+  1232→                candidates={displayCandidates}
+  1233→                candidatesDraggable={mode === 'LIVE'}
+  1234→                onMoveCandidate={handleMoveCandidate}
+  1235→                onRemoveCandidate={handleRemoveSite}
+  1236→                recommendedLocationId={spatialDecision?.recommendedLocation.locationId}
+  1237→                unit={unit}
+  1238→                layerVisibility={prefs.mapLayerVisibility}
+  1239→                onToggleLayer={prefSetters.setMapLayerVisibility}
+  1240→                areaShape={prefs.analysisAreaShape}
+  1241→                showLocationMarker={!!selectedLocation}
+  1242→                emptyMapMessage={
+  1243→                  workflowStage === 'NO_DEMO_CAPTURE'
+  1244→                    ? 'No DEMO capture available for this location — switch to LIVE or pick a Manhattan DEMO location'
+  1245→                    : 'Select a location to begin the analysis'
+  1246→                }
+  1247→                addSiteMode={addSiteMode}
+  1248→                onAddSiteAt={handleAddSiteAt}
+  1249→                onExitAddSiteMode={() => setAddSiteMode(false)}
+  1250→                cameraBehavior={cameraBehavior}
+  1251→                cameraNonce={cameraNonce}
+  1252→              />
+  1253→            </ThermalMapCanvas>
+  1254→
+  1255→            {/* 2. RECOMMENDED OPERATION */}
+  1256→            {jointDecision && !errorDetails && (
+  1257→              <RecommendedOperation
+  1258→                jointDecision={jointDecision}
+  1259→                unit={unit}
+  1260→                timezone={displayTimezone}
+  1261→                mode={mode}
+  1262→                temporalInput={temporalInput}
+  1263→              />
+  1264→            )}
+  1265→
+  1266→            {/* 3. TOP CANDIDATES */}
+  1267→            {jointDecision && !errorDetails && (
+  1268→              <TopCandidates
+  1269→                jointDecision={jointDecision}
+  1270→                unit={unit}
+  1271→                timezone={displayTimezone}
+  1272→              />
+  1273→            )}
+  1274→
+  1275→            {/* 4. WHAT-IF */}
+  1276→            {scenarioAnalysis && scenarioAnalysis.scenarios.length > 0 && !errorDetails && (
+  1277→              <WhatIfPanel
+  1278→                scenarioAnalysis={scenarioAnalysis}
+  1279→                selectedScenarioId={selectedScenarioId}
+  1280→                onSelectScenario={handleSelectScenario}
+  1281→                unit={unit}
+  1282→                timezone={displayTimezone}
+  1283→              />
+  1284→            )}
+  1285→
+  1286→            {/* 5. GROUNDED AI EXPLANATION (subdued — not the hero) */}
+  1287→            {explanation && !errorDetails && (
+  1288→              <GroundedExplanation
+  1289→                explanation={explanation}
+  1290→                unit={unit}
+  1291→                timezone={displayTimezone}
+  1292→                explaining={explaining}
+  1293→                onRefresh={handleRefreshExplanation}
+  1294→              />
+  1295→            )}
+  1296→
+  1297→            {/* Empty state before first run (EMPTY / LOCATION_SELECTED stages) */}
+  1298→            {!jointDecision && !loading && !errorDetails && (
+  1299→              <div
+  1300→                className="rounded-xl border border-border bg-surface-card px-5 py-12 text-center"
+  1301→                data-testid={workflowStage === 'EMPTY' ? 'empty-workspace-card' : 'pre-generate-card'}
+  1302→              >
+  1303→                <div className="text-2xl mb-2">🌡</div>
+  1304→                {workflowStage === 'EMPTY' ? (
+  1305→                  <>
+  1306→                    <p className="text-text-primary text-sm font-bold">Select a location to begin</p>
+  1307→                    <p className="text-text-muted text-xs mt-1.5 leading-relaxed max-w-md mx-auto">
+  1308→                      Search a city, street, or address — or pick a preset in the left rail. Locations with a genuine
+  1309→                      captured DEMO dataset load it explicitly; every other location runs LIVE against FortyGuard.
+  1310→                    </p>
+  1311→                    <p className="text-[10px] font-mono text-text-dimmed mt-3 tracking-wide">
+  1312→                      LOCATION → ANALYSIS AOI → THERMAL OBSERVATIONS → CANDIDATES → RECOMMENDATION
+  1313→                    </p>
+  1314→                  </>
+  1315→                ) : (
+  1316→                  <>
+  1317→                    <p className="text-text-muted text-sm font-medium">Generate a thermal field to see the recommended operational plan.</p>
+  1318→                    <p className="text-text-dimmed text-xs mt-1">
+  1319→                      {mode === 'LIVE'
+  1320→                        ? 'Place candidate sites (+ Site on the map), set the WHEN date/time, then click Generate.'
+  1321→                        : 'This location has a genuine captured dataset — Generate replays it (no provider request).'}
+  1322→                    </p>
+  1323→                  </>
+  1324→                )}
+  1325→              </div>
+  1326→            )}
+  1327→          </div>
+  1328→        </div>
+  1329→      </div>
+  1330→
+  1331→      {/* SETTINGS DRAWER — provider capability + diagnostics */}
+  1332→      <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} capability={capability} />
+  1333→    </main>
+  1334→  );
+  1335→}
+  1336→

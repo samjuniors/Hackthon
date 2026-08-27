@@ -921,7 +921,7 @@ function alignThermalCellsToAoi(spatialField: PolygonAOI, aoi: PolygonAOI | null
         </div>
       `);
 
-      const marker = new Marker({ element: el, draggable: !!locationDraggable })
+      const marker = new Marker({ element: el, anchor: 'center', offset: [0, 0], draggable: !!locationDraggable })
         .setLngLat([location!.longitude, location!.latitude])
         .setPopup(popup)
         .addTo(map);
@@ -1143,7 +1143,7 @@ function alignThermalCellsToAoi(spatialField: PolygonAOI, aoi: PolygonAOI | null
           }
         });
 
-        const marker = new Marker({ element: el, draggable: !!candidatesDraggable })
+        const marker = new Marker({ element: el, anchor: 'center', offset: [0, 0], draggable: !!candidatesDraggable })
           .setLngLat([item.location.longitude, item.location.latitude])
           .setPopup(popup)
           .addTo(map);

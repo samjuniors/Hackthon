@@ -298,22 +298,24 @@ export function ThermalMap({
     const centerLng = isValidLon ? location.longitude : -74.008;
     const centerLat = isValidLat ? location.latitude : 40.712;
 
+    // Esri World Gray Canvas raster tiles — keyless, no watermark, production-clean.
+    // (Supersedes CARTO basemaps.cartocdn.com rasters, which now bake an
+    // "API KEY REQUIRED" watermark server-side for keyless anonymous use.)
+    // NOTE: ArcGIS tile scheme is {z}/{y}/{x} (row/column) and maxes at zoom 16.
     const darkBaseTiles = [
-      'https://a.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png',
-      'https://b.basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     ];
     const lightBaseTiles = [
-      'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-      'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     ];
     const darkLabelTiles = [
-      'https://a.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}@2x.png',
-      'https://b.basemaps.cartocdn.com/rastertiles/dark_only_labels/{z}/{x}/{y}@2x.png',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
     ];
     const lightLabelTiles = [
-      'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
-      'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
     ];
+    const esriAttribution =
+      'Basemap © Esri, HERE, Garmin, FAO, NOAA, USGS';
 
     const map = new Map({
       container: mapContainerRef.current,
@@ -324,23 +326,27 @@ export function ThermalMap({
             type: 'raster',
             tiles: darkBaseTiles,
             tileSize: 256,
-            attribution: '© CartoDB © OpenStreetMap',
+            maxzoom: 16,
+            attribution: esriAttribution,
           },
           'carto-base-light': {
             type: 'raster',
             tiles: lightBaseTiles,
             tileSize: 256,
-            attribution: '© CartoDB © OpenStreetMap',
+            maxzoom: 16,
+            attribution: esriAttribution,
           },
           'carto-labels-dark': {
             type: 'raster',
             tiles: darkLabelTiles,
             tileSize: 256,
+            maxzoom: 16,
           },
           'carto-labels-light': {
             type: 'raster',
             tiles: lightLabelTiles,
             tileSize: 256,
+            maxzoom: 16,
           },
         },
         layers: [

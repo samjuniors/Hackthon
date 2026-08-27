@@ -314,7 +314,9 @@ export function StateBoundaryMap({
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    // Standard CartoDB Dark/Light Basemap + Labels Style
+    // Esri World Light Gray Canvas basemap + reference labels — keyless, watermark-free
+    // (CARTO basemaps.cartocdn.com rasters now bake an "API KEY REQUIRED" watermark
+    // for keyless use). ArcGIS tile scheme is {z}/{y}/{x} and maxes at zoom 16.
     const map = new MapLibreMap({
       container: mapContainerRef.current,
       style: {
@@ -324,19 +326,19 @@ export function StateBoundaryMap({
           'carto-basemap': {
             type: 'raster',
             tiles: [
-              'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-              'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+              'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
             ],
             tileSize: 256,
-            attribution: '© CartoDB © OpenStreetMap',
+            maxzoom: 16,
+            attribution: 'Basemap © Esri, HERE, Garmin, FAO, NOAA, USGS',
           },
           'carto-labels': {
             type: 'raster',
             tiles: [
-              'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
-              'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png',
+              'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
             ],
             tileSize: 256,
+            maxzoom: 16,
           },
         },
         layers: [

@@ -444,9 +444,11 @@ export async function POST(request: Request) {
     // shows the clean empty state rather than invisible/transparent polygons.
     const renderableSpatialField =
       baseSpatialField &&
-      baseSpatialField.features.some((f) =>
-        Number.isFinite(Number(f.properties?.average_temperature))
-      )
+      baseSpatialField.features.some((f) => {
+        const p = f.properties;
+        const v = p?.average_temperature ?? p?.temperature ?? p?.temp ?? p?.value;
+        return Number.isFinite(Number(v));
+      })
         ? baseSpatialField
         : undefined;
 

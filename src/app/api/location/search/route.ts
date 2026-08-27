@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server';
 import { geocodeSearch, reverseGeocode } from '@/lib/location/geocode';
 import { getPresetLocations } from '@/lib/location/search';
 import { lookupTimezone } from '@/lib/location/timezone-lookup';

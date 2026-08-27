@@ -110,11 +110,20 @@ export function mapErrorToProductionDetails(error: unknown): ProductionErrorDeta
     };
   }
 
-  if (error instanceof EmptyThermalFieldError || error instanceof IncompleteTemporalCoverageError) {
+  if (error instanceof EmptyThermalFieldError) {
+    return {
+      code: 'FORTYGUARD_EMPTY_TILES',
+      message: 'FortyGuard returned 0 thermal cells for this specific date and hour.',
+      recoverySuggestion: 'FortyGuard models cover daylight hours (e.g. 10:00–18:00) on active historical dates. Adjust the WHEN time/date parameters, or switch to DEMO mode for Manhattan analysis.',
+      category: 'DATA',
+    };
+  }
+
+  if (error instanceof IncompleteTemporalCoverageError) {
     return {
       code: 'FORTYGUARD_INCOMPLETE_COVERAGE',
       message: 'Thermal data is incomplete or unavailable for the requested operating time window.',
-      recoverySuggestion: 'Adjust the allowed operating window or duration to fall within available forecast lead times.',
+      recoverySuggestion: 'Adjust the allowed operating window or duration to fall within available FortyGuard lead times.',
       category: 'DATA',
     };
   }

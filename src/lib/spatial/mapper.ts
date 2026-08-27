@@ -76,11 +76,18 @@ export function findTileForPoint(point: LocationPoint, aoi: PolygonAOI): TileFea
       // A missing temperature is a hard failure, never a default.
       // `?? 0` here would make an absent reading the coldest possible value, and the
       // decision engine minimises temperature — so missing data would win every ranking.
-      const rawAverage = props.average_temperature;
+      const rawAverage =
+        props.average_temperature ??
+        props.temperature ??
+        props.temp ??
+        props.avg_temp ??
+        props.value ??
+        props.val ??
+        props.mean_temperature;
       if (rawAverage === undefined || rawAverage === null || !Number.isFinite(Number(rawAverage))) {
         throw new MissingThermalValueError(
           `Tile ${String(tileId)} containing point (${point.latitude.toFixed(4)}, ${point.longitude.toFixed(4)}) ` +
-            `has no finite 'average_temperature' (received: ${JSON.stringify(rawAverage)})`
+            `has no finite temperature reading (received: ${JSON.stringify(rawAverage)})`
         );
       }
 

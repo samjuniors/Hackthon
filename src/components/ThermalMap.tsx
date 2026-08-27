@@ -220,8 +220,14 @@ function computeRegionBounds(
 
 /** Return true if the spatial field contains at least one feature with a valid temperature. */
 function hasRenderableTemperatureData(aoi: PolygonAOI | null | undefined): boolean {
-  return !!aoi && aoi.features.length > 0 && aoi.features.some((f) =>
-    Number.isFinite(Number(f.properties?.average_temperature))
+  return (
+    !!aoi &&
+    aoi.features.length > 0 &&
+    aoi.features.some((f) => {
+      const p = f.properties;
+      const v = p?.average_temperature ?? p?.temperature ?? p?.temp ?? p?.value;
+      return Number.isFinite(Number(v));
+    })
   );
 }
 

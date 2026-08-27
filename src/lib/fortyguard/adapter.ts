@@ -156,7 +156,30 @@ function findFeatureCollection(node: unknown, depth = 0): PolygonAOI | null {
 
   const obj = node as Record<string, unknown>;
   if (obj.type === 'FeatureCollection' && Array.isArray(obj.features)) {
-    return obj as unknown as PolygonAOI;
+    const fc = obj as unknown as PolygonAOI;
+    return {
+      ...fc,
+      features: fc.features.map((f, idx) => {
+        const props = f.properties || {};
+        const rawTemp =
+          props.average_temperature ??
+          props.temperature ??
+          props.temp ??
+          props.avg_temp ??
+          props.value ??
+          props.val ??
+          props.mean_temperature;
+        const numTemp = rawTemp !== undefined && rawTemp !== null ? Number(rawTemp) : undefined;
+        return {
+          ...f,
+          properties: {
+            ...props,
+            tile_id: props.tile_id ?? idx,
+            average_temperature: Number.isFinite(numTemp) ? numTemp : props.average_temperature,
+          },
+        };
+      }),
+    };
   }
 
   for (const key of Object.keys(obj)) {

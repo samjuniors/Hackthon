@@ -76,7 +76,8 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   preferredAIProvider: 'auto',
   analysisResolution: 60,
   analysisAreaShape: 'polygon',
-  analysisAoiSpanMetres: 400,
+  /** 1 km (1000 m) — single request covers a meaningful area without excessive credits. */
+  analysisAoiSpanMetres: 1000,
   analysisTimeMode: DEFAULT_TIME_MODE,
   mapLayerVisibility: {
     thermal: true,

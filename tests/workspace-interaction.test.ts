@@ -176,24 +176,23 @@ describe('workspace interaction — location lifecycle', () => {
 
 // ── 9–12. AOI interaction + validation ─────────────────────────────────────
 
-describe('workspace interaction — AOI drag + validation', () => {
-  it('9. LIVE AOI drag updates the canonical geometry (pure translation, same span)', () => {
+describe('workspace interaction — AOI derivation & validation', () => {
+  it('9. Operating Location movement recomputes the canonical AOI (pure translation, same span)', () => {
     const moved = moveAoiToCenter(VALID_AOI, NEW_JERSEY);
     const center = getAoiCenter(moved);
     expect(center?.latitude).toBeCloseTo(NEW_JERSEY.latitude, 6);
     expect(center?.longitude).toBeCloseTo(NEW_JERSEY.longitude, 6);
-    // Page: the moved AOI center becomes state AND is the request geometry.
-    const moveAoi = handlerBody(pageSrc, 'handleMoveAoi');
-    expect(moveAoi).toContain('setAoiCenter(newCenter)');
-    // generate/submit path uses the dragged center geometry.
-    expect(pageSrc).toContain('createAoiFromSpan(aoiCenterRef.current');
+    // Page: moving the operating location updates canonical state
+    const moveLoc = handlerBody(pageSrc, 'handleMoveOperatingLocation');
+    expect(moveLoc).toContain('setAoiCenter(nextCenter)');
+    expect(moveLoc).toContain('setSelectedLocation(nextLoc)');
+    // In LIVE mode, analysisAoi strictly derives from selectedLocation
+    expect(pageSrc).toContain('createAoiFromSpan(');
   });
 
-  it('10. LIVE AOI drag does NOT automatically call the provider (explicit Generate only)', () => {
-    const moveAoi = handlerBody(pageSrc, 'handleMoveAoi');
-    expect(moveAoi).not.toContain('runDecisionPipeline');
-    // Map drag commits via onMoveAoi only.
-    expect(mapSrc).toContain('aoiMoveCallbackRef.current?.(newCenter)');
+  it('10. LIVE location movement does NOT automatically call the provider (explicit Generate only)', () => {
+    const moveLoc = handlerBody(pageSrc, 'handleMoveOperatingLocation');
+    expect(moveLoc).not.toContain('runDecisionPipeline');
   });
 
   it('11. invalid AOI disables Generate (and states exactly why)', () => {
@@ -218,7 +217,6 @@ describe('workspace interaction — AOI drag + validation', () => {
     // Map: invalid banner + red retained geometry (never moved/clipped).
     expect(mapSrc).toContain('aoi-invalid-banner');
     expect(mapSrc).toContain('applyAoiValidityPaint');
-    expect(mapSrc).toContain('validateAnalysisAoi(preview'); // live validation WHILE dragging
     // Page: validation runs on every geometry change and is passed to the map.
     expect(pageSrc).toContain('validateAnalysisAoi(analysisAoi');
     expect(pageSrc).toContain('aoiInvalid={aoiInvalid}');
@@ -316,8 +314,8 @@ describe('workspace interaction — candidate lifecycle (ADD → MOVE → REMOVE
     // Sites list is UNCHANGED — never silently moved/clamped.
     expect(result.sites).toEqual(sites);
     // The map snaps the marker back + shows immediate feedback.
-    expect(mapSrc).toContain('marker.setLngLat(lastValid)');
-    expect(mapSrc).toContain('candidate-rejected-toast');
+    expect(mapSrc).toContain('marker.setLngLat(entry.lastValid)');
+    expect(mapSrc).toContain('candidate-toast-feedback');
   });
 });
 
@@ -337,8 +335,8 @@ describe('workspace interaction — DEMO/LIVE separation + stale invariants', ()
   });
 
   it('18. the DEMO AOI is FIXED to the genuine captured request AOI (no drag/resize)', () => {
-    expect(pageSrc).toContain('aoiDraggable={mode === \'LIVE\'}');
-    expect(mapSrc).toContain('if (!aoiDraggable) {');
+    expect(pageSrc).toContain('locationDraggable={mode === \'LIVE\'}');
+    expect(mapSrc).toContain('locationDraggable');
     // The captured request AOI is a valid geometry (it is the only DEMO AOI).
     expect(validateAnalysisAoi(FIXTURE_CAPTURE_REQUEST_AOI).valid).toBe(true);
     // The client mirror equals the server-side capture metadata GEOMETRY

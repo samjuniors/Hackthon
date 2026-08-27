@@ -198,14 +198,20 @@ describe('Gemini & AI Provider Abstraction', () => {
   });
 
   it('6. AI Connection Test returns NOT_CONFIGURED when no key is present', async () => {
-    const health = await testAIConnection({
-      providerConfig: { provider: 'deterministic' },
-    });
+    const prevKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    try {
+      const health = await testAIConnection({
+        providerConfig: { provider: 'deterministic' },
+      });
 
-    expect(health.configured).toBe(false);
-    expect(health.connected).toBe(false);
-    expect(health.provider).toBe('NONE');
-    expect(health.errorCode).toBe('AI_NOT_CONFIGURED');
+      expect(health.configured).toBe(false);
+      expect(health.connected).toBe(false);
+      expect(health.provider).toBe('NONE');
+      expect(health.errorCode).toBe('AI_NOT_CONFIGURED');
+    } finally {
+      if (prevKey) process.env.GEMINI_API_KEY = prevKey;
+    }
   });
 
   it('7. AI explanation falls back deterministically on HTTP failure', async () => {

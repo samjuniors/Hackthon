@@ -171,8 +171,12 @@ export default function WorkspacePage() {
   const analysisAoi: PolygonAOI | null = useMemo(() => {
     if (!selectedLocation) return null;
     if (mode === 'FIXTURE') return demoCaptureAvailable ? FIXTURE_CAPTURE_REQUEST_AOI : null;
-    return createAoiFromSpan(aoiCenter, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
-  }, [selectedLocation, mode, demoCaptureAvailable, aoiCenter, prefs.analysisAreaShape, prefs.analysisAoiSpanMetres]);
+    return createAoiFromSpan(
+      { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude },
+      prefs.analysisAoiSpanMetres,
+      prefs.analysisAreaShape
+    );
+  }, [selectedLocation, mode, demoCaptureAvailable, prefs.analysisAreaShape, prefs.analysisAoiSpanMetres]);
 
   // Geographic region boundary polygon (geographic CONTEXT — never provider coverage)
   const regionBoundary: PolygonAOI | null = useMemo(
@@ -635,28 +639,7 @@ export default function WorkspacePage() {
   }, [prefSetters]);
 
   /**
-   * AOI moved by dragging (Section 4) — a LIVE control. The moved geometry
-   * becomes canonical (rendered == sent). Preserves size, shape, date/time,
-   * resolution — updates the center + displayed coordinates, clears stale
-   * thermal data. DEMO never calls this: the captured analysis area is FIXED
-   * (the drag affordance is hidden in DEMO), so the capture can never be
-   * presented for a geometry it was not captured for.
-   */
-  const handleMoveAoi = useCallback((newCenter: LocationPoint) => {
-    setAoiCenter(newCenter);
-    aoiCenterRef.current = newCenter;
-    candidateSites.validateAgainstAoi(
-      createAoiFromSpan(newCenter, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)
-    );
-    // Invalidate any previous analysis — the moved AOI is canonical for the
-    // NEXT analysis only (Section 5: dragging changes local state ONLY).
-    clearResults();
-    requestCamera('fit-aoi');
-    // LIVE: require explicit Generate after moving the AOI (credit safety).
-  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape, requestCamera]);
-
-  /**
-   * Operating-location marker DRAGGED on the map (Section 4 — LIVE control).
+   * Operating-location marker DRAGGED on the map (Section 2 — LIVE control).
    *   drag marker → update canonical location coordinates → update location
    *   state → recompute AOI around the new point → invalidate old analysis.
    * NO automatic FortyGuard request — a new LIVE request requires explicit
@@ -666,121 +649,127 @@ export default function WorkspacePage() {
     const loc = selectedLocationRef.current;
     if (!loc) return;
 
+    activeRequestIdRef.current++; // Invalidate any in-flight requests
+
     const nextLoc: NamedLocation = { ...loc, latitude: point.latitude, longitude: point.longitude };
     setSelectedLocation(nextLoc);
     selectedLocationRef.current = nextLoc;
 
-    // Recompute the AOI around the moved operating location (Section 4).
     const nextCenter = { latitude: point.latitude, longitude: point.longitude };
     setAoiCenter(nextCenter);
     aoiCenterRef.current = nextCenter;
 
-    // Geographic region context follows the point (proximity resolution
-    // against the product's actual boundary geometry — never stale).
+    // Geographic region context follows the point
     const nextRegion = resolveRegionDisplayName(point.latitude, point.longitude);
     setRegionName(nextRegion);
     setStateLevelSelection(null);
 
-    // Invalidate any previous analysis — the old result never survives a
-    // location change (Section 1).
+    // Invalidate any previous analysis
     clearResults();
 
-    // Re-validate candidates against the recomputed AOI.
+    // Re-validate candidates against the recomputed AOI
     candidateSites.validateAgainstAoi(
       createAoiFromSpan(nextCenter, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)
     );
 
     requestCamera('fit-aoi');
-    // NO provider call here — LIVE spends credits only on explicit Generate.
   }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape, requestCamera]);
 
   /**
-   * Candidate site DRAGGED to a new point INSIDE the AOI (Section 7 — the map
-   * rejects outside drops before this is called). Updates the site position
-   * and invalidates the previous analysis — no automatic provider request.
+   * Candidate site DRAGGED to a new point INSIDE the AOI.
+   * Updates site position and invalidates previous analysis — no automatic provider request.
    */
   const handleMoveCandidate = useCallback((locationId: string, lat: number, lng: number) => {
-    const aoi = aoiCenterRef.current
-      ? createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)
-      : null;
+    const loc = selectedLocationRef.current;
+    if (!loc) return;
+    const aoi = createAoiFromSpan(
+      { latitude: loc.latitude, longitude: loc.longitude },
+      prefs.analysisAoiSpanMetres,
+      prefs.analysisAreaShape
+    );
     const accepted = candidateSites.moveSite(locationId, lat, lng, aoi);
     if (accepted) {
-      // Moving a candidate prepares the NEXT analysis — the previous result
-      // must not survive (Section 1), and Generate stays explicit.
+      activeRequestIdRef.current++;
       clearResults();
     }
   }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
 
   /**
-   * ONE compact Reset (Section 2): clears the ENTIRE analysis workspace and
+   * ONE compact Reset: clears the ENTIRE analysis workspace and
    * returns to EMPTY — no page reload, no navigation.
-   *   location → null (marker removed) · AOI → neutral · candidates removed ·
-   *   thermal field / decision / recommendation / explanation / scenario /
-   *   errors removed · in-flight requests INVALIDATED (request epoch bump).
    */
   const handleResetAnalysis = useCallback(() => {
-    // Invalidate any in-flight async request FIRST (stale-response guard).
+    // Invalidate any in-flight async request FIRST
     activeRequestIdRef.current++;
     setLoading(false);
     setExplaining(false);
 
-    // Operating location → null (map marker removed; EMPTY workspace).
+    // Operating location → null
     setSelectedLocation(null);
     selectedLocationRef.current = null;
 
-    // AOI → reset to the neutral EMPTY view.
+    // AOI → reset to neutral EMPTY view
     const emptyCenter = { latitude: DEFAULT_EMPTY_CENTER.latitude, longitude: DEFAULT_EMPTY_CENTER.longitude };
     setAoiCenter(emptyCenter);
     aoiCenterRef.current = emptyCenter;
 
-    // Geographic region context → cleared.
+    // Geographic region context → cleared
     setRegionName(undefined);
     setStateLevelSelection(null);
 
-    // Candidate sites → removed.
+    // Candidate sites → removed
     candidateSites.clearSites();
 
-    // Thermal field / decision / recommendation / explanation / scenario
-    // state / errors → removed (clearResults also nulls spatialField + meta).
+    // Thermal field / decision / recommendation / explanation / errors → removed
     clearResults();
 
-    // WHEN → back to the fixture-anchored default; scenario → default.
+    // WHEN → default
     const defaultTemporal = buildFixtureTemporalInput();
     setTemporalInput(defaultTemporal);
     temporalInputRef.current = defaultTemporal;
     setSelectedScenarioId('scenario-temporal-shift');
     selectedScenarioIdRef.current = 'scenario-temporal-shift';
 
-    // Exit add-site mode.
+    // Exit add-site mode
     setAddSiteMode(false);
 
-    // Camera → neutral continental EMPTY view.
+    // Camera → neutral continental EMPTY view
     requestCamera('fit-aoi');
   }, [candidateSites, clearResults, requestCamera]);
 
-  /** Clearing the location returns the workspace to EMPTY (Section 3). */
+  /** Clearing the location returns the workspace to EMPTY. */
   const handleClearLocation = useCallback(() => {
     handleResetAnalysis();
   }, [handleResetAnalysis]);
 
-  /** Map click while in add-site mode (Section 8 — real user-placed sites). */
+  /** Map click while in PLACE_SITE mode. */
   const handleAddSiteAt = useCallback((lng: number, lat: number) => {
-    const aoi = createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
+    const loc = selectedLocationRef.current;
+    if (!loc) return;
+    const aoi = createAoiFromSpan(
+      { latitude: loc.latitude, longitude: loc.longitude },
+      prefs.analysisAoiSpanMetres,
+      prefs.analysisAreaShape
+    );
     const inside = isPointInAoi({ latitude: lat, longitude: lng }, aoi);
     if (!inside) {
       setErrorDetails({
         code: 'CANDIDATE_OUTSIDE_AOI',
-        message: 'That map point is outside the analysis area.',
-        recoverySuggestion: 'Click inside the analysis-area boundary (or drag the AOI to cover the point), then try again.',
+        message: 'Candidate site must be inside the analysis area.',
+        recoverySuggestion: 'Click inside the analysis-area boundary to place a candidate site.',
         category: 'VALIDATION',
       });
       return;
     }
     setErrorDetails(null);
     candidateSites.addSiteAt(lat, lng);
-  }, [candidateSites, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+    activeRequestIdRef.current++;
+    clearResults();
+    setAddSiteMode(false);
+  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
 
   const handleRemoveSite = useCallback((locationId: string) => {
+    activeRequestIdRef.current++;
     candidateSites.removeSite(locationId);
     clearResults();
   }, [candidateSites, clearResults]);
@@ -789,22 +778,31 @@ export default function WorkspacePage() {
     candidateSites.renameSite(locationId, name);
   }, [candidateSites]);
 
-  /** Add a candidate from a searched location (search result → candidate site). */
+  /** Add a candidate from a searched location. */
   const handleAddSiteFromSearch = useCallback((loc: NamedLocation) => {
-    const aoi = createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape);
+    const activeLoc = selectedLocationRef.current;
+    if (!activeLoc) return;
+    const aoi = createAoiFromSpan(
+      { latitude: activeLoc.latitude, longitude: activeLoc.longitude },
+      prefs.analysisAoiSpanMetres,
+      prefs.analysisAreaShape
+    );
     const inside = isPointInAoi({ latitude: loc.latitude, longitude: loc.longitude }, aoi);
     if (!inside) {
       setErrorDetails({
         code: 'CANDIDATE_OUTSIDE_AOI',
         message: `"${loc.name}" is outside the analysis area.`,
-        recoverySuggestion: 'Pick a site inside the analysis area (or drag the AOI to cover it).',
+        recoverySuggestion: 'Pick a site inside the analysis area.',
         category: 'VALIDATION',
       });
       return;
     }
     setErrorDetails(null);
     candidateSites.addSiteAt(loc.latitude, loc.longitude, loc.name.split(',')[0], 'search');
-  }, [candidateSites, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+    activeRequestIdRef.current++;
+    clearResults();
+  }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+
 
   // ───────────────────────────────────────────────────────────────────────────
   // Effects
@@ -1195,13 +1193,12 @@ export default function WorkspacePage() {
                 candidates={displayCandidates}
                 candidatesDraggable={mode === 'LIVE'}
                 onMoveCandidate={handleMoveCandidate}
+                onRemoveCandidate={handleRemoveSite}
                 recommendedLocationId={spatialDecision?.recommendedLocation.locationId}
                 unit={unit}
                 layerVisibility={prefs.mapLayerVisibility}
                 onToggleLayer={prefSetters.setMapLayerVisibility}
                 areaShape={prefs.analysisAreaShape}
-                onMoveAoi={handleMoveAoi}
-                aoiDraggable={mode === 'LIVE'}
                 showLocationMarker={!!selectedLocation}
                 emptyMapMessage={
                   workflowStage === 'NO_DEMO_CAPTURE'
@@ -1210,6 +1207,7 @@ export default function WorkspacePage() {
                 }
                 addSiteMode={addSiteMode}
                 onAddSiteAt={handleAddSiteAt}
+                onExitAddSiteMode={() => setAddSiteMode(false)}
                 cameraBehavior={cameraBehavior}
                 cameraNonce={cameraNonce}
               />

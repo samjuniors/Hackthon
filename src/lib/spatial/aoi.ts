@@ -204,8 +204,9 @@ export function moveAoiToCenter(
  */
 export function isPointInAoi(
   point: LocationPoint,
-  aoi: PolygonAOI,
+  aoi: PolygonAOI | null | undefined,
 ): boolean {
+  if (!aoi || !aoi.features || aoi.features.length === 0) return false;
   const feat = aoi.features[0];
   const geom = feat?.geometry as { type: string; coordinates: number[][][] } | undefined;
   if (!geom || !Array.isArray(geom.coordinates?.[0])) return false;

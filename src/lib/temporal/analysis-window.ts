@@ -51,7 +51,13 @@ export interface AnalysisTemporalInput {
   timeMode: AnalysisTimeMode;
 }
 
-export const DEFAULT_TIME_MODE: AnalysisTimeMode = 'range-of-hours';
+/**
+ * DEFAULT_TIME_MODE is 'single-hour' — guarantees exactly ONE FortyGuard
+ * /v1/heatmap credit is spent per Generate press in LIVE mode.
+ * 'range-of-hours' is still available in the UI Settings for users who
+ * explicitly want multi-hour analysis.
+ */
+export const DEFAULT_TIME_MODE: AnalysisTimeMode = 'single-hour';
 
 /**
  * Timezone the DEMO fixture capture is anchored in. The capture's request
@@ -80,15 +86,16 @@ export function todayLocalDate(timezone?: string): string {
 }
 
 /**
- * Default temporal input for the hackathon's preferred Range of Hours workflow.
- * Date = today (visible, editable); Start = 05:00; End = 08:00.
+ * Default temporal input: single-hour at 05:00 (1 FortyGuard request).
+ * Date = today (visible, editable); Start = 05:00; End = 06:00 (derived).
+ * Single-hour mode ensures exactly ONE /v1/heatmap credit per Generate.
  */
 export function defaultTemporalInput(timezone?: string): AnalysisTemporalInput {
   return {
     date: todayLocalDate(timezone),
     startTime: '05:00',
-    endTime: '08:00',
-    timeMode: DEFAULT_TIME_MODE,
+    endTime: '06:00',
+    timeMode: DEFAULT_TIME_MODE, // 'single-hour'
   };
 }
 

@@ -216,8 +216,8 @@ describe('§16.20 — stale thermal data is cleared after location/AOI change', 
     const src = readFileSync(resolvePath(process.cwd(), 'src/app/page.tsx'), 'utf8');
     // Location selection clears stale state
     expect(src.match(/handleSelectLocation = useCallback[\s\S]{0,2500}clearResults\(\)/)).toBeTruthy();
-    // AOI drag clears stale state
-    expect(src.match(/handleMoveAoi = useCallback[\s\S]{0,1500}clearResults\(\)/)).toBeTruthy();
+    // Operating location move clears stale state and recomputes AOI
+    expect(src.match(/handleMoveOperatingLocation = useCallback[\s\S]{0,1500}clearResults\(\)/)).toBeTruthy();
     // AOI shape/span/resolution change effect: body clears stale state BEFORE the deps array
     expect(
       src.match(/useEffect\(\(\) => \{[\s\S]{0,300}clearResults\(\);[\s\S]{0,1200}?\}, \[prefs\.analysisAreaShape, prefs\.analysisAoiSpanMetres, prefs\.analysisResolution\]/)

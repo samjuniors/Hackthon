@@ -27,6 +27,7 @@ export type ProviderKind = 'gemini' | 'claude' | 'zai' | 'deterministic';
 
 export interface ProviderInvocationOptions {
   timeoutMs?: number;
+  configOverride?: { apiKey?: string; model?: string };
 }
 
 export interface ProviderInvocationResult {
@@ -118,19 +119,25 @@ export function buildProviderChain(preferred: PreferredAIProvider = 'auto'): Pro
 // Per-provider invocation (each throws on failure so the caller can fall back)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function withTimeout<T>(fn: () => Promise<T>, timeoutMs: number, provider: string): Promise<T> {
+async function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, timeoutMs: number, provider: string): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let timer: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`${provider.toUpperCase()}_TIMEOUT`));
+    }, timeoutMs);
+  });
   try {
-    return await fn();
+    return await Promise.race([fn(controller.signal), timeoutPromise]);
   } finally {
-    clearTimeout(timeoutId);
+    if (timer) clearTimeout(timer);
   }
 }
 
 function classifyInvocationError(err: unknown, provider: string): string {
   const msg = err instanceof Error ? err.message : String(err);
-  const isTimeout = err instanceof Error && (err.name === 'AbortError' || msg.includes('abort') || msg.includes('timeout'));
+  const isTimeout = err instanceof Error && (err.name === 'AbortError' || msg.includes('abort') || msg.includes('timeout') || msg.includes('TIMEOUT'));
   if (isTimeout) return `${provider.toUpperCase()}_TIMEOUT`;
   if (/\b429\b/.test(msg)) return `${provider.toUpperCase()}_RATE_LIMITED`;
   if (/\b5\d\d\b/.test(msg)) return `${provider.toUpperCase()}_SERVER_ERROR`;
@@ -143,8 +150,9 @@ async function invokeGemini(systemPrompt: string, userPrompt: string, cfg: Provi
   if (!cfg.apiKey) throw new Error('GEMINI_NOT_CONFIGURED');
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent?key=${cfg.apiKey}`;
-  const res = await withTimeout(() => fetch(url, {
+  const res = await withTimeout((signal) => fetch(url, {
     method: 'POST',
+    signal,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -171,8 +179,9 @@ async function invokeClaude(systemPrompt: string, userPrompt: string, cfg: Provi
   if (!cfg.apiKey) throw new Error('CLAUDE_NOT_CONFIGURED');
 
   const endpoint = cfg.baseUrl || 'https://api.anthropic.com/v1/messages';
-  const res = await withTimeout(() => fetch(endpoint, {
+  const res = await withTimeout((signal) => fetch(endpoint, {
     method: 'POST',
+    signal,
     headers: {
       'x-api-key': cfg.apiKey,
       'anthropic-version': '2023-06-01',
@@ -238,9 +247,16 @@ export async function invokeSpecificProvider(
   const cfg = getConfiguredProviders();
   const providerName: AIProviderName = provider === 'gemini' ? 'GEMINI' : provider === 'claude' ? 'CLAUDE' : 'ZAI';
 
+  const geminiCfg = options?.configOverride?.apiKey
+    ? { ...cfg.gemini, apiKey: options.configOverride.apiKey, model: options.configOverride.model || cfg.gemini.model }
+    : cfg.gemini;
+  const claudeCfg = options?.configOverride?.apiKey
+    ? { ...cfg.claude, apiKey: options.configOverride.apiKey, model: options.configOverride.model || cfg.claude.model }
+    : cfg.claude;
+
   let text: string;
-  if (provider === 'gemini') text = await invokeGemini(systemPrompt, userPrompt, cfg.gemini, timeoutMs);
-  else if (provider === 'claude') text = await invokeClaude(systemPrompt, userPrompt, cfg.claude, timeoutMs);
+  if (provider === 'gemini') text = await invokeGemini(systemPrompt, userPrompt, geminiCfg, timeoutMs);
+  else if (provider === 'claude') text = await invokeClaude(systemPrompt, userPrompt, claudeCfg, timeoutMs);
   else if (provider === 'zai') text = await invokeZai(systemPrompt, userPrompt, timeoutMs);
   else throw new Error(`UNSUPPORTED_PROVIDER: ${provider}`);
 
@@ -337,10 +353,55 @@ export async function testSpecificProvider(
  * Server-side AI health check across the whole fallback chain.
  * Reports which providers are configured + connected, and which is active.
  */
-export async function testAIConnection(
-  options?: { timeoutMs?: number; preferredProvider?: PreferredAIProvider; providerConfig?: { provider?: string; apiKey?: string } },
-): Promise<AIHealthResponse> {
+export async function testAIConnection(options?: {
+  preferredProvider?: PreferredAIProvider;
+  timeoutMs?: number;
+  providerConfig?: { provider?: string; apiKey?: string; model?: string };
+}): Promise<AIHealthResponse> {
   const checkedAt = new Date().toISOString();
+
+  if (options?.providerConfig?.provider === 'deterministic') {
+    return {
+      configured: false,
+      provider: 'NONE',
+      connected: false,
+      errorCode: 'AI_NOT_CONFIGURED',
+      errorMessage: 'Deterministic provider selected.',
+      checkedAt,
+      providerChain: [],
+    };
+  }
+
+  if (options?.providerConfig?.provider === 'gemini' && options?.providerConfig?.apiKey) {
+    const start = Date.now();
+    try {
+      const res = await withTimeout(() => fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${options.providerConfig?.model || GEMINI_DEFAULT_MODEL}:generateContent?key=${options.providerConfig?.apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'ping' }] }],
+            generationConfig: { maxOutputTokens: 1 },
+          }),
+        },
+      ), options?.timeoutMs ?? 5000, 'gemini');
+      const latencyMs = Date.now() - start;
+      if (res.ok) {
+        return {
+          configured: true,
+          provider: 'GEMINI',
+          connected: true,
+          latencyMs,
+          checkedAt,
+          providerChain: [{ provider: 'GEMINI', configured: true, connected: true, latencyMs }],
+        };
+      }
+    } catch {
+      /* fallthrough */
+    }
+  }
+
   const preferred = options?.preferredProvider ?? 'auto';
   const chain = buildProviderChain(preferred);
 
@@ -385,7 +446,7 @@ export async function testAIConnection(
 /** Compatibility export for detectAIProvider */
 export function detectAIProvider(config?: { provider?: string; apiKey?: string }): {
   provider: string;
-  providerName: AIProviderName;
+  providerName: string;
   model: string;
 } {
   const provider = config?.provider?.toLowerCase();
@@ -406,8 +467,15 @@ export function detectAIProvider(config?: { provider?: string; apiKey?: string }
   if (provider === 'openai' || (config?.apiKey && config.apiKey.startsWith('sk-proj-'))) {
     return {
       provider: 'openai',
-      providerName: 'NONE',
+      providerName: 'OPENAI',
       model: 'gpt-4o-mini',
+    };
+  }
+  if (provider === 'zai' || (config?.apiKey && config.apiKey.startsWith('zai-'))) {
+    return {
+      provider: 'zai',
+      providerName: 'ZAI',
+      model: ZAI_DEFAULT_MODEL,
     };
   }
   return {
@@ -421,9 +489,12 @@ export function detectAIProvider(config?: { provider?: string; apiKey?: string }
 export async function invokeAIProvider(
   systemPrompt: string,
   userPrompt: string,
-  options?: { providerConfig?: { provider?: string; apiKey?: string; model?: string }; timeoutMs?: number }
+  options?: { providerConfig?: { provider?: string; apiKey?: string; model?: string }; timeoutMs?: number },
 ): Promise<ProviderInvocationResult> {
   const provider = (options?.providerConfig?.provider?.toLowerCase() as ProviderKind) || 'gemini';
-  return invokeSpecificProvider(provider, systemPrompt, userPrompt, { timeoutMs: options?.timeoutMs });
+  return invokeSpecificProvider(provider, systemPrompt, userPrompt, {
+    timeoutMs: options?.timeoutMs,
+    configOverride: options?.providerConfig,
+  });
 }
 

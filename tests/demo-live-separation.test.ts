@@ -268,10 +268,9 @@ describe('DEMO/LIVE separation — workspace state machine (source contract)', (
     expect(pageSrc).toMatch(/demoCaptureAvailable \? FIXTURE_CAPTURE_REQUEST_AOI : null/);
   });
 
-  it('AOI dragging is a LIVE control — the captured analysis area is not draggable in DEMO', () => {
-    expect(pageSrc).toContain("aoiDraggable={mode === 'LIVE'}");
-    expect(mapSrc).toContain('aoiDraggable');
-    expect(mapSrc).toContain('if (!aoiDraggable) {');
+  it('operating location dragging is a LIVE control — the captured analysis area is fixed in DEMO', () => {
+    expect(pageSrc).toContain("locationDraggable={mode === 'LIVE'}");
+    expect(mapSrc).toContain('locationDraggable');
     // The map accepts a NULL location (EMPTY state renders no marker).
     expect(mapSrc).toContain('location: LocationPoint | null');
   });

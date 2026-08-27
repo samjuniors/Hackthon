@@ -226,6 +226,15 @@ export async function POST(request: Request) {
       hourlyTimestamps.push(new Date(tMs).toISOString());
     }
 
+    // ── Credit-safety guard (LIVE mode) ──────────────────────────────────────
+    // When the temporal input declares single-hour mode, cap to exactly ONE
+    // FortyGuard /v1/heatmap request. Belt-and-suspenders: the client already
+    // derives a 1h window, but this guard prevents a misconfigured or spoofed
+    // request from silently spending N credits.
+    if (mode === 'LIVE' && temporalInput.timeMode === 'single-hour' && hourlyTimestamps.length > 1) {
+      hourlyTimestamps.splice(1); // keep only the first hour
+    }
+
     if (hourlyTimestamps.length === 0) {
       throw new IncompleteTemporalCoverageError('Empty hourly sequence for requested time span');
     }

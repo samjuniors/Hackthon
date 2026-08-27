@@ -16,108 +16,157 @@ import {
 import type { MapLayerVisibility, AnalysisAreaShape } from '@/lib/user-preferences';
 import { useUserPreferences, AOI_SPAN_PRESETS_LOCAL } from '@/lib/user-preferences';
 import { getAoiCenter, isPointInAoi, moveAoiToCenter } from '@/lib/spatial/aoi';
+import { computeAoiThermalCoverage, formatCoverageLine } from '@/lib/spatial/coverage';
 import type { SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
-import { Layers, MapPin, Square, Maximize2, Minimize2, Plus, Check, X } from 'lucide-react';
+import { Layers3, MapPin, Square, Maximize2, Minimize2, Plus, Check, X } from 'lucide-react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 
 // Minimal inline type for MapLibre GeoJSON source data casts.
 type GeoJSONFC = FeatureCollection;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Lucide map-pin markers — TRUE geographic anchoring.
+//
+// Every marker is a MapLibre Marker with `anchor: 'bottom'`: the wrapper's
+// BOTTOM-CENTER sits exactly at the candidate's [lng, lat]. The glyph (Lucide
+// "map-pin" icon, 24×24 viewBox, stroke 2) is absolutely positioned inside the
+// wrapper with its TIP at the wrapper's bottom-centre — the icon's tip stroke
+// outer edge sits 1.0/24 units above the SVG bottom, so the glyph is shifted
+// down by size/24 px to land the tip EXACTLY on the geographic point. Zoom/pan
+// can never detach the pin — MapLibre re-projects the anchor on every frame.
+//
+// Rank is encoded by a SEPARATE badge element (never inside the icon) plus a
+// restrained deterministic colour — identity never relies on colour alone.
+// The 44px wrapper guarantees a touch-friendly hit area without displacing
+// the tip (the glyph is pointer-events: none inside it).
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Deterministic candidate accent palette — darker 700-level shades so white
- * pin numerals stay WCAG-readable. The recommended site overrides the palette
- * with a high-contrast inverted (white) pin.
+ * Deterministic restrained candidate palette (700-level tones — readable on
+ * both basemaps, white inner-dot contrast). Rank badges carry the identity;
+ * colour is only a secondary cue.
  */
 export const CANDIDATE_COLOR_PALETTE = [
-  '#c2410c', // burnt orange
-  '#0f766e', // deep teal
-  '#9333ea', // violet
-  '#15803d', // forest green
-  '#b45309', // amber
-  '#be185d', // magenta
+  '#0f766e', // teal 700
+  '#475569', // slate 600
+  '#92400e', // amber 800
+  '#166534', // green 800
+  '#7c2d12', // orange 900
+  '#52525b', // zinc 600
 ];
 
+/** Winner pin fill/stroke per theme — the ONE brand-accent marker on the map. */
+const WINNER_PIN_COLORS = {
+  dark:  { fill: '#22d3ee', stroke: '#0b1220', dot: '#0b1220' },
+  light: { fill: '#0e7490', stroke: '#ffffff', dot: '#ffffff' },
+};
+
 export function getCandidateColor(index: number, isWinner?: boolean): string {
-  if (isWinner) return '#ffffff';
+  if (isWinner) return WINNER_PIN_COLORS.light.fill;
   return CANDIDATE_COLOR_PALETTE[index % CANDIDATE_COLOR_PALETTE.length];
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SVG map-pin builders — TRUE geographic anchoring.
-//
-// Every marker is a MapLibre Marker with `anchor: 'bottom'`: the element's
-// BOTTOM-CENTER sits exactly at the candidate's [lng, lat]. The pin SVG tapers
-// to a tip drawn at the SVG's bottom-center, so the visual tip touches the
-// geographic point. The wrapper is 44px wide to guarantee a touch-friendly
-// hit area WITHOUT displacing the tip (the SVG is absolutely positioned at
-// the wrapper's bottom-center). Zoom/pan can never detach the pin — MapLibre
-// re-projects the anchor on every camera change.
-// ─────────────────────────────────────────────────────────────────────────────
+/** Lucide "map-pin" outline path (viewBox 0 0 24 24) — professional neutral geometry. */
+const LUCIDE_MAP_PIN_PATH =
+  'M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0';
 
-/** Shared teardrop pin path (viewBox 0 0 24 32; tip exactly at (12, 31)). */
-const PIN_PATH =
-  'M12 31 C12 31 3 20.5 3 12 a9 9 0 1 1 18 0 C21 20.5 12 31 12 31 Z';
-
-function pinSvg({
-  fill,
-  stroke,
-  label,
-  labelFill,
-  width,
-  innerDot,
-}: {
+/**
+ * Build the pin glyph HTML: Lucide map-pin SVG + optional separate rank badge.
+ * The glyph is a positioned span whose bottom edge (after the tip offset)
+ * coincides with the wrapper's bottom-centre — the geographic anchor.
+ */
+function pinGlyphHtml(opts: {
+  size: number;
   fill: string;
   stroke: string;
-  label?: string;
-  labelFill?: string;
-  width: number;
-  innerDot?: boolean;
+  dot: string;
+  strokeWidth?: number;
+  badge?: string;
+  badgeVariant?: 'candidate' | 'winner';
+  glyphClass?: string;
 }): string {
-  const height = Math.round((width / 24) * 32);
-  const fontSize = Math.round(width * 0.42);
-  return `
-  <svg width="${width}" height="${height}" viewBox="0 0 24 32" aria-hidden="true">
-    <path d="${PIN_PATH}" fill="${fill}" stroke="${stroke}" stroke-width="1.8" stroke-linejoin="round"/>
-    ${innerDot
-      ? `<circle cx="12" cy="12" r="3.4" fill="${labelFill ?? '#ffffff'}"/>`
-      : label
-        ? `<text x="12" y="${12 + fontSize * 0.36}" text-anchor="middle" font-size="${fontSize}" font-weight="700" fill="${labelFill ?? '#ffffff'}" font-family="Inter, system-ui, sans-serif">${label}</text>`
-        : ''}
-  </svg>`;
+  const { size, fill, stroke, dot, strokeWidth = 2, badge, badgeVariant, glyphClass } = opts;
+  // Lucide map-pin tip: arc bottom at y=22.0 (stroke centreline), outer edge
+  // 23.0 of 24 with stroke 2 → shift the glyph down by size/24 px so the tip
+  // touches the anchor point exactly.
+  const tipOffset = (size / 24).toFixed(2);
+  return (
+    `<span class="map-pin__glyph${glyphClass ? ` ${glyphClass}` : ''}" style="--pin-size:${size}px;--pin-tip-offset:${tipOffset}px">` +
+      `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" aria-hidden="true">` +
+        `<path d="${LUCIDE_MAP_PIN_PATH}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>` +
+        `<circle cx="12" cy="10" r="3" fill="${dot}"/>` +
+      `</svg>` +
+      (badge
+        ? `<span class="map-pin__badge${badgeVariant === 'winner' ? ' map-pin__badge--winner' : ''}">${badge}</span>`
+        : '') +
+    `</span>`
+  );
 }
 
-/** Build the DOM element for a candidate / recommended pin (anchor: bottom). */
+/** Inner HTML for a candidate / recommended marker wrapper (anchor: bottom). */
+function candidatePinInnerHtml({
+  rank,
+  color,
+  isWinner,
+  isDark,
+}: {
+  rank: string;
+  color: string;
+  isWinner: boolean;
+  isDark: boolean;
+}): string {
+  if (isWinner) {
+    const w = isDark ? WINNER_PIN_COLORS.dark : WINNER_PIN_COLORS.light;
+    // Recommended site: brand-accent pin, LARGER (27px), static ground ring,
+    // rank badge — dominant but never animated after the 200ms entrance.
+    return (
+      `<span class="winner-ring" aria-hidden="true"></span>` +
+      pinGlyphHtml({
+        size: 27,
+        fill: w.fill,
+        stroke: w.stroke,
+        dot: w.dot,
+        badge: rank,
+        badgeVariant: 'winner',
+      })
+    );
+  }
+  return pinGlyphHtml({
+    size: 22,
+    fill: color,
+    stroke: '#ffffff',
+    dot: '#ffffff',
+    badge: rank,
+    badgeVariant: 'candidate',
+  });
+}
+
+/** Build the wrapper DOM element for a candidate / recommended pin (anchor: bottom). */
 function createCandidatePinElement({
   color,
-  label,
+  rank,
   isWinner,
+  isDark,
   draggable,
 }: {
   color: string;
-  label: string;
+  rank: string;
   isWinner: boolean;
+  isDark: boolean;
   draggable: boolean;
 }): HTMLDivElement {
   const el = document.createElement('div');
   el.className = `map-pin${isWinner ? ' map-pin--winner' : ''}`;
   el.setAttribute('data-draggable', String(!!draggable));
   el.setAttribute('role', 'button');
-  el.setAttribute('aria-label', isWinner ? `Recommended site ${label}` : `Candidate site ${label}`);
+  el.setAttribute('aria-label', isWinner ? `Recommended site rank ${rank}` : `Candidate site rank ${rank}`);
   el.style.zIndex = isWinner ? '30' : '20';
-
-  if (isWinner) {
-    // Inverted high-contrast pin: white fill, dark stroke, clearly larger.
-    el.innerHTML =
-      `<div class="winner-halo"></div>` +
-      pinSvg({ fill: '#ffffff', stroke: '#101828', label, labelFill: '#101828', width: 34 });
-  } else {
-    el.innerHTML = pinSvg({ fill: color, stroke: '#ffffff', label, labelFill: '#ffffff', width: 23 });
-  }
+  el.innerHTML = candidatePinInnerHtml({ rank, color, isWinner, isDark });
   return el;
 }
 
-/** Build the DOM element for the operating-location pin (teal, inner dot). */
+/** Build the wrapper DOM element for the operating-location pin (teal, no badge). */
 function createOperatingPinElement(draggable: boolean): HTMLDivElement {
   const el = document.createElement('div');
   el.className = 'map-pin';
@@ -125,7 +174,7 @@ function createOperatingPinElement(draggable: boolean): HTMLDivElement {
   el.setAttribute('role', 'button');
   el.setAttribute('aria-label', 'Operating location');
   el.style.zIndex = '24';
-  el.innerHTML = pinSvg({ fill: '#0d9488', stroke: '#ffffff', innerDot: true, labelFill: '#ffffff', width: 26 });
+  el.innerHTML = pinGlyphHtml({ size: 24, fill: '#0d9488', stroke: '#ffffff', dot: '#ffffff' });
   return el;
 }
 
@@ -978,6 +1027,30 @@ export function ThermalMap({
   }, [mapReady, spatialField, analysisAoi, regionBoundary, regionMask]);
 
   // ─────────────────────────────────────────────────────────────────────
+  // DEV-ONLY spatial instrumentation — AOI ↔ provider thermal coverage.
+  //
+  // Measures (never modifies) the relationship between the canonical analysis
+  // AOI and the genuine provider cells so coverage complaints can be
+  // attributed correctly:
+  //   rendering bug (CASE A) vs honest provider gap (CASE B) vs provider
+  // overshoot beyond the requested AOI (CASE D).
+  // Logs in development only; stripped from the production bundle by the
+  // NODE_ENV guard below.
+  // ─────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    if (!analysisAoi || !spatialField) return;
+    try {
+      const coverage = computeAoiThermalCoverage(analysisAoi, spatialField);
+      if (coverage) {
+        console.info('[thermal-coverage]', formatCoverageLine(coverage), coverage);
+      }
+    } catch {
+      /* diagnostics only — never break rendering */
+    }
+  }, [analysisAoi, spatialField]);
+
+  // ─────────────────────────────────────────────────────────────────────
   // Committed AOI validity paint
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1118,8 +1191,9 @@ export function ThermalMap({
       });
 
       const siteColor = getCandidateColor(index, isWinner);
-      // Pin visual label: rank number (winner always shows its rank too).
-      const pinLabel = String(index + 1);
+      // Rank number — rendered in the SEPARATE badge (never inside the icon).
+      const rank = String(index + 1);
+      const isDark = theme === 'dark';
 
       if (existing) {
         existing.marker.setLngLat([item.location.longitude, item.location.latitude]);
@@ -1136,37 +1210,35 @@ export function ThermalMap({
         el.setAttribute('data-draggable', String(!!candidatesDraggable));
         el.setAttribute('aria-label', isWinner ? `Recommended site ${cleanName}` : `Candidate site ${cleanName}`);
 
-        // Only update the pin DOM if the winner state or index changed —
-        // prevents DOM destruction (and drag interruption) mid-interaction.
+        // Only update the pin DOM if the winner state, index, or THEME changed
+        // — prevents DOM destruction (and drag interruption) mid-interaction.
         const prevWinner = el.getAttribute('data-is-winner') === 'true';
         const prevIndex = el.getAttribute('data-site-index');
-        if (prevWinner !== isWinner || prevIndex !== String(index)) {
+        const prevTheme = el.getAttribute('data-pin-theme');
+        if (prevWinner !== isWinner || prevIndex !== String(index) || prevTheme !== theme) {
           el.setAttribute('data-is-winner', String(isWinner));
           el.setAttribute('data-site-index', String(index));
+          el.setAttribute('data-pin-theme', theme);
           // NEVER overwrite className wholesale — MapLibre appends its own
           // positioning classes (maplibregl-marker, anchor classes) to this
           // element; wiping them detaches the pin from its geographic anchor.
           el.classList.add('map-pin');
           el.classList.toggle('map-pin--winner', isWinner);
-          if (isWinner) {
-            el.innerHTML =
-              `<div class="winner-halo"></div>` +
-              pinSvg({ fill: '#ffffff', stroke: '#101828', label: pinLabel, labelFill: '#101828', width: 34 });
-          } else {
-            el.innerHTML = pinSvg({ fill: siteColor, stroke: '#ffffff', label: pinLabel, labelFill: '#ffffff', width: 24 });
-          }
+          el.innerHTML = candidatePinInnerHtml({ rank, color: siteColor, isWinner, isDark });
         }
       } else {
         const el = createCandidatePinElement({
           color: siteColor,
-          label: pinLabel,
+          rank,
           isWinner,
+          isDark,
           draggable: !!candidatesDraggable,
         });
         el.setAttribute('data-testid', isWinner ? 'recommended-site-marker' : 'candidate-site-marker');
         el.setAttribute('data-location-id', item.locationId);
         el.setAttribute('data-is-winner', String(isWinner));
         el.setAttribute('data-site-index', String(index));
+        el.setAttribute('data-pin-theme', theme);
 
         const popup = new Popup({ offset: 8, closeButton: false }).setHTML(popupHtml);
 
@@ -1327,7 +1399,7 @@ export function ThermalMap({
             className="map-tool-btn"
             data-active={openMenu === 'layers' ? 'true' : 'false'}
           >
-            <Layers className="size-4" aria-hidden="true" />
+            <Layers3 className="size-4" aria-hidden="true" />
           </button>
           {openMenu === 'layers' && (
           <div

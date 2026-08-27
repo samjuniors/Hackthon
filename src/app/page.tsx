@@ -1179,7 +1179,8 @@ export default function WorkspacePage() {
         onClearLocation={handleClearLocation}
         temporalLabel={headerTemporalLabel}
         onModeChange={handleModeChange}
-        onOpenMobileSheet={() => setSheetOpen(true)}
+        onOpenMobileSheet={() => setSheetOpen((v) => !v)}
+        mobileSheetOpen={sheetOpen}
         activeStateFilter={regionDisplayName || selectedLocation?.state}
       />
 

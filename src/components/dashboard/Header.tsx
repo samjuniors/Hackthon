@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Settings, Sun, Moon, MapPin, Menu, ChevronDown, CalendarClock } from 'lucide-react';
+import { Settings, Sun, Moon, MapPin, Menu, X, ChevronDown, CalendarClock } from 'lucide-react';
 import { LocationSearch } from '@/components/LocationSearch';
 import type { DataSourceMode } from '@/types/provenance';
 import type { AIProviderName, NamedLocation, ProviderStatus } from '@/types/provider';
@@ -41,8 +41,11 @@ interface HeaderProps {
   temporalLabel?: string;
   /** Compact DEMO/LIVE segmented control handler. */
   onModeChange: (m: DataSourceMode) => void;
-  /** Mobile only — opens the analysis bottom sheet. */
+  /** Mobile only — TOGGLES the analysis bottom sheet (open ⇄ close). */
   onOpenMobileSheet?: () => void;
+  /** Mobile only — current open state of the analysis bottom sheet (drives
+   *  the button's icon Menu ⇄ X, aria-expanded, and aria-label). */
+  mobileSheetOpen?: boolean;
   /** Active geographic region/state for preset filtering in the location search. */
   activeStateFilter?: string;
 }
@@ -61,6 +64,7 @@ export function Header({
   temporalLabel,
   onModeChange,
   onOpenMobileSheet,
+  mobileSheetOpen = false,
   activeStateFilter,
 }: HeaderProps) {
   const [locationOpen, setLocationOpen] = useState(false);
@@ -238,16 +242,22 @@ export function Header({
             <Settings className="size-4" aria-hidden="true" />
           </button>
 
-          {/* Mobile: menu → analysis bottom sheet */}
+          {/* Mobile: menu → analysis bottom sheet (TRUE TOGGLE — the same
+              button opens AND closes the drawer; the icon reflects state). */}
           {onOpenMobileSheet ? (
             <button
               type="button"
               onClick={onOpenMobileSheet}
-              aria-label="Open analysis panel"
+              aria-expanded={mobileSheetOpen}
+              aria-label={mobileSheetOpen ? 'Close analysis panel' : 'Open analysis panel'}
               data-testid="mobile-menu-btn"
               className="md:hidden flex items-center justify-center size-8 rounded-lg border border-border bg-surface-card text-text-primary hover:bg-surface-elevated transition-colors duration-150"
             >
-              <Menu className="size-4" aria-hidden="true" />
+              {mobileSheetOpen ? (
+                <X className="size-4" aria-hidden="true" />
+              ) : (
+                <Menu className="size-4" aria-hidden="true" />
+              )}
             </button>
           ) : null}
         </div>

@@ -41,6 +41,7 @@ export function MobileAnalysisSheet({
   const [dragY, setDragY] = useState<number | null>(null);
   const dragStartYRef = useRef(0);
   const dragStartOpenRef = useRef(false);
+  const handleRef = useRef<HTMLDivElement>(null);
 
   // Close on Escape when open
   useEffect(() => {
@@ -51,6 +52,17 @@ export function MobileAnalysisSheet({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onOpenChange]);
+
+  // When opened, move focus INTO the sheet so keyboard/AT users land in the
+  // dialog (the handle is the sheet's natural focus target). While closed the
+  // map and page remain fully interactive.
+  useEffect(() => {
+    if (open) {
+      // Defer to after the open transition so focus lands on the opened panel.
+      const t = setTimeout(() => handleRef.current?.focus(), 60);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
 
   const onHandlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -105,18 +117,20 @@ export function MobileAnalysisSheet({
       aria-label="Analysis panel"
       aria-modal={open ? 'true' : 'false'}
     >
-      {/* Drag handle + peek bar */}
+      {/* Drag handle + peek bar — tap/drag via POINTER events only.
+          (An onClick toggle here would DOUBLE-toggle: pointerup already
+          toggles on tap (delta ≈ 0) and commits drags, and the subsequent
+          click event would immediately reverse it.) */}
       <div
-        className="cursor-grab active:cursor-grabbing select-none"
+        ref={handleRef}
+        tabIndex={0}
+        className="cursor-grab active:cursor-grabbing select-none outline-none focus-visible:ring-2 focus-visible:ring-inset"
+        style={{ outlineOffset: '-2px' }}
         onPointerDown={onHandlePointerDown}
         onPointerMove={onHandlePointerMove}
         onPointerUp={onHandlePointerUp}
         onPointerCancel={onHandlePointerUp}
-        onClick={() => {
-          if (dragY === null) onOpenChange(!open);
-        }}
         role="button"
-        tabIndex={0}
         aria-label={open ? 'Collapse analysis panel' : 'Expand analysis panel'}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') onOpenChange(!open);

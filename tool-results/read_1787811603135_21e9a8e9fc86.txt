@@ -1,0 +1,766 @@
+     1→'use client';
+     2→
+     3→import { motion } from 'framer-motion';
+     4→import { useState } from 'react';
+     5→import { LocationSearch } from '@/components/LocationSearch';
+     6→import { SystemStatus } from '@/components/dashboard/SystemStatus';
+     7→import type { NamedLocation, ProviderStatus, FortyGuardHealthResponse, AIHealthResponse } from '@/types/provider';
+     8→import type { DataSourceMode } from '@/types/provenance';
+     9→import type { LocationPoint } from '@/types/domain';
+    10→import type { CandidateSite } from '@/hooks/use-candidate-sites';
+    11→import { useUserPreferences, AOI_SPAN_PRESETS_LOCAL } from '@/lib/user-preferences';
+    12→import { aoiSpanLabel } from '@/lib/spatial/aoi';
+    13→import { isLocationCoveredByFixture } from '@/lib/location/search';
+    14→import {
+    15→  type AnalysisTemporalInput,
+    16→  type AnalysisTimeMode,
+    17→  TIME_MODE_OPTIONS,
+    18→  deriveDurationHours,
+    19→  effectiveTimeBounds,
+    20→  formatTemporalForHeader,
+    21→  FIXTURE_TEMPORAL_METADATA,
+    22→  isValidDateStr,
+    23→  isValidTimeStr,
+    24→  todayLocalDate,
+    25→  FIXTURE_TIMEZONE,
+    26→} from '@/lib/temporal/analysis-window';
+    27→import {
+    28→  FIXTURE_DISPLAY_GRANULARITY,
+    29→  FIXTURE_DISPLAY_SNAPSHOT_COUNT,
+    30→  FIXTURE_CELL_COUNT,
+    31→  FIXTURE_CAPTURED_AT_ISO,
+    32→  FIXTURE_CAPTURED_HOUR_ISO,
+    33→  fixtureCaptureSpanLabel,
+    34→} from '@/lib/fortyguard/fixture-display';
+    35→
+    36→interface ControlRailProps {
+    37→  mode: DataSourceMode;
+    38→  /** NULL in the EMPTY workspace state (no location selected yet). */
+    39→  selectedLocation: NamedLocation | null;
+    40→  /** Current AOI center (tracks drag movements — Section 4). */
+    41→  analysisCenter?: LocationPoint;
+    42→  /** Non-null when a state/region was selected as CONTEXT (Section 13). */
+    43→  stateLevelSelection?: NamedLocation | null;
+    44→  /**
+    45→   * True when the DEMO data source has a genuine capture for the selected
+    46→   * location (DEMO is a DATA SOURCE, not a default state): the captured
+    47→   * analysis area, cells, and application-defined candidates exist ONLY
+    48→   * then. FALSE → honest "no DEMO capture for this location" presentation.
+    49→   */
+    50→  demoCaptureAvailable?: boolean;
+    51→  /** Explicit WHEN inputs — date + start + end + time mode. */
+    52→  temporalInput: AnalysisTemporalInput;
+    53→  onTemporalChange: (next: AnalysisTemporalInput) => void;
+    54→  onGenerate: () => void;
+    55→  loading: boolean;
+    56→  onSelectLocation: (loc: NamedLocation) => void;
+    57→  onSwitchToLive: () => void;
+    58→  // System status
+    59→  fortyGuardStatus: ProviderStatus;
+    60→  fortyGuardHealth: FortyGuardHealthResponse | null;
+    61→  aiStatus: ProviderStatus;
+    62→  aiHealth: AIHealthResponse | null;
+    63→  fieldReady: boolean;
+    64→  onTestFortyGuard: () => void;
+    65→  onTestAI: () => void;
+    66→  // Candidate sites (REAL user-placed sites — Section 8)
+    67→  candidateSites: CandidateSite[];
+    68→  onRemoveSite: (locationId: string) => void;
+    69→  onRenameSite: (locationId: string, name: string) => void;
+    70→  onToggleAddSiteMode: () => void;
+    71→  addSiteMode: boolean;
+    72→  onAddSiteFromSearch: (loc: NamedLocation) => void;
+    73→  /** Granularity the captured fixture was ACTUALLY recorded at (DEMO display). */
+    74→  fixtureGranularity?: number;
+    75→}
+    76→
+    77→/** Format a metres value as a compact label (1000 → "1km"). */
+    78→function metresLabel(m: number): string {
+    79→  return m >= 1000 ? `${m / 1000}km` : `${m}m`;
+    80→}
+    81→
+    82→/**
+    83→ * Left control rail — the operational input workspace.
+    84→ * Location → Analysis Area (span) → Thermal Cell → Candidate Sites → WHEN → Generate.
+    85→ * System status sits compactly at the bottom (advanced diagnostics live in Settings).
+    86→ */
+    87→export function ControlRail({
+    88→  mode,
+    89→  selectedLocation,
+    90→  analysisCenter,
+    91→  stateLevelSelection,
+    92→  temporalInput,
+    93→  onTemporalChange,
+    94→  onGenerate,
+    95→  loading,
+    96→  onSelectLocation,
+    97→  onSwitchToLive,
+    98→  fortyGuardStatus,
+    99→  fortyGuardHealth,
+   100→  aiStatus,
+   101→  aiHealth,
+   102→  fieldReady,
+   103→  onTestFortyGuard,
+   104→  onTestAI,
+   105→  candidateSites,
+   106→  onRemoveSite,
+   107→  onRenameSite,
+   108→  onToggleAddSiteMode,
+   109→  addSiteMode,
+   110→  onAddSiteFromSearch,
+   111→  fixtureGranularity,
+   112→  demoCaptureAvailable = false,
+   113→}: ControlRailProps) {
+   114→  const [prefs, setters] = useUserPreferences();
+   115→  const [renamingId, setRenamingId] = useState<string | null>(null);
+   116→  const [renameValue, setRenameValue] = useState('');
+   117→  const [showSiteSearch, setShowSiteSearch] = useState(false);
+   118→  const isFixtureMismatch =
+   119→    mode === 'FIXTURE' && !!selectedLocation && !isLocationCoveredByFixture(selectedLocation);
+   120→  const aiProvider = aiHealth?.provider;
+   121→  // Display timezone: DEMO is UTC-anchored (the capture's request hour is a
+   122→  // UTC instant); LIVE uses the selected location's timezone.
+   123→  const tz = mode === 'FIXTURE' ? FIXTURE_TIMEZONE : selectedLocation?.timezone;
+   124→  const derivedDuration = deriveDurationHours(temporalInput);
+   125→  const isFixtureAnchored = mode === 'FIXTURE';
+   126→  const centerCoords = analysisCenter
+   127→    ?? (selectedLocation
+   128→      ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }
+   129→      : null);
+   130→
+   131→  // Helper to update a single field of the temporal input.
+   132→  const update = (patch: Partial<AnalysisTemporalInput>) =>
+   133→    onTemporalChange({ ...temporalInput, ...patch });
+   134→
+   135→  const handleTimeModeChange = (m: AnalysisTimeMode) => {
+   136→    setters.setAnalysisTimeMode(m);
+   137→    update({ timeMode: m });
+   138→  };
+   139→
+   140→  // For Single hour, End is derived (Start + 1h) and shown read-only.
+   141→  const isSingleHour = temporalInput.timeMode === 'single-hour';
+   142→  const bounds = effectiveTimeBounds(temporalInput);
+   143→
+   144→  // Validation flags — surface inline so the user fixes before Generate.
+   145→  const dateValid = isValidDateStr(temporalInput.date);
+   146→  const startValid = isValidTimeStr(temporalInput.startTime);
+   147→  const endValid = isValidTimeStr(temporalInput.endTime);
+   148→  const rangeValid =
+   149→    temporalInput.timeMode !== 'range-of-hours' ||
+   150→    (startValid && endValid && bounds.end > bounds.start);
+   151→  const allValid = dateValid && startValid && endValid && rangeValid;
+   152→
+   153→  // Honest forecast note (no invented provider boundaries).
+   154→  const isFutureDate = dateValid && tz ? temporalInput.date > todayLocalDate(tz) : false;
+   155→
+   156→  const outsideSiteCount = candidateSites.filter((s) => s.outsideAoi).length;
+   157→
+   158→  // LIVE billing disclosure: a range evaluation sends ONE hourly provider
+   159→  // request per evaluated hour (cached results are reused at no extra cost).
+   160→  const liveHourlyRequestCount = Math.max(1, derivedDuration);
+   161→
+   162→  return (
+   163→    <div className="space-y-4">
+   164→      {/* ── DEMO notice — truthful capture provenance ── */}
+   165→      {mode === 'FIXTURE' && (
+   166→        <div className="rounded-xl p-3.5 border border-border bg-accent-amber-bg" data-testid="demo-capture-notice">
+   167→          <div className="flex items-center gap-2 mb-1">
+   168→            <span className="text-sm" style={{ color: 'var(--accent-amber)' }}>⬡</span>
+   169→            <span className="text-sm font-bold" style={{ color: 'var(--accent-amber)' }}>
+   170→              DEMO · Captured FortyGuard
+   171→            </span>
+   172→          </div>
+   173→          <div className="text-[10px] font-mono leading-relaxed" style={{ color: 'var(--accent-amber-text)', opacity: 0.9 }}>
+   174→            <div>{FIXTURE_DISPLAY_GRANULARITY}m cell resolution</div>
+   175→            <div>Captured analysis area: {fixtureCaptureSpanLabel()}</div>
+   176→            <div>Model hour: {FIXTURE_CAPTURED_HOUR_ISO.slice(0, 10)} · {FIXTURE_CAPTURED_HOUR_ISO.slice(11, 16)} UTC</div>
+   177→            <div>Captured: {FIXTURE_CAPTURED_AT_ISO.slice(0, 10)} {FIXTURE_CAPTURED_AT_ISO.slice(11, 16)} UTC</div>
+   178→            <div>{FIXTURE_CELL_COUNT} provider cells · {FIXTURE_DISPLAY_SNAPSHOT_COUNT}-hour snapshot</div>
+   179→          </div>
+   180→          <p className="text-xs leading-relaxed mt-1.5" style={{ color: 'var(--accent-amber-text)', opacity: 0.85 }}>
+   181→            Offline demonstration replaying one genuine captured FortyGuard field (Lower Manhattan). Selecting a Manhattan
+   182→            DEMO location loads this captured dataset. Switch to LIVE in Settings to analyse any location in real time.
+   183→          </p>
+   184→        </div>
+   185→      )}
+   186→
+   187→      {/* ── ANALYSIS ── */}
+   188→      <div className="rounded-xl border border-border bg-surface-card p-4 space-y-4">
+   189→        <div className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">Analysis</div>
+   190→
+   191→        <LocationSearch
+   192→          selectedLocation={selectedLocation}
+   193→          mode={mode}
+   194→          onSelectLocation={onSelectLocation}
+   195→          onSwitchToLive={onSwitchToLive}
+   196→        />
+   197→
+   198→        {/* ── State-level selection context (Section 13) ── */}
+   199→        {stateLevelSelection && (
+   200→          <div
+   201→            className="rounded-lg p-3 border"
+   202→            style={{ background: 'rgba(225,29,72,0.06)', borderColor: 'rgba(225,29,72,0.35)' }}
+   203→            data-testid="state-level-selection-indicator"
+   204→          >
+   205→            <div className="flex items-center justify-between mb-1">
+   206→              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#e11d48' }}>
+   207→                Geographic Region Selected
+   208→              </span>
+   209→              <span className="text-[9px] font-mono text-text-dimmed">context only</span>
+   210→            </div>
+   211→            <div className="text-xs font-bold text-text-primary">{stateLevelSelection.name}</div>
+   212→            <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
+   213→              Region boundary shown for context. The analysis point did NOT move — now search a city, street, or address
+   214→              inside {stateLevelSelection.name} to place the analysis area.
+   215→            </p>
+   216→          </div>
+   217→        )}
+   218→
+   219→        <div className="border-t border-border" />
+   220→
+   221→        {/* ── Analysis Area — DEMO: the CAPTURED analysis area (fixed) / LIVE: user span controls ── */}
+   222→        <div>
+   223→          <div className="flex items-center justify-between mb-2">
+   224→            <span className="text-sm font-medium text-text-secondary">Analysis Area</span>
+   225→            <span className="text-[10px] font-mono text-text-dimmed">
+   226→              {mode === 'FIXTURE'
+   227→                ? 'captured · fixed'
+   228→                : `${prefs.analysisAreaShape === 'circle' ? 'diameter' : 'square span'} · draggable`}
+   229→            </span>
+   230→          </div>
+   231→          {mode === 'FIXTURE' ? (
+   232→            <div data-testid="captured-analysis-area">
+   233→              <div className="px-2 py-2 rounded-lg bg-surface-deep/60 border border-border/50 text-[10px] font-mono space-y-1">
+   234→                <div className="flex items-center justify-between">
+   235→                  <span className="text-text-muted">Captured analysis area:</span>
+   236→                  <span className="font-bold" style={{ color: 'var(--accent-amber)' }}>
+   237→                    {fixtureCaptureSpanLabel()}
+   238→                  </span>
+   239→                </div>
+   240→                <div className="flex items-center justify-between">
+   241→                  <span className="text-text-muted">Source:</span>
+   242→                  <span className="text-text-dimmed">genuine FortyGuard capture request</span>
+   243→                </div>
+   244→              </div>
+   245→              <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
+   246→                DEMO analyses the exact area the captured FortyGuard field was requested for (read from the capture
+   247→                metadata — the dashed extent on the map). Size and shape controls apply to LIVE only: DEMO never
+   248→                pretends a different provider capture exists.
+   249→              </p>
+   250→            </div>
+   251→          ) : (
+   252→            <>
+   253→              {/* Shape toggle (LIVE) */}
+   254→              <div className="grid grid-cols-2 gap-2 mb-2">
+   255→                {(['polygon', 'circle'] as const).map((shape) => (
+   256→                  <button
+   257→                    key={shape}
+   258→                    data-testid={`aoi-shape-${shape}`}
+   259→                    onClick={() => setters.setAnalysisAreaShape(shape)}
+   260→                    className={`min-h-[40px] rounded-lg text-xs font-semibold capitalize transition-all border ${
+   261→                      prefs.analysisAreaShape === shape
+   262→                        ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   263→                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   264→                    }`}
+   265→                  >
+   266→                    {shape === 'polygon' ? 'Square' : 'Circle'}
+   267→                  </button>
+   268→                ))}
+   269→              </div>
+   270→              {/* AOI span presets — the number IS the visible size:
+   271→                  polygon → side length ("400m × 400m"), circle → diameter. */}
+   272→              <div className="grid grid-cols-5 gap-1.5" data-testid="aoi-size-presets">
+   273→                {AOI_SPAN_PRESETS_LOCAL.map((size) => {
+   274→                  const active = prefs.analysisAoiSpanMetres === size;
+   275→                  return (
+   276→                    <button
+   277→                      key={size}
+   278→                      data-testid={`aoi-size-${size}`}
+   279→                      onClick={() => setters.setAnalysisAoiSpanMetres(size)}
+   280→                      className={`min-h-[36px] rounded-md text-[10px] font-mono font-bold transition-all border ${
+   281→                        active
+   282→                          ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   283→                          : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   284→                      }`}
+   285→                      aria-pressed={active}
+   286→                    >
+   287→                      {metresLabel(size)}
+   288→                    </button>
+   289→                  );
+   290→                })}
+   291→              </div>
+   292→              <div className="mt-1.5 px-2 py-1 rounded bg-surface-deep/60 border border-border/50 text-[10px] font-mono text-text-muted flex items-center justify-between">
+   293→                <span>Size:</span>
+   294→                <span className="text-accent-cyan font-bold" data-testid="aoi-span-label">
+   295→                  {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
+   296→                </span>
+   297→              </div>
+   298→              <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
+   299→                Drag the ⌖ handle on the map to move the area — the moved geometry is exactly what FortyGuard receives.
+   300→              </p>
+   301→            </>
+   302→          )}
+   303→        </div>
+   304→
+   305→        {/* ── Thermal Cell resolution (Section 2 — granularity, NOT zoom) ── */}
+   306→        <div>
+   307→          <div className="flex items-center justify-between mb-2">
+   308→            <span className="text-sm font-medium text-text-secondary">Thermal Cell</span>
+   309→            <span className="text-[10px] font-mono text-text-dimmed">
+   310→              {mode === 'LIVE' ? 'FortyGuard granularity' : `fixture captured at ${fixtureGranularity ?? 100}m`}
+   311→            </span>
+   312→          </div>
+   313→          {mode === 'FIXTURE' ? (
+   314→            <div
+   315→              className="rounded-lg bg-surface-deep/60 border border-border/50 px-2 py-2 flex items-center justify-between"
+   316→              data-testid="captured-resolution"
+   317→            >
+   318→              <span className="text-[10px] font-mono text-text-muted">Captured resolution:</span>
+   319→              <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--accent-amber)' }}>
+   320→                {fixtureGranularity ?? 100}m × {fixtureGranularity ?? 100}m
+   321→              </span>
+   322→            </div>
+   323→          ) : (
+   324→          <div className="grid grid-cols-3 gap-2" data-testid="resolution-options">
+   325→            {([60, 80, 100] as const).map((r) => {
+   326→              const active = prefs.analysisResolution === r;
+   327→              return (
+   328→                <button
+   329→                  key={r}
+   330→                  data-testid={`resolution-${r}`}
+   331→                  onClick={() => setters.setAnalysisResolution(r)}
+   332→                  title={`FortyGuard thermal-cell granularity ${r}m × ${r}m (does not change map zoom)`}
+   333→                  className={`min-h-[40px] rounded-lg text-xs font-semibold transition-all border leading-tight ${
+   334→                    active
+   335→                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   336→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   337→                  }`}
+   338→                >
+   339→                  {r}m × {r}m
+   340→                </button>
+   341→              );
+   342→            })}
+   343→          </div>
+   344→          )}
+   345→        </div>
+   346→
+   347→        {/* ── Candidate Sites (REAL sites only — Section 8) ── */}
+   348→        <div className="border-t border-border" />
+   349→        <div data-testid="candidate-sites-section">
+   350→          <div className="flex items-center justify-between mb-2">
+   351→            <span className="text-sm font-medium text-text-secondary">Candidate Sites</span>
+   352→            <span className="text-[10px] font-mono text-text-dimmed">
+   353→              {mode === 'FIXTURE' ? 'DEMO CANDIDATES · application-defined' : 'user-placed'}
+   354→            </span>
+   355→          </div>
+   356→
+   357→          {mode === 'FIXTURE' ? (
+   358→            demoCaptureAvailable ? (
+   359→            <div className="space-y-1.5">
+   360→              <p className="text-[10px] text-text-muted leading-relaxed">
+   361→                Application-defined DEMO candidates — points the application wants evaluated against the captured
+   362→                FortyGuard provider data (not captured sites, not FortyGuard observations). LIVE lets you place your own
+   363→                sites.
+   364→              </p>
+   365→              {['Battery Park Greenway', 'City Hall Civic Center', 'Chinatown / Bowery'].map((n) => (
+   366→                <div key={n} className="flex items-center gap-2 rounded-md bg-surface-deep border border-border px-2.5 py-1.5">
+   367→                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--text-secondary)' }} />
+   368→                  <span className="text-xs text-text-secondary">{n}</span>
+   369→                  <span className="ml-auto text-[8px] font-mono uppercase text-text-dimmed">demo candidate</span>
+   370→                </div>
+   371→              ))}
+   372→            </div>
+   373→            ) : (
+   374→              <p className="text-[10px] text-text-muted leading-relaxed" data-testid="no-demo-candidates">
+   375→                No DEMO candidates — this location has no captured FortyGuard dataset. Switch to LIVE to place your own
+   376→                candidate sites, or select a Manhattan DEMO location.
+   377→              </p>
+   378→            )
+   379→          ) : (
+   380→            <div className="space-y-2">
+   381→              {/* Add-site actions */}
+   382→              <div className="grid grid-cols-2 gap-2">
+   383→                <button
+   384→                  type="button"
+   385→                  data-testid="add-site-map-btn"
+   386→                  onClick={onToggleAddSiteMode}
+   387→                  className={`min-h-[38px] rounded-lg text-[11px] font-bold transition-all border flex items-center justify-center gap-1.5 ${
+   388→                    addSiteMode
+   389→                      ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+   390→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   391→                  }`}
+   392→                >
+   393→                  {addSiteMode ? '✓ Click the map…' : '+ Add on map'}
+   394→                </button>
+   395→                <button
+   396→                  type="button"
+   397→                  data-testid="add-site-search-btn"
+   398→                  onClick={() => setShowSiteSearch((v) => !v)}
+   399→                  className={`min-h-[38px] rounded-lg text-[11px] font-bold transition-all border flex items-center justify-center gap-1.5 ${
+   400→                    showSiteSearch
+   401→                      ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   402→                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   403→                  }`}
+   404→                >
+   405→                  🔍 From search
+   406→                </button>
+   407→              </div>
+   408→
+   409→              {/* Site search inline */}
+   410→              {showSiteSearch && (
+   411→                <div className="rounded-lg border border-border bg-surface-deep p-2">
+   412→                  <LocationSearch
+   413→                    selectedLocation={selectedLocation}
+   414→                    mode={mode}
+   415→                    onSelectLocation={(loc) => {
+   416→                      onAddSiteFromSearch(loc);
+   417→                      setShowSiteSearch(false);
+   418→                    }}
+   419→                    onSwitchToLive={undefined}
+   420→                    compact
+   421→                  />
+   422→                  <p className="text-[9px] text-text-dimmed mt-1">
+   423→                    Only sites inside the analysis area can be added.
+   424→                  </p>
+   425→                </div>
+   426→              )}
+   427→
+   428→              {/* Site list */}
+   429→              {candidateSites.length === 0 ? (
+   430→                <p className="text-[10px] text-text-muted leading-relaxed" data-testid="no-candidate-sites">
+   431→                  No candidate sites yet. LIVE never fabricates sites — add one on the map or from search, then Generate.
+   432→                </p>
+   433→              ) : (
+   434→                <ul className="space-y-1.5 max-h-40 overflow-y-auto" data-testid="candidate-sites-list">
+   435→                  {candidateSites.map((site, idx) => (
+   436→                    <li
+   437→                      key={site.locationId}
+   438→                      className={`rounded-md border px-2.5 py-1.5 ${
+   439→                        site.outsideAoi
+   440→                          ? 'border-red-400/60 bg-red-400/5'
+   441→                          : 'border-border bg-surface-deep'
+   442→                      }`}
+   443→                    >
+   444→                      <div className="flex items-center gap-2">
+   445→                        <span className="text-[9px] font-mono font-bold text-text-dimmed flex-shrink-0">{idx + 1}.</span>
+   446→                        {renamingId === site.locationId ? (
+   447→                          <input
+   448→                            autoFocus
+   449→                            value={renameValue}
+   450→                            onChange={(e) => setRenameValue(e.target.value)}
+   451→                            onBlur={() => {
+   452→                              if (renameValue.trim()) onRenameSite(site.locationId, renameValue.trim());
+   453→                              setRenamingId(null);
+   454→                            }}
+   455→                            onKeyDown={(e) => {
+   456→                              if (e.key === 'Enter') {
+   457→                                if (renameValue.trim()) onRenameSite(site.locationId, renameValue.trim());
+   458→                                setRenamingId(null);
+   459→                              }
+   460→                            }}
+   461→                            className="flex-1 min-w-0 bg-surface-elevated border border-accent-cyan/50 rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none"
+   462→                          />
+   463→                        ) : (
+   464→                          <button
+   465→                            type="button"
+   466→                            onClick={() => {
+   467→                              setRenamingId(site.locationId);
+   468→                              setRenameValue(site.name);
+   469→                            }}
+   470→                            className="flex-1 min-w-0 text-left text-xs text-text-secondary hover:text-text-primary transition-colors truncate"
+   471→                            title="Click to rename"
+   472→                          >
+   473→                            {site.name}
+   474→                          </button>
+   475→                        )}
+   476→                        <span
+   477→                          className="text-[8px] font-mono uppercase text-text-dimmed flex-shrink-0"
+   478→                          title={`Added via ${site.origin}`}
+   479→                        >
+   480→                          {site.origin === 'map-click' ? 'map' : site.origin}
+   481→                        </span>
+   482→                        <button
+   483→                          type="button"
+   484→                          onClick={() => onRemoveSite(site.locationId)}
+   485→                          className="text-text-dimmed hover:text-red-400 transition-colors text-xs flex-shrink-0"
+   486→                          title="Remove site"
+   487→                        >
+   488→                          ✕
+   489→                        </button>
+   490→                      </div>
+   491→                      {site.outsideAoi && (
+   492→                        <div className="text-[9px] text-red-400 mt-0.5">
+   493→                          Outside the analysis area — move it inside or drag the AOI to cover it.
+   494→                        </div>
+   495→                      )}
+   496→                    </li>
+   497→                  ))}
+   498→                </ul>
+   499→              )}
+   500→              {outsideSiteCount > 0 && (
+   501→                <p className="text-[9px] text-red-400" data-testid="outside-sites-warning">
+   502→                  {outsideSiteCount} site{outsideSiteCount > 1 ? 's' : ''} outside the analysis area — fix before Generate.
+   503→                </p>
+   504→              )}
+   505→            </div>
+   506→          )}
+   507→        </div>
+   508→
+   509→        <div className="border-t border-border" />
+   510→
+   511→        {/* ── WHEN — explicit date + time window (Section 14) ── */}
+   512→        <div data-testid="when-section">
+   513→          <div className="flex items-center justify-between mb-2">
+   514→            <span className="text-sm font-medium text-text-secondary">WHEN</span>
+   515→            {isFixtureAnchored ? (
+   516→              <span
+   517→                className="px-2 py-0.5 rounded text-[9px] font-mono font-bold border"
+   518→                style={{
+   519→                  background: 'var(--accent-amber-bg)',
+   520→                  color: 'var(--accent-amber)',
+   521→                  borderColor: 'var(--accent-amber)',
+   522→                }}
+   523→                title={FIXTURE_TEMPORAL_METADATA.captureLabel}
+   524→              >
+   525→                Fixture capture
+   526→              </span>
+   527→            ) : (
+   528→              <span className="text-[10px] font-mono text-text-dimmed">{tz || 'UTC'}</span>
+   529→            )}
+   530→          </div>
+   531→
+   532→          {/* EVALUATION WINDOW selector — a UI concept, NOT a provider
+   533→              filter_type. The verified wire contract: every evaluated hour is
+   534→              its own single-hour FortyGuard request (filter_type: 1). */}
+   535→          <div className="mb-2.5">
+   536→            <div className="flex items-center justify-between mb-1.5">
+   537→              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+   538→                Evaluation Window
+   539→              </span>
+   540→            </div>
+   541→            <div className="grid grid-cols-2 gap-1.5">
+   542→              {TIME_MODE_OPTIONS.map((opt) => {
+   543→                const active = temporalInput.timeMode === opt.value;
+   544→                return (
+   545→                  <button
+   546→                    key={opt.value}
+   547→                    data-testid={`evaluation-window-${opt.value}`}
+   548→                    onClick={() => handleTimeModeChange(opt.value)}
+   549→                    className={`min-h-[36px] rounded-md text-[10px] font-bold transition-all border leading-tight px-1 ${
+   550→                      active
+   551→                        ? 'border-accent-cyan bg-accent-cyan-bg text-accent-cyan'
+   552→                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary hover:bg-surface-deep'
+   553→                    }`}
+   554→                    aria-pressed={active}
+   555→                    title={opt.description}
+   556→                  >
+   557→                    {opt.label}
+   558→                  </button>
+   559→                );
+   560→              })}
+   561→            </div>
+   562→            <p className="text-[9px] text-text-dimmed mt-1 leading-relaxed">
+   563→              A time range is evaluated as a sequence of hourly FortyGuard requests — one request per hour.
+   564→            </p>
+   565→          </div>
+   566→
+   567→          {/* Date input (always visible) */}
+   568→          <label className="block mb-2">
+   569→            <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">Date</span>
+   570→            <input
+   571→              type="date"
+   572→              value={temporalInput.date}
+   573→              onChange={(e) => update({ date: e.target.value })}
+   574→              disabled={isFixtureAnchored}
+   575→              className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
+   576→                dateValid ? 'border-border' : 'border-red-400'
+   577→              } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
+   578→              aria-label="Analysis date"
+   579→            />
+   580→            {/* LIVE date hint — honest about model completion, no invented
+   581→                "guaranteed valid" date, no silent retry / DEMO fallback. */}
+   582→            {mode === 'LIVE' && (
+   583→              <span className="block text-[9px] text-text-dimmed mt-1 leading-relaxed" data-testid="live-date-hint">
+   584→                Pick the date explicitly. Recently requested periods may have no completed FortyGuard model yet (the
+   585→                provider then returns an empty thermal field — reported verbatim, never retried with another date).
+   586→                Documented forecast support: up to +12h ahead.
+   587→              </span>
+   588→            )}
+   589→          </label>
+   590→
+   591→          {/* Start / End time inputs */}
+   592→          <div className={`grid ${isSingleHour ? 'grid-cols-1' : 'grid-cols-2'} gap-2 mb-2`}>
+   593→            <label className="block">
+   594→              <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+   595→                {isSingleHour ? 'Hour' : 'Start'}
+   596→              </span>
+   597→              <input
+   598→                type="time"
+   599→                value={temporalInput.startTime}
+   600→                onChange={(e) => update({ startTime: e.target.value })}
+   601→                disabled={isFixtureAnchored}
+   602→                className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
+   603→                  startValid ? 'border-border' : 'border-red-400'
+   604→                } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
+   605→                aria-label="Analysis start time"
+   606→              />
+   607→            </label>
+   608→            {!isSingleHour && (
+   609→              <label className="block">
+   610→                <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">End</span>
+   611→                <input
+   612→                  type="time"
+   613→                  value={temporalInput.endTime}
+   614→                  onChange={(e) => update({ endTime: e.target.value })}
+   615→                  disabled={isFixtureAnchored}
+   616→                  className={`mt-1 w-full h-10 rounded-lg border bg-surface-elevated px-3 text-sm font-mono text-text-primary focus:outline-none focus:border-accent-cyan transition-colors ${
+   617→                    endValid ? 'border-border' : 'border-red-400'
+   618→                  } ${isFixtureAnchored ? 'opacity-70 cursor-not-allowed' : ''}`}
+   619→                  aria-label="Analysis end time"
+   620→                />
+   621→              </label>
+   622→            )}
+   623→          </div>
+   624→
+   625→          {/* Derived duration (read-only) */}
+   626→          <div className="flex items-center justify-between rounded-lg bg-surface-deep px-3 py-2 border border-border">
+   627→            <span className="text-[10px] font-bold uppercase tracking-widest text-text-dimmed">
+   628→              Duration
+   629→            </span>
+   630→            <span
+   631→              className="text-base font-black font-mono"
+   632→              style={{ color: 'var(--accent-cyan)' }}
+   633→              data-testid="duration-display"
+   634→            >
+   635→              {derivedDuration}h
+   636→            </span>
+   637→          </div>
+   638→
+   639→          {/* Inline validation hint */}
+   640→          {!allValid && (
+   641→            <p className="text-[10px] text-red-400 mt-1.5">
+   642→              {!dateValid && 'Enter a valid date (YYYY-MM-DD). '}
+   643→              {!rangeValid && 'End time must be after start time.'}
+   644→            </p>
+   645→          )}
+   646→
+   647→          {/* Honest future-date note */}
+   648→          {mode === 'LIVE' && isFutureDate && (
+   649→            <p className="text-[10px] mt-1.5" style={{ color: 'var(--accent-amber)' }}>
+   650→              Future date selected — subject to FortyGuard forecast availability. The provider reports any unsupported window verbatim.
+   651→            </p>
+   652→          )}
+   653→
+   654→          {/* LIVE billing disclosure — the engine sends ONE hourly provider
+   655→              request per evaluated hour; make that explicit BEFORE Generate.
+   656→              Conservative wording: no exact credit cost is claimed. */}
+   657→          {mode === 'LIVE' && allValid && (
+   658→            <div
+   659→              className="rounded-lg px-3 py-2 mt-2 border"
+   660→              style={{ background: 'rgba(5,150,105,0.08)', borderColor: 'rgba(5,150,105,0.35)' }}
+   661→              data-testid="live-request-disclosure"
+   662→            >
+   663→              <div className="flex items-center justify-between">
+   664→                <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#059669' }}>
+   665→                  LIVE · {derivedDuration}-hour evaluation
+   666→                </span>
+   667→                <span className="text-[10px] font-mono font-bold" style={{ color: '#059669' }}>
+   668→                  {liveHourlyRequestCount} FortyGuard hourly request{liveHourlyRequestCount > 1 ? 's' : ''}
+   669→                </span>
+   670→              </div>
+   671→              <p className="text-[9px] text-text-muted mt-0.5 leading-relaxed">
+   672→                Each evaluated hour is submitted as its own single-hour FortyGuard /v1/heatmap request (cached results are
+   673→                reused, not re-billed). Repeat requests may consume provider credits.
+   674→              </p>
+   675→            </div>
+   676→          )}
+   677→
+   678→          {/* Human-readable window preview */}
+   679→          {allValid && (
+   680→            <p className="text-[10px] font-mono text-text-muted mt-2 leading-relaxed">
+   681→              {formatTemporalForHeader(temporalInput, tz)}
+   682→            </p>
+   683→          )}
+   684→        </div>
+   685→
+   686→        {/* Selected Analysis Area indicator — coordinates track AOI drag */}
+   687→        <div
+   688→          className="rounded-lg p-3 bg-surface-deep border border-border space-y-1"
+   689→          data-testid="active-analysis-location-indicator"
+   690→        >
+   691→          <div className="flex items-center justify-between">
+   692→            <span className="text-[9px] font-bold uppercase tracking-widest text-text-dimmed">Selected Analysis Area</span>
+   693→            <span
+   694→              className="px-2 py-0.5 rounded text-[10px] font-bold border"
+   695→              style={mode === 'LIVE'
+   696→                ? { background: 'var(--accent-cyan-bg)', color: 'var(--accent-cyan)', borderColor: 'var(--accent-cyan)' }
+   697→                : { background: 'var(--accent-amber-bg)', color: 'var(--accent-amber)', borderColor: 'var(--accent-amber)' }
+   698→              }
+   699→              data-testid="analysis-mode-badge"
+   700→            >
+   701→              {mode === 'LIVE' ? 'LIVE · FortyGuard' : 'DEMO · Captured FortyGuard'}
+   702→            </span>
+   703→          </div>
+   704→          <div className="text-sm font-bold text-text-primary leading-tight" data-testid="active-analysis-location-name">
+   705→            {selectedLocation ? selectedLocation.name : 'No location selected'}
+   706→          </div>
+   707→          {selectedLocation && centerCoords && (
+   708→            <div className="text-[11px] font-mono flex items-center justify-between" style={{ color: 'var(--accent-cyan)' }} data-testid="active-analysis-location-coords">
+   709→              <span>{centerCoords.latitude.toFixed(4)}°, {centerCoords.longitude.toFixed(4)}°</span>
+   710→              <span className="text-text-muted font-sans text-[10px]">
+   711→                {selectedLocation.city ? `${selectedLocation.city}, ${selectedLocation.state || selectedLocation.country}` : selectedLocation.state || ''}
+   712→              </span>
+   713→            </div>
+   714→          )}
+   715→        </div>
+   716→
+   717→        {/* Generate button */}
+   718→        <motion.button
+   719→          whileTap={{ scale: 0.99 }}
+   720→          disabled={loading}
+   721→          onClick={onGenerate}
+   722→          data-testid="recalculate-decision-btn"
+   723→          className={`w-full h-12 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+   724→            loading ? 'bg-surface-elevated text-text-dimmed cursor-not-allowed' : 'text-white hover:scale-[1.01] active:scale-[0.99]'
+   725→          }`}
+   726→          style={loading ? {} : {
+   727→            background: mode === 'LIVE'
+   728→              ? 'linear-gradient(135deg, var(--accent-emerald), #0d9488)'
+   729→              : 'linear-gradient(135deg, var(--accent-cyan), #0284c7)',
+   730→            boxShadow: mode === 'LIVE'
+   731→              ? '0 4px 16px rgba(5,150,105,0.3)'
+   732→              : '0 4px 16px rgba(14,165,233,0.3)',
+   733→          }}
+   734→        >
+   735→          {loading ? (
+   736→            <span className="flex items-center gap-2">
+   737→              <span className="w-4 h-4 border-2 border-text-dimmed rounded-full animate-spin" style={{ borderTopColor: 'var(--accent-cyan)' }} />
+   738→              Generating thermal field…
+   739→            </span>
+   740→          ) : (
+   741→            `⚡ Generate Thermal Field (${mode === 'LIVE' ? 'LIVE' : 'DEMO'})`
+   742→          )}
+   743→        </motion.button>
+   744→      </div>
+   745→
+   746→      {/* ── SYSTEM STATUS ── */}
+   747→      <SystemStatus
+   748→        mode={mode}
+   749→        fortyGuardStatus={fortyGuardStatus}
+   750→        aiStatus={aiStatus}
+   751→        aiProvider={aiProvider}
+   752→        fieldReady={fieldReady}
+   753→        loading={loading}
+   754→        onTestFortyGuard={onTestFortyGuard}
+   755→        onTestAI={onTestAI}
+   756→      />
+   757→
+   758→      <div className="text-[10px] text-text-dimmed font-mono text-center">
+   759→        FortyGuard Hackathon&apos;26
+   760→      </div>
+   761→    </div>
+   762→  );
+   763→}
+   764→
+   765→export default ControlRail;
+   766→

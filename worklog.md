@@ -448,3 +448,17 @@ Stage Summary:
 - The "thermal field does not occupy the AOI" complaint is RESOLVED AS DATA, NOT BUG: genuine provider coverage is 73.4% of the requested AOI (street gaps + west-edge strip are real FortyGuard behavior). Rendering stays verbatim — pixel-verified seamless between adjacent cells; the thin AOI outline on top makes the requested-vs-covered distinction legible. No geometry was stretched, interpolated, subdivided, clipped, or manufactured.
 - Markers are now Lucide map-pin iconography with separate rank badges, sub-pixel geographic anchoring across all zooms/pans, static winner emphasis (no infinite animation), theme-aware rebuild.
 - Mobile hamburger is a true toggle with correct icon/aria state; the sheet handle tap bug (double-toggle) is fixed; Escape/outside interactions and scroll behavior verified at 390px + 430px.
+
+---
+Task ID: map-interaction-hardening (post-commit addendum)
+Agent: orchestrator (main)
+Task: Post-commit verification after sandbox environment churn.
+
+Work Log:
+- The sandbox performed a filesystem cleanup pass mid-session AFTER commit 889fa0f: deleted screenshots/ (QA artifacts, already reviewed + documented), untracked skills/, AND .env.local (the FORTYGUARD_API_KEY test env — the same recurring issue documented in the redesign-professional-pass-1 entry). It also chmod'ed tracked files (mode-only diffs, 0 insertions/0 deletions — restored via git checkout).
+- Consequence: a re-run of the suite showed 3 failures in tests/fortyguard-contract.test.ts (5, 9b, 11) — all "FORTYGUARD_API_KEY environment variable is not set". PROVEN environmental, not code: re-running with the key present in process env → 17/17 contract tests and **294/294 full suite PASS** with the exact committed tree. (The tests mock the HTTP layer; they only assert the key EXISTS.)
+- Dev server was wedged after the production build overwrote dev chunks (000 responses) — killed, .next removed, cleanly restarted: 200, and a fresh end-to-end DEMO run verified: 425 cells, winner pin with #1 badge + static ground ring, 4 markers, 0 page errors.
+- Final state: commit 889fa0f on main contains all hardening work; typecheck clean; eslint 0/0; 294/294 (with key); production build PASS.
+
+Stage Summary:
+- The hardening task stands complete and verified. The only reds ever seen were (a) a stale mid-edit HMR chunk artifact and (b) the sandbox wiping the test API key — both environmental, both disproven with controlled re-runs. No product code changed after 889fa0f.

@@ -488,3 +488,21 @@ Stage Summary:
 - LIVE: wire contract VERIFIED via mocked-successful-provider tests; real execution UNAVAILABLE (HTTP 402, credits exhausted −4.99M; provider itself reachable + authenticated).
 - History: IndexedDB persistence VERIFIED in-browser (survives reload; restore after reload reproduces the identical 425-cell field + decision with ZERO provider requests; failed analyses never saved; cap 20 evicts oldest).
 - No changes to: FortyGuard request bodies, granularity mapping, date/time contract, fixture data, provider GeoJSON, candidate containment, decision engine, AI grounding, credit safety, LIVE/DEMO separation. All 15 preserved-functionality contracts intact (294 pre-existing tests still green).
+
+---
+Task ID: github-push-token
+Agent: orchestrator (main)
+Task: Push the committed thermal-pipeline-proof + analysis-history work (ad02a1e, d2185c1) to https://github.com/samjuniors/Hackthon.git using the user-provided token (previous session's push failed for lack of credentials).
+
+Work Log:
+- Verified local state: main clean at d2185c1, working tree clean, 6 unpushed commits ahead of remote main (remote was at 872ea99).
+- Authenticated with the token via URL (token used only for transport, never written to any tracked file or env).
+- Pushed main: 872ea99..d2185c1 -> main (fast-forward, no force).
+- temporal-provenance: local tip 645c52f is an ANCESTOR of remote tip 30024d4 (remote newer — boundary-polish work), so nothing to push; fast-forwarded the local branch to 30024d4 instead. Remote branch preserved.
+- Set main's upstream to origin/main; fetched to sync refs.
+- Health check post-push: dev server on :3000 returns HTTP 200, [THERMAL DEBUG] provider_response stage shows FIXTURE cells=425, decision/explain/location routes all 200.
+
+Stage Summary:
+- Both branches now fully synced with GitHub: main = d2185c1, temporal-provenance = 30024d4.
+- The previously-blocked push of the thermal pipeline proof + analysis history work is now published.
+- No code changes in this task; token kept out of all tracked files.

@@ -50,8 +50,12 @@ import { useCandidateSites } from '@/hooks/use-candidate-sites';
 import {
   createAoiFromSpan,
   isPointInAoi,
+  aoiAreaLabel,
+  isWithinDocumentedCoverage,
 } from '@/lib/spatial/aoi';
 import { validateAnalysisAoi } from '@/lib/spatial/aoi-validation';
+import { summarizeCoverageStatus } from '@/lib/spatial/coverage';
+import { validateTemporalWindow, type TemporalValidationResult } from '@/lib/temporal/validation';
 import { getRegionBoundaryPolygon, getInvertedMaskPolygon, resolveRegionDisplayName } from '@/lib/spatial/region-boundaries';
 import { deriveWorkflowStage, deriveGenerateReadiness } from '@/lib/workspace/stage';
 import { cameraForResultType, type SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
@@ -177,22 +181,25 @@ export default function WorkspacePage() {
   const demoCaptureAvailable =
     mode === 'FIXTURE' && !!selectedLocation && isLocationCoveredByFixture(selectedLocation);
 
-  // ── Canonical Analysis AOI (ONE geometry: rendered == sent) ──
+  // ── Canonical Analysis AOI (ONE geometry: rendered == submitted) ──
   //   EMPTY            → none (no analysis without a location).
   //   DEMO (captured)  → the CAPTURED REQUEST AREA (fixture metadata mirror):
   //                      the exact polygon_aoi the genuine FortyGuard capture
   //                      was requested with. Fixed — never resized/dragged.
   //   DEMO (no capture)→ none (no captured analysis area for this location).
-  //   LIVE             → the user's span-based AOI (draggable, canonical).
+  //   LIVE             → the user's span-based AOI centered on `aoiCenter` —
+  //                      the SAME center Generate submits (aoiCenterRef), so
+  //                      rendered geometry == submitted geometry BY
+  //                      CONSTRUCTION (one center, one span, one shape).
   const analysisAoi: PolygonAOI | null = useMemo(() => {
     if (!selectedLocation) return null;
     if (mode === 'FIXTURE') return demoCaptureAvailable ? FIXTURE_CAPTURE_REQUEST_AOI : null;
     return createAoiFromSpan(
-      { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude },
+      { latitude: aoiCenter.latitude, longitude: aoiCenter.longitude },
       prefs.analysisAoiSpanMetres,
       prefs.analysisAreaShape
     );
-  }, [selectedLocation, mode, demoCaptureAvailable, prefs.analysisAreaShape, prefs.analysisAoiSpanMetres]);
+  }, [selectedLocation, mode, demoCaptureAvailable, prefs.analysisAreaShape, prefs.analysisAoiSpanMetres, aoiCenter.latitude, aoiCenter.longitude]);
 
   // Geographic region boundary polygon (geographic CONTEXT — never provider coverage)
   const regionBoundary: PolygonAOI | null = useMemo(
@@ -537,6 +544,39 @@ export default function WorkspacePage() {
         category: 'VALIDATION',
       });
       return;
+    }
+
+    // ── LIVE PRE-FLIGHT: documented temporal window (P0) ──
+    // The documented provider range is 2019-01-01 → now+12h; violations are
+    // HTTP 400 at the provider and never charged. Block BEFORE submission
+    // (zero credits) with the honest reason + recovery action.
+    if (dataSourceMode === 'LIVE') {
+      const temporalCheck = validateTemporalWindow(temporal, tz);
+      if (!temporalCheck.valid) {
+        setLoading(false);
+        setErrorDetails({
+          code: temporalCheck.code ?? 'TEMPORAL_INPUT_INVALID',
+          message: temporalCheck.message,
+          recoverySuggestion: temporalCheck.recovery,
+          category: 'VALIDATION',
+        });
+        return;
+      }
+
+      // ── LIVE PRE-FLIGHT: documented US-only coverage (P0) ──
+      // The provider's current release serves the United States only — a
+      // request outside it would be rejected (400, uncharged). Block before
+      // submission with the documented reason (never an invented capability).
+      if (!isWithinDocumentedCoverage(loc.latitude, loc.longitude)) {
+        setLoading(false);
+        setErrorDetails({
+          code: 'OUTSIDE_DOCUMENTED_COVERAGE',
+          message: `Location (${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}) is outside FortyGuard's documented coverage area (United States). Request blocked before submission — no credits consumed.`,
+          recoverySuggestion: 'Select a location within the United States for LIVE analysis, or switch to DEMO for the captured Manhattan field.',
+          category: 'COVERAGE',
+        });
+        return;
+      }
     }
 
     // LIVE mode: candidates are REQUIRED (Section 8 — never fabricated).
@@ -912,8 +952,9 @@ export default function WorkspacePage() {
   const handleMoveCandidate = useCallback((locationId: string, lat: number, lng: number) => {
     const loc = selectedLocationRef.current;
     if (!loc) return;
+    // The AOI is derived from the SAME canonical center Generate uses.
     const aoi = createAoiFromSpan(
-      { latitude: loc.latitude, longitude: loc.longitude },
+      aoiCenterRef.current,
       prefs.analysisAoiSpanMetres,
       prefs.analysisAreaShape
     );
@@ -976,8 +1017,9 @@ export default function WorkspacePage() {
   const handleAddSiteAt = useCallback((lng: number, lat: number) => {
     const loc = selectedLocationRef.current;
     if (!loc) return;
+    // The AOI is derived from the SAME canonical center Generate uses.
     const aoi = createAoiFromSpan(
-      { latitude: loc.latitude, longitude: loc.longitude },
+      aoiCenterRef.current,
       prefs.analysisAoiSpanMetres,
       prefs.analysisAreaShape
     );
@@ -1012,8 +1054,9 @@ export default function WorkspacePage() {
   const handleAddSiteFromSearch = useCallback((loc: NamedLocation) => {
     const activeLoc = selectedLocationRef.current;
     if (!activeLoc) return;
+    // The AOI is derived from the SAME canonical center Generate uses.
     const aoi = createAoiFromSpan(
-      { latitude: activeLoc.latitude, longitude: activeLoc.longitude },
+      aoiCenterRef.current,
       prefs.analysisAoiSpanMetres,
       prefs.analysisAreaShape
     );
@@ -1290,15 +1333,24 @@ export default function WorkspacePage() {
   const aoiInvalid = !!analysisAoi && !aoiValidation.valid;
 
   // ── Explicit WHEN validity (Section 11 prerequisite) ──
+  // LIVE additionally enforces the DOCUMENTED provider temporal bounds
+  // (2019-01-01 → now+12h; range ≤ 12h engine horizon) so an invalid window
+  // disables Generate BEFORE any credits could be spent.
+  const liveTemporalCheck: TemporalValidationResult | null = useMemo(() => {
+    if (mode !== 'LIVE' || !selectedLocation) return null;
+    return validateTemporalWindow(temporalInput, selectedLocation.timezone || 'UTC');
+  }, [mode, selectedLocation, temporalInput]);
+
   const temporalValid = useMemo(() => {
     const t = temporalInput;
     if (!isValidDateStr(t.date) || !isValidTimeStr(t.startTime) || !isValidTimeStr(t.endTime)) return false;
     if (t.timeMode === 'range-of-hours') {
       const bounds = effectiveTimeBounds(t);
-      return bounds.end > bounds.start;
+      if (!(bounds.end > bounds.start)) return false;
     }
+    if (liveTemporalCheck && !liveTemporalCheck.valid) return false;
     return true;
-  }, [temporalInput]);
+  }, [temporalInput, liveTemporalCheck]);
 
   // ── Generate readiness (Section 11 — explicit, contract-gated) ──
   const outsideCandidateCount = candidateSites.sites.filter((s) => s.outsideAoi).length;
@@ -1350,6 +1402,43 @@ export default function WorkspacePage() {
   // Resolution display (Section 2): DEMO shows the fixture's ACTUAL captured
   // granularity; LIVE shows the provider granularity that will be sent.
   const resolutionDisplay = mode === 'FIXTURE' ? FIXTURE_DISPLAY_GRANULARITY : prefs.analysisResolution;
+
+  // ── Honest provider-coverage status (P0 — SHOW THE GAP) ──
+  // Measures what fraction of the requested AOI the ACTUAL provider cells
+  // cover. Partial coverage is an intentional, explainable property of the
+  // provider response — never filled, smoothed, or edge-completed.
+  const coverageStatus = useMemo(
+    () => (fieldReady ? summarizeCoverageStatus(analysisAoi, spatialField) : null),
+    [fieldReady, analysisAoi, spatialField],
+  );
+
+  // ── AOI pre-flight facts (P0 — plan-limit display) ──
+  // Area computed from the canonical geometry + the enforced documented plan
+  // limit + within/over status — the same facts the validation enforces.
+  const aoiAreaFacts = useMemo(() => {
+    if (!aoiValidation.area || !aoiValidation.limit) return null;
+    return {
+      areaLabel: aoiValidation.area.label,
+      limitLabel: aoiValidation.limit.label,
+      withinLimit: aoiValidation.area.areaMi2 <= aoiValidation.limit.limitMi2,
+    };
+  }, [aoiValidation]);
+
+  // ── LIVE temporal facts for the ControlRail (classification + wire preview) ──
+  const controlTemporalFacts = useMemo(() => {
+    if (mode !== 'LIVE' || !selectedLocation) return null;
+    const check = liveTemporalCheck ?? validateTemporalWindow(temporalInput, selectedLocation.timezone || 'UTC');
+    return {
+      classification: check.classification,
+      wirePreview: check.wirePreview,
+      valid: check.valid,
+      message: check.valid ? '' : check.message,
+    };
+  }, [mode, selectedLocation, liveTemporalCheck, temporalInput]);
+
+  // ── Documented US-coverage pre-flight note (LIVE only) ──
+  const outsideUsCoverage =
+    mode === 'LIVE' && !!selectedLocation && !isWithinDocumentedCoverage(selectedLocation.latitude, selectedLocation.longitude);
 
   // Display timezone: DEMO is UTC-anchored (the capture's request hour is a
   // UTC instant) — displaying it in the selected location's timezone would
@@ -1555,6 +1644,9 @@ export default function WorkspacePage() {
                 addSiteMode={addSiteMode}
                 onAddSiteFromSearch={handleAddSiteFromSearch}
                 fixtureGranularity={FIXTURE_DISPLAY_GRANULARITY}
+                aoiAreaFacts={aoiAreaFacts}
+                temporalFacts={controlTemporalFacts}
+                outsideUsCoverage={outsideUsCoverage}
                 activeStateFilter={regionDisplayName || selectedLocation?.state}
               />
             ) : null}
@@ -1608,6 +1700,8 @@ export default function WorkspacePage() {
               mode={mode}
               loading={loading}
               unit={unit}
+              coverageLabel={coverageStatus?.label}
+              coverageStatus={coverageStatus?.status}
               selectedLocation={selectedLocation ?? undefined}
               analysisCenter={selectedLocation ? aoiCenter : undefined}
               temporalInput={temporalInput}
@@ -1843,6 +1937,9 @@ export default function WorkspacePage() {
               addSiteMode={addSiteMode}
               onAddSiteFromSearch={handleAddSiteFromSearch}
               fixtureGranularity={FIXTURE_DISPLAY_GRANULARITY}
+              aoiAreaFacts={aoiAreaFacts}
+              temporalFacts={controlTemporalFacts}
+              outsideUsCoverage={outsideUsCoverage}
               activeStateFilter={regionDisplayName || selectedLocation?.state}
             />
           ) : null}

@@ -5,14 +5,25 @@
  * access — coverage region, plan/capability, max AOI area, supported
  * resolutions, and live connectivity. Nothing here is fabricated.
  *
+ * Three DISTINCT layers (never conflated):
+ *   1. DOCUMENTED PROVIDER LIMIT — official public docs (verified 2026-08-28):
+ *      heatmap max area 10 mi² (Basic/Startup) / 50 mi² (Premium); US coverage;
+ *      granularity 60/80/100m; dates 2019-01-01 → now+12h.
+ *   2. EMPIRICALLY VERIFIED ACCOUNT CAPABILITY — what the Hackathon key
+ *      actually proved live (docs/FORTYGUARD.md).
+ *   3. CURRENT LIVE ACCOUNT STATE — plan/credits from the free
+ *      fetch-api-key-usage probe at runtime.
+ *
  * Per the product-model spec Section 1 + Section 13:
  *   - Do NOT assume the key is California-only.
- *   - Do NOT hard-claim the 150 mi² AOI limit unless the configured capability
- *     actually confirms it (the live plan_details endpoint did not surface it).
+ *   - The applicable AOI limit is the documented plan limit resolved from the
+ *     LIVE plan name (conservative Basic 10 mi² when the plan exposes none) —
+ *     the stale 150 mi² assumption is permanently retired.
  *   - If the API returns plan or coverage info, surface it; if not, label the
  *     capability honestly as "documented" rather than inventing a region.
  */
 import type { AnalysisResolution } from '@/lib/user-preferences';
+import type { ApplicableAoiLimit } from '@/lib/fortyguard/plan-limits';
 
 /**
  * Coverage confidence — what we actually know about the key's regional access.
@@ -25,8 +36,8 @@ import type { AnalysisResolution } from '@/lib/user-preferences';
 export type CoverageConfidence = 'confirmed' | 'documented' | 'unknown';
 
 /**
- * AOI-limit confidence — whether the 150 mi² ceiling is actually enforced by
- * the configured key, or only documented in public API docs.
+ * AOI-limit confidence — whether the applicable area limit is actually
+ * enforced/surfaced by the configured key, or only documented in public docs.
  */
 export type AoiLimitConfidence = 'confirmed' | 'documented' | 'unknown';
 
@@ -47,10 +58,11 @@ export interface ProviderCapability {
     cycleRemaining: number;
     exhausted: boolean;
   };
-  /** AOI area limit (mi²) — only set if confirmed by the capability. */
-  maxAoiAreaMi2?: number;
+  /** ALL documented plan-level heatmap area limits (official docs). */
+  aoiLimitsDocumentedMi2: { basic: number; premium: number; startup: number };
+  /** The limit this application ENFORCES — resolved from the live plan name. */
+  applicableAoiLimit: ApplicableAoiLimit;
   aoiLimitConfidence: AoiLimitConfidence;
-  aoiLimitDocumentedMi2: number;
   /** Resolutions the UI offers (always 60/80/100 — these are FortyGuard's). */
   supportedResolutions: readonly AnalysisResolution[];
   /** Live connectivity verdict from the most recent health probe. */
@@ -66,11 +78,11 @@ export interface ProviderCapability {
 }
 
 /**
- * Documented FortyGuard AOI limit (square miles) from public API docs.
- * NOT claimed as "confirmed by the configured key" — the live plan_details
- * endpoint did not surface a max_aoi_area field, so this stays "documented".
+ * Documented FortyGuard AOI area limits (square miles) from the official API
+ * docs (verified live 2026-08-28): Basic = 10, Premium = 50, Startup = 10.
+ * The stale 150 mi² assumption is permanently retired (guarded by tests).
  */
-export const FORTYGUARD_AOI_LIMIT_DOCUMENTED_MI2 = 150;
+export const FORTYGUARD_AOI_LIMITS_DOCUMENTED_MI2 = { basic: 10, premium: 50, startup: 10 } as const;
 
 /**
  * Default (conservative) capability used before any live probe completes.
@@ -79,10 +91,16 @@ export const FORTYGUARD_AOI_LIMIT_DOCUMENTED_MI2 = 150;
 export const DEFAULT_PROVIDER_CAPABILITY: ProviderCapability = {
   coverageRegion: 'United States',
   coverageConfidence: 'documented',
+  aoiLimitsDocumentedMi2: FORTYGUARD_AOI_LIMITS_DOCUMENTED_MI2,
+  applicableAoiLimit: {
+    limitMi2: 10,
+    planLabel: 'Basic',
+    confidence: 'documented',
+    note: 'Conservative documented Basic limit enforced until the configured plan exposes its own area limit.',
+  },
   aoiLimitConfidence: 'documented',
-  aoiLimitDocumentedMi2: FORTYGUARD_AOI_LIMIT_DOCUMENTED_MI2,
   supportedResolutions: [60, 80, 100],
   connectivity: 'unknown',
   checkedAt: '',
-  note: 'FortyGuard public docs describe United States regional coverage. The configured key\'s plan_details endpoint did not surface a coverage region or a max AOI area, so both are labelled "documented" rather than "confirmed".',
+  note: 'FortyGuard public docs describe United States regional coverage and heatmap area limits of 10 mi² (Basic/Startup) / 50 mi² (Premium). The configured key\'s plan endpoint does not surface an area limit, so the conservative documented Basic limit applies.',
 };

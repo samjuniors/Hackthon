@@ -101,6 +101,10 @@ export interface HistoryRecord {
   aoiSpanMetres: number | null;
   /** Human size label, e.g. "1km × 1km" or "2.4km × 2.4km captured area". */
   aoiSizeLabel: string;
+  /** AOI area in km² — computed from the geometry at save time (authoritative). */
+  aoiAreaKm2: number | null;
+  /** AOI area in mi² — computed from the geometry at save time (authoritative). */
+  aoiAreaMi2: number | null;
   /** Explicit WHEN inputs the analysis ran with. */
   temporalInput: AnalysisTemporalInput;
   /** IANA timezone the analysis ran in. */

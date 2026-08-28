@@ -9,6 +9,7 @@ import type {
   HistoryRecord,
 } from './types';
 import { HISTORY_MAX_RECORDS, HISTORY_RECORD_VERSION } from './types';
+import { analyzeAoiArea } from '@/lib/spatial/aoi';
 
 /**
  * Generate a collision-safe record id (timestamp base36 + random suffix).
@@ -31,6 +32,9 @@ export function buildHistoryRecord(
   createdAt: string = new Date().toISOString(),
 ): HistoryRecord {
   const isFixture = input.dataSourceMode === 'FIXTURE';
+  // AOI area — computed from the AUTHORITATIVE geometry via the single
+  // shared area function (never from the passed size label text).
+  const aoiArea = analyzeAoiArea(input.aoiGeometry);
   return {
     id,
     version: HISTORY_RECORD_VERSION,
@@ -40,6 +44,8 @@ export function buildHistoryRecord(
     aoiShape: input.aoiShape,
     aoiSpanMetres: input.aoiSpanMetres,
     aoiSizeLabel: input.aoiSizeLabel,
+    aoiAreaKm2: Number.isFinite(aoiArea.areaKm2) ? Number(aoiArea.areaKm2.toFixed(4)) : null,
+    aoiAreaMi2: Number.isFinite(aoiArea.areaMi2) ? Number(aoiArea.areaMi2.toFixed(4)) : null,
     temporalInput: input.temporalInput,
     timezone: input.timezone,
     dataSourceMode: input.dataSourceMode,

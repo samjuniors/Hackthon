@@ -1,6 +1,10 @@
 import 'server-only';
 import type { ProviderCapability } from '@/types/fortyguard-capability';
-import { FORTYGUARD_AOI_LIMIT_DOCUMENTED_MI2 } from '@/types/fortyguard-capability';
+import {
+  FORTYGUARD_AOI_LIMITS_DOCUMENTED_MI2,
+  DEFAULT_PROVIDER_CAPABILITY,
+} from '@/types/fortyguard-capability';
+import { resolveApplicableAoiLimit } from '@/lib/fortyguard/plan-limits';
 
 /**
  * FortyGuard capability probe — server-side only.
@@ -73,14 +77,10 @@ export async function probeProviderCapability(
 
   if (!apiKey) {
     return {
-      coverageRegion: 'United States',
-      coverageConfidence: 'documented',
-      aoiLimitConfidence: 'documented',
-      aoiLimitDocumentedMi2: FORTYGUARD_AOI_LIMIT_DOCUMENTED_MI2,
-      supportedResolutions: [60, 80, 100],
+      ...DEFAULT_PROVIDER_CAPABILITY,
       connectivity: 'unconfigured',
       checkedAt,
-      note: 'No FORTYGUARD_API_KEY configured. Coverage and AOI limit are documented defaults only.',
+      note: 'No FORTYGUARD_API_KEY configured. Coverage and AOI limits are documented defaults only.',
     };
   }
 
@@ -102,27 +102,19 @@ export async function probeProviderCapability(
 
     if (res.status === 401 || res.status === 403) {
       return {
-        coverageRegion: 'United States',
-        coverageConfidence: 'documented',
-        aoiLimitConfidence: 'documented',
-        aoiLimitDocumentedMi2: FORTYGUARD_AOI_LIMIT_DOCUMENTED_MI2,
-        supportedResolutions: [60, 80, 100],
+        ...DEFAULT_PROVIDER_CAPABILITY,
         connectivity: 'auth-error',
         checkedAt,
-        note: 'The configured key was rejected (401/403). Coverage and AOI limit remain documented defaults.',
+        note: 'The configured key was rejected (401/403). Coverage and AOI limits remain documented defaults.',
       };
     }
 
     if (!res.ok) {
       return {
-        coverageRegion: 'United States',
-        coverageConfidence: 'documented',
-        aoiLimitConfidence: 'documented',
-        aoiLimitDocumentedMi2: FORTYGUARD_AOI_LIMIT_DOCUMENTED_MI2,
-        supportedResolutions: [60, 80, 100],
+        ...DEFAULT_PROVIDER_CAPABILITY,
         connectivity: 'unknown',
         checkedAt,
-        note: `fetch-api-key-usage returned HTTP ${res.status}. Coverage and AOI limit remain documented defaults.`,
+        note: `fetch-api-key-usage returned HTTP ${res.status}. Coverage and AOI limits remain documented defaults.`,
       };
     }
 
@@ -156,8 +148,11 @@ export async function probeProviderCapability(
 
     // The fetch-api-key-usage endpoint does NOT surface a coverage region or
     // a max AOI area. So coverage stays "documented" (FortyGuard public docs
-    // describe United States regional coverage) and the AOI limit stays
-    // "documented" (public docs state 150 mi²). Nothing fabricated.
+    // describe United States-only regional coverage) and the APPLICABLE AOI
+    // limit is resolved from the live plan name against the DOCUMENTED plan
+    // limits (Basic 10 / Premium 50 / Startup 10; conservative Basic 10 for
+    // plans like "Hackathon" that expose no area limit). Nothing fabricated.
+    const applicableAoiLimit = resolveApplicableAoiLimit(planName);
     const capability: ProviderCapability = {
       coverageRegion: 'United States',
       coverageConfidence: 'documented',
@@ -170,27 +165,24 @@ export async function probeProviderCapability(
         cycleRemaining,
         exhausted,
       },
+      aoiLimitsDocumentedMi2: FORTYGUARD_AOI_LIMITS_DOCUMENTED_MI2,
+      applicableAoiLimit,
       aoiLimitConfidence: 'documented',
-      aoiLimitDocumentedMi2: FORTYGUARD_AOI_LIMIT_DOCUMENTED_MI2,
       supportedResolutions: [60, 80, 100],
       connectivity: exhausted ? 'exhausted' : 'connected',
       checkedAt,
       note: exhausted
-        ? `Plan "${planName ?? 'unknown'}" credits exhausted (${cycleUsed.toLocaleString()} used of ${totalAvailable.toLocaleString()}). LIVE heatmap requests will return HTTP 402 until credits reset${raw.billing_cycle?.credits_reset_date ? ` on ${raw.billing_cycle.credits_reset_date.slice(0, 10)}` : ''}. Coverage region and AOI limit are documented defaults — the key-usage endpoint did not surface either.`
-        : `Plan "${planName ?? 'unknown'}" active. Coverage region and AOI limit are documented defaults — the key-usage endpoint did not surface either.`,
+        ? `Plan "${planName ?? 'unknown'}" credits exhausted (${cycleUsed.toLocaleString()} used of ${totalAvailable.toLocaleString()}). LIVE heatmap requests will return HTTP 402 until credits reset${raw.billing_cycle?.credits_reset_date ? ` on ${raw.billing_cycle.credits_reset_date.slice(0, 10)}` : ''}. Coverage region is a documented default; the applicable AOI limit (${applicableAoiLimit.limitMi2} mi², ${applicableAoiLimit.planLabel}) is the documented plan limit — the key-usage endpoint surfaced no area limit.`
+        : `Plan "${planName ?? 'unknown'}" active. Coverage region is a documented default; the applicable AOI limit (${applicableAoiLimit.limitMi2} mi², ${applicableAoiLimit.planLabel}) is the documented plan limit — the key-usage endpoint surfaced no area limit.`,
     };
     return capability;
   } catch (err) {
     clearTimeout(timeoutId);
     return {
-      coverageRegion: 'United States',
-      coverageConfidence: 'documented',
-      aoiLimitConfidence: 'documented',
-      aoiLimitDocumentedMi2: FORTYGUARD_AOI_LIMIT_DOCUMENTED_MI2,
-      supportedResolutions: [60, 80, 100],
+      ...DEFAULT_PROVIDER_CAPABILITY,
       connectivity: 'unknown',
       checkedAt,
-      note: `Capability probe failed: ${err instanceof Error ? err.message : String(err)}. Coverage and AOI limit remain documented defaults.`,
+      note: `Capability probe failed: ${err instanceof Error ? err.message : String(err)}. Coverage and AOI limits remain documented defaults.`,
     };
   }
 }

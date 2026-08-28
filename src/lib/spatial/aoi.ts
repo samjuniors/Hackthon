@@ -42,11 +42,30 @@ export function spanToRadius(spanMetres: number): number {
 }
 
 /**
- * FortyGuard documented AOI limit (square miles).
- * Source: FortyGuard API documentation — single heatmap request must not exceed 150 mi².
- * Enforced client-side; never silently shrunk.
+ * Enforced FortyGuard AOI area limit (mi²).
+ *
+ * DOCUMENTED PROVIDER LIMIT (official docs, verified 2026-08-28): heatmap
+ * max area is 10 mi² on Basic/Startup plans and 50 mi² on Premium.
+ * EMPIRICAL ACCOUNT FACT: the Hackathon plan's key-usage endpoint exposes no
+ * area limit, so the CONSERVATIVE documented Basic limit (10 mi²) is enforced
+ * and labelled "documented". The former 150 mi² value was a stale assumption
+ * and is permanently retired (tests/plan-limits guard it).
+ *
+ * See src/lib/fortyguard/plan-limits.ts for the full documented contract and
+ * resolveApplicableAoiLimit() for plan-aware resolution.
  */
-export const FORTYGUARD_AOI_LIMIT_MI2 = 150;
+export const FORTYGUARD_AOI_LIMIT_MI2 = 10;
+
+export {
+  FORTYGUARD_DOCUMENTED_PLAN_LIMITS_MI2,
+  resolveApplicableAoiLimit,
+  formatAoiLimitLabel,
+  FORTYGUARD_DOCUMENTED_DATE_RANGE_START,
+  FORTYGUARD_FORECAST_HORIZON_HOURS,
+  FORTYGUARD_FILTER2_MAX_RANGE_HOURS,
+  FORTYGUARD_DOCUMENTED_COVERAGE,
+  isWithinDocumentedCoverage,
+} from '@/lib/fortyguard/plan-limits';
 
 /**
  * Earth-radius-derived metres-per-degree constants for planar approximation
@@ -225,31 +244,122 @@ export function isPointInAoi(
 }
 
 /**
- * Estimate the planar area of an AOI in square miles.
- * For 'polygon' shape: (2 × halfSide)². For 'circle' shape: π × radius².
- * Used for the FortyGuard 150 mi² AOI limit validation only.
+ * THE authoritative AOI area calculation — computed from the ACTUAL canonical
+ * geometry (ring coordinates), never from hardcoded text or preset math.
+ *
+ * Planar shoelace area with local metre-per-degree scaling at the ring's
+ * centre latitude, plus antimeridian (dateline) normalization so a ring that
+ * crosses ±180° measures its true area instead of wrapping around the planet.
+ *
+ * Returns the area in m², km² and mi² (1 mi = 1609.344 m) plus the canonical
+ * shape/size properties when present. This function is used for provider
+ * limit pre-flight, UI display, and history records — ONE source of truth.
  */
-export function analyzeAoiAreaMi2(
-  aoi: PolygonAOI,
-): { areaMi2: number; shape: 'polygon' | 'circle'; sizeMetres: number } {
-  const feat = aoi.features[0];
-  const props = (feat?.properties ?? {}) as { shape?: string; halfSideMetres?: number; radiusMetres?: number };
-  const shape = (props.shape === 'circle' ? 'circle' : 'polygon') as 'polygon' | 'circle';
-  const sizeMetres = shape === 'circle'
-    ? Number(props.radiusMetres ?? 400)
-    : Number(props.halfSideMetres ?? 400);
-
-  // 1 mi = 1609.344 m → 1 mi² = 2,589,988.11 m²
+export function analyzeAoiArea(aoi: PolygonAOI): {
+  areaM2: number;
+  areaKm2: number;
+  areaMi2: number;
+  shape: 'polygon' | 'circle' | 'unknown';
+  sizeMetres: number | null;
+} {
   const MI2_PER_M2 = 1 / (1609.344 * 1609.344);
-  const areaM2 = shape === 'circle'
-    ? Math.PI * sizeMetres * sizeMetres
-    : (2 * sizeMetres) * (2 * sizeMetres);
 
-  return { areaMi2: areaM2 * MI2_PER_M2, shape, sizeMetres };
+  // Collect every outer ring of every feature (canonical AOIs have one
+  // feature; the union is summed so multi-feature AOIs stay honest).
+  const rings: number[][][] = [];
+  for (const f of aoi?.features ?? []) {
+    const geom = f?.geometry as { type: string; coordinates: number[][][] } | undefined;
+    if (geom?.type === 'Polygon' && Array.isArray(geom.coordinates?.[0])) {
+      rings.push(geom.coordinates[0]);
+    }
+  }
+
+  if (rings.length === 0) {
+    return { areaM2: 0, areaKm2: 0, areaMi2: 0, shape: 'unknown', sizeMetres: null };
+  }
+
+  // Dateline normalization: when a ring spans more than 180° of raw
+  // longitude it must cross the antimeridian — shift negative lngs by +360
+  // so the shoelace sum measures the real (small) area.
+  const normalized = rings.map((ring) => {
+    let minLng = Infinity, maxLng = -Infinity;
+    for (const [lng] of ring) {
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    }
+    const crossesDateline = maxLng - minLng > 180;
+    return crossesDateline
+      ? (ring.map(([lng, lat]) => [lng < 0 ? lng + 360 : lng, lat] as [number, number]) as number[][])
+      : ring;
+  });
+
+  // Centre latitude of the whole AOI (for local metre-per-degree scaling).
+  let minLat = Infinity, maxLat = -Infinity, latSum = 0, latCount = 0;
+  for (const ring of normalized) {
+    for (const [, lat] of ring) {
+      latSum += lat;
+      latCount++;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    }
+  }
+  const centreLat = latCount > 0 ? latSum / latCount : (minLat + maxLat) / 2;
+  const metresPerLon = METRES_PER_DEG_LAT * Math.cos((centreLat * Math.PI) / 180);
+
+  // Shoelace in local metres (x scaled by metresPerLon, y by METRES_PER_DEG_LAT).
+  let areaM2 = 0;
+  for (const ring of normalized) {
+    if (ring.length < 3) continue;
+    let sum = 0;
+    for (let i = 0; i < ring.length - 1; i++) {
+      const [x1, y1] = ring[i];
+      const [x2, y2] = ring[i + 1];
+      sum += (x1 * metresPerLon) * y2 - (x2 * metresPerLon) * y1;
+    }
+    // Close the ring if the input is not explicitly closed.
+    const [xLast, yLast] = ring[ring.length - 1];
+    const [xFirst, yFirst] = ring[0];
+    if (xLast !== xFirst || yLast !== yFirst) {
+      sum += (xLast * metresPerLon) * yFirst - (xFirst * metresPerLon) * yLast;
+    }
+    areaM2 += (Math.abs(sum) / 2) * METRES_PER_DEG_LAT;
+  }
+
+  // Canonical shape/size from properties (display metadata only — the AREA
+  // above always comes from the geometry itself).
+  const props = (aoi?.features?.[0]?.properties ?? {}) as {
+    shape?: string;
+    halfSideMetres?: number;
+    radiusMetres?: number;
+  };
+  const shape = props.shape === 'circle' ? 'circle' : props.shape === 'polygon' ? 'polygon' : 'unknown';
+  const sizeMetres = shape === 'circle'
+    ? (props.radiusMetres != null ? Number(props.radiusMetres) : null)
+    : (props.halfSideMetres != null ? Number(props.halfSideMetres) : null);
+
+  return {
+    areaM2,
+    areaKm2: areaM2 / 1e6,
+    areaMi2: areaM2 * MI2_PER_M2,
+    shape,
+    sizeMetres,
+  };
 }
 
 /**
- * User-facing span label for the AOI (Section 3).
+ * Backwards-compatible area accessor (geometry-based since the plan-limit
+ * hardening pass — see analyzeAoiArea). `sizeMetres` is the canonical span
+ * metadata when present (half-side for squares, radius for circles) and null
+ * for geometries without size properties (e.g. the DEMO capture request AOI).
+ */
+export function analyzeAoiAreaMi2(
+  aoi: PolygonAOI,
+): { areaMi2: number; areaKm2: number; areaM2: number; shape: 'polygon' | 'circle' | 'unknown'; sizeMetres: number | null } {
+  return analyzeAoiArea(aoi);
+}
+
+/**
+ * User-facing span label for the AOI.
  *   polygon 400 → "400m × 400m" / 1000 → "1km × 1km"
  *   circle  400 → "400m diameter" / 1000 → "1km diameter"
  */
@@ -259,10 +369,22 @@ export function aoiSpanLabel(spanMetres: number, shape: AnalysisAreaShape): stri
 }
 
 /**
- * Return true if the AOI's planar area is within the FortyGuard 150 mi² limit.
+ * User-facing AREA label computed from the canonical GEOMETRY — e.g.
+ * "4.00 km² · 1.54 mi²". One decimal-space format for both units; always
+ * derived via analyzeAoiArea (never from preset text).
+ */
+export function aoiAreaLabel(aoi: PolygonAOI): string {
+  const { areaKm2, areaMi2 } = analyzeAoiArea(aoi);
+  return `${areaKm2.toFixed(2)} km² · ${areaMi2.toFixed(2)} mi²`;
+}
+
+/**
+ * Return true if the AOI's geometry-derived area is within the enforced
+ * FortyGuard limit (documented Basic 10 mi² by default — never 150; see
+ * plan-limits.ts for plan-aware resolution).
  */
 export function isAoiWithinLimit(aoi: PolygonAOI, limitMi2 = FORTYGUARD_AOI_LIMIT_MI2): boolean {
-  return analyzeAoiAreaMi2(aoi).areaMi2 <= limitMi2;
+  return analyzeAoiArea(aoi).areaMi2 <= limitMi2;
 }
 
 /**

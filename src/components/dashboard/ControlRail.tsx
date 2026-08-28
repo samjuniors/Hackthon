@@ -10,7 +10,8 @@ import type { LocationPoint } from '@/types/domain';
 import type { CandidateSite } from '@/hooks/use-candidate-sites';
 import { getCandidateColor } from '@/components/ThermalMap';
 import { useUserPreferences, AOI_SPAN_PRESETS_LOCAL } from '@/lib/user-preferences';
-import { aoiSpanLabel } from '@/lib/spatial/aoi';
+import { aoiSpanLabel, aoiAreaLabel } from '@/lib/spatial/aoi';
+import type { TemporalClassification } from '@/lib/temporal/validation';
 import {
   type AnalysisTemporalInput,
   type AnalysisTimeMode,
@@ -30,6 +31,7 @@ import {
   FIXTURE_CELL_COUNT,
   FIXTURE_CAPTURED_AT_ISO,
   FIXTURE_CAPTURED_HOUR_ISO,
+  FIXTURE_CAPTURE_REQUEST_AOI,
   fixtureCaptureSpanLabel,
 } from '@/lib/fortyguard/fixture-display';
 import { SystemStatus } from '@/components/dashboard/SystemStatus';
@@ -72,6 +74,29 @@ interface ControlRailProps {
   onAddSiteFromSearch: (loc: NamedLocation) => void;
   /** Granularity the captured fixture was ACTUALLY recorded at (DEMO display). */
   fixtureGranularity?: number;
+  /**
+   * Provider-limit pre-flight facts (P0): area label computed from the
+   * canonical geometry + the enforced documented limit + within/over status.
+   */
+  aoiAreaFacts?: {
+    /** e.g. "4.00 km² · 1.54 mi²" — computed from the geometry. */
+    areaLabel: string;
+    /** e.g. "FortyGuard Basic limit: 10 mi²" (documented). */
+    limitLabel: string;
+    withinLimit: boolean;
+  } | null;
+  /**
+   * Temporal window facts for LIVE (P0): classification (historical/current/
+   * forecast), the provider WIRE preview (UTC), and provider-bound validity.
+   */
+  temporalFacts?: {
+    classification: TemporalClassification;
+    wirePreview: string;
+    valid: boolean;
+    message: string;
+  } | null;
+  /** True when the selected location is outside the documented US coverage. */
+  outsideUsCoverage?: boolean;
   /**
    * ONE compact Reset control: clears the ENTIRE analysis workspace and
    * invalidates any in-flight request — returning to EMPTY without a reload.
@@ -142,6 +167,9 @@ export function ControlRail({
   addSiteMode,
   onAddSiteFromSearch,
   fixtureGranularity,
+  aoiAreaFacts,
+  temporalFacts,
+  outsideUsCoverage,
   onReset,
   onClearLocation,
   generateDisabled = false,
@@ -290,6 +318,9 @@ export function ControlRail({
             <div className="text-[10px] text-text-dimmed leading-relaxed">
               The exact area the genuine FortyGuard capture was requested for. Shape and size apply to LIVE only.
             </div>
+            <div className="text-[10.5px] text-text-dimmed tnum" data-testid="captured-area-label">
+              {aoiAreaLabel(FIXTURE_CAPTURE_REQUEST_AOI)} — computed from the captured request geometry.
+            </div>
           </div>
         ) : (
           <>
@@ -333,12 +364,49 @@ export function ControlRail({
                 );
               })}
             </div>
-            <div className="mt-1.5 text-[10.5px] text-text-dimmed flex items-center justify-between">
-              <span>Span</span>
-              <span className="tnum text-text-muted" data-testid="aoi-span-label">
-                {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
-              </span>
+            {/* Span + AREA — linear span ≠ area: show BOTH (P0).
+                The area is computed from the canonical GEOMETRY (never preset
+                text): square 2km → "2 km × 2 km" + "4.00 km² · 1.54 mi²". */}
+            <div className="mt-1.5 space-y-0.5 text-[10.5px]" data-testid="aoi-dimensions">
+              <div className="flex items-center justify-between">
+                <span className="text-text-dimmed">Span</span>
+                <span className="tnum text-text-muted" data-testid="aoi-span-label">
+                  {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
+                </span>
+              </div>
+              {aoiAreaFacts && (
+                <div className="flex items-center justify-between">
+                  <span className="text-text-dimmed">Area</span>
+                  <span className="tnum text-text-muted" data-testid="aoi-area-label">
+                    {aoiAreaFacts.areaLabel}
+                  </span>
+                </div>
+              )}
             </div>
+            {/* Provider-limit pre-flight status (P0): within / exceeds the
+                DOCUMENTED plan limit — computed from the same geometry. */}
+            {aoiAreaFacts && (
+              <div className="mt-1.5 flex items-center justify-between gap-2" data-testid="aoi-limit-status">
+                <span
+                  className="text-[10.5px] font-semibold"
+                  style={{ color: aoiAreaFacts.withinLimit ? 'var(--accent-emerald)' : 'var(--destructive)' }}
+                >
+                  {aoiAreaFacts.withinLimit ? 'Within provider limit' : 'Exceeds provider limit'}
+                </span>
+                <span
+                  className="text-[10px] text-text-dimmed tnum"
+                  title="Documented FortyGuard plan limit (public API docs) — the account plan exposes no area limit"
+                >
+                  {aoiAreaFacts.limitLabel} · documented
+                </span>
+              </div>
+            )}
+            {/* Documented US-only coverage note (LIVE) */}
+            {outsideUsCoverage && (
+              <p className="text-[10.5px] mt-1.5 font-medium" style={{ color: 'var(--accent-amber)' }} data-testid="outside-us-coverage-note">
+                Outside documented FortyGuard coverage (United States) — the LIVE request would be rejected before submission.
+              </p>
+            )}
             <p className="text-[10px] text-text-dimmed mt-1.5 leading-relaxed">
               Drag the teal operating-location pin on the map to move the area — the moved geometry is exactly what
               FortyGuard receives.
@@ -349,7 +417,7 @@ export function ControlRail({
 
       <Separator />
 
-      {/* ── THERMAL CELL (granularity — NOT zoom) ── */}
+      {/* ── THERMAL RESOLUTION (provider granularity — NOT zoom, NOT AOI size) ── */}
       <div>
         <SectionLabel
           right={
@@ -358,7 +426,7 @@ export function ControlRail({
             </span>
           }
         >
-          Thermal Cell
+          Thermal Resolution
         </SectionLabel>
         {mode === 'FIXTURE' ? (
           <div
@@ -371,27 +439,33 @@ export function ControlRail({
             </span>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-1.5" data-testid="resolution-options">
-            {([60, 80, 100] as const).map((r) => {
-              const active = prefs.analysisResolution === r;
-              return (
-                <button
-                  key={r}
-                  data-testid={`resolution-${r}`}
-                  onClick={() => setters.setAnalysisResolution(r)}
-                  aria-pressed={active}
-                  title={`FortyGuard thermal-cell granularity ${r}m × ${r}m (does not change map zoom)`}
-                  className={`h-9 rounded-lg text-[11px] font-medium border tnum transition-colors duration-150 ${
-                    active
-                      ? 'border-primary bg-primary/10 text-text-primary'
-                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  {r}m × {r}m
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <div className="grid grid-cols-3 gap-1.5" data-testid="resolution-options">
+              {([60, 80, 100] as const).map((r) => {
+                const active = prefs.analysisResolution === r;
+                return (
+                  <button
+                    key={r}
+                    data-testid={`resolution-${r}`}
+                    onClick={() => setters.setAnalysisResolution(r)}
+                    aria-pressed={active}
+                    title={`FortyGuard thermal-cell granularity ${r}m × ${r}m (does not change map zoom)`}
+                    className={`h-9 rounded-lg text-[11px] font-medium border tnum transition-colors duration-150 ${
+                      active
+                        ? 'border-primary bg-primary/10 text-text-primary'
+                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    {r}m × {r}m
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-text-dimmed mt-1.5 leading-relaxed" data-testid="resolution-hint">
+              Requested provider cell granularity. The provider&apos;s returned coverage/geometry determines the actual
+              cells — no cell count is guaranteed.
+            </p>
+          </>
         )}
       </div>
 
@@ -419,9 +493,13 @@ export function ControlRail({
 
         {/* EVALUATION WINDOW selector — a UI concept, NOT a provider
             filter_type. The verified wire contract: every evaluated hour is
-            its own single-hour FortyGuard request (filter_type: 1). */}
+            its own single-hour FortyGuard request (filter_type: 1).
+            DEMO: LOCKED to the capture's single hour (the fixture contains
+            exactly one snapshot — no mode switch can pretend otherwise). */}
         <p className="text-[10px] text-text-dimmed mb-1.5 leading-relaxed">
-          A time range is evaluated as a sequence of hourly FortyGuard requests — one request per hour.
+          {isFixtureAnchored
+            ? 'The captured field contains exactly one hour — the evaluation window is locked to it.'
+            : 'A time range is evaluated as a sequence of hourly FortyGuard requests — one request per hour.'}
         </p>
         <div className="grid grid-cols-2 gap-1.5 mb-2.5">
           {TIME_MODE_OPTIONS.map((opt) => {
@@ -432,12 +510,13 @@ export function ControlRail({
                 data-testid={`evaluation-window-${opt.value}`}
                 onClick={() => handleTimeModeChange(opt.value)}
                 aria-pressed={active}
-                title={opt.description}
+                disabled={isFixtureAnchored}
+                title={isFixtureAnchored ? 'DEMO capture contains one hour only — mode is fixed.' : opt.description}
                 className={`h-9 rounded-lg text-[11px] font-medium border transition-colors duration-150 ${
                   active
                     ? 'border-primary bg-primary/10 text-text-primary'
                     : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
-                }`}
+                } ${isFixtureAnchored ? 'opacity-60 cursor-not-allowed' : ''}`}
               >
                 {opt.label}
               </button>
@@ -518,8 +597,48 @@ export function ControlRail({
           </p>
         )}
 
+        {/* ── Temporal classification + provider WIRE preview (P0) ──
+            Every LIVE request is classified against the present moment
+            (historical / current / forecast) and previewed in the EXACT UTC
+            wire form the adapter transmits — no ambiguity about what will be
+            sent. Invalid windows (pre-2019 / beyond +12h / >12h range) block
+            Generate BEFORE any credits could be spent. */}
+        {temporalFacts && (
+          <div className="mt-1.5 space-y-1" data-testid="temporal-classification">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-text-dimmed">Request type</span>
+              <span
+                className="text-[10.5px] font-semibold"
+                style={{
+                  color: temporalFacts.classification === 'forecast'
+                    ? 'var(--accent-amber)'
+                    : temporalFacts.classification === 'historical'
+                      ? 'var(--text-muted)'
+                      : 'var(--accent-emerald)',
+                }}
+              >
+                {temporalFacts.classification === 'forecast'
+                  ? temporalFacts.valid
+                    ? 'Forecast · within +12h'
+                    : 'Forecast · beyond +12h'
+                  : temporalFacts.classification === 'historical'
+                    ? 'Historical'
+                    : 'Current / recent'}
+              </span>
+            </div>
+            <p className="text-[10px] text-text-dimmed tnum leading-relaxed" data-testid="temporal-wire-preview">
+              {temporalFacts.wirePreview}
+            </p>
+            {!temporalFacts.valid && (
+              <p className="text-[10.5px] text-destructive font-medium leading-relaxed" data-testid="temporal-invalid-reason">
+                {temporalFacts.message}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Honest future-date note */}
-        {mode === 'LIVE' && isFutureDate && (
+        {mode === 'LIVE' && isFutureDate && temporalFacts?.valid && (
           <p className="text-[10.5px] mt-1.5 font-medium" style={{ color: 'var(--accent-amber)' }}>
             Future date selected — subject to FortyGuard forecast availability. The provider reports any unsupported
             window verbatim.
@@ -538,12 +657,13 @@ export function ControlRail({
                 LIVE · {derivedDuration}-hour evaluation
               </span>
               <span className="text-[11px] font-semibold tnum" style={{ color: 'var(--accent-emerald)' }}>
-                {liveHourlyRequestCount} FortyGuard hourly request{liveHourlyRequestCount > 1 ? 's' : ''}
+                {liveHourlyRequestCount} FortyGuard heatmap activit{liveHourlyRequestCount > 1 ? 'ies' : 'y'}
               </span>
             </div>
             <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
-              Each evaluated hour is its own single-hour FortyGuard request (cached results reused, not re-billed).
-              Repeat requests may consume provider credits.
+              Each evaluated hour is its own single-hour FortyGuard request — a separate billable heatmap activity
+              (cached results reused, not re-billed). Constraint violations are rejected before submission and never
+              charged.
             </p>
           </div>
         )}

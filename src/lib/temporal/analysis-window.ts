@@ -225,6 +225,61 @@ export function isValidTimeStr(s: string): boolean {
   return h >= 0 && h <= 23 && m >= 0 && m <= 59;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LOCAL → UTC CONVERSION (client-safe single source of truth)
+//
+// Used by the UI (wire preview) AND the server (adapter boundary) so the
+// displayed FortyGuard request time can never drift from the transmitted one.
+// src/lib/temporal/server-conversion.ts re-exports this for its existing
+// server-side import sites.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Convert a local (date, HH:MM) pair in the given IANA timezone to an ISO UTC
+ * timestamp. Uses the wall-clock interpretation (no DST guessing beyond what
+ * Intl provides) — exactly what the user picked.
+ */
+export function localToUtcIso(
+  date: string,
+  time: string,
+  timezone: string
+): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const [hh, mm] = time.split(':').map(Number);
+  // Build a UTC epoch for the local wall-clock, then let Intl shift it back.
+  // The trick: format the same wall-clock AS the target timezone, which
+  // produces the UTC instant that corresponds to that wall-clock in tz.
+  const wallClockUtc = Date.UTC(y, m - 1, d, hh, mm, 0);
+  // Compute the timezone offset at that instant.
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = dtf.formatToParts(new Date(wallClockUtc));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '0';
+  const tzYear = Number(get('year'));
+  const tzMonth = Number(get('month'));
+  const tzDay = Number(get('day'));
+  const tzHour = Number(get('hour')) % 24;
+  const tzMinute = Number(get('minute'));
+  const tzSecond = Number(get('second'));
+  // The UTC instant whose wall-clock in `timezone` equals (tzYear, tzMonth,
+  // tzDay, tzHour, tzMinute, tzSecond). We want the instant that, when
+  // formatted in `timezone`, shows (y, m, d, hh, mm). That instant is:
+  //   wallClockUtc - (tzOffsetMs)
+  // where tzOffsetMs = wallClockUtc - instantRepresentingTzWallClock.
+  const tzWall = Date.UTC(tzYear, tzMonth - 1, tzDay, tzHour, tzMinute, tzSecond);
+  const offsetMs = wallClockUtc - tzWall;
+  const instant = wallClockUtc + offsetMs;
+  return new Date(instant).toISOString();
+}
+
 /**
  * DEMO fixture temporal metadata — the REAL capture contains ONE hourly
  * snapshot: the hour its provider request asked for (2026-08-14 12:00 UTC,

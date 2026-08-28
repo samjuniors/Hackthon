@@ -3,6 +3,7 @@ import {
   effectiveTimeBounds,
   deriveDurationHours,
   FIXTURE_TEMPORAL_METADATA,
+  localToUtcIso,
 } from './analysis-window';
 import { ValidationError } from '@/types/errors';
 
@@ -13,9 +14,11 @@ import { ValidationError } from '@/types/errors';
  * the conversion at the adapter boundary. Do not let Gemini perform date/time
  * conversion. The deterministic engine remains the source of truth."
  *
- * This module is server-only (no client import). It uses the standard
- * Intl/Date APIs — deterministic, never AI.
+ * localToUtcIso now lives in the client-safe analysis-window module (ONE
+ * implementation shared by the UI wire preview and the server adapter
+ * boundary) and is re-exported here for the existing server import sites.
  */
+export { localToUtcIso } from './analysis-window';
 
 /**
  * The date_time block of a SINGLE-HOURLY FortyGuard /v1/heatmap request.
@@ -35,57 +38,6 @@ export interface EngineTemporalConstraints {
   allowedStart: string; // ISO 8601 UTC
   allowedEnd: string; // ISO 8601 UTC
   durationHours: number;
-}
-
-/**
- * Convert a local (date, HH:MM) pair in the given IANA timezone to an ISO UTC
- * timestamp. Uses the wall-clock interpretation (no DST guessing beyond what
- * Intl provides) — exactly what the user picked.
- */
-export function localToUtcIso(
-  date: string,
-  time: string,
-  timezone: string
-): string {
-  const [y, m, d] = date.split('-').map(Number);
-  const [hh, mm] = time.split(':').map(Number);
-  // Build a UTC epoch for the local wall-clock, then let Intl shift it back.
-  // The trick: format the same wall-clock AS the target timezone, which
-  // produces the UTC instant that corresponds to that wall-clock in tz.
-  const wallClockUtc = Date.UTC(y, m - 1, d, hh, mm, 0);
-  // Compute the timezone offset at that instant.
-  const dtf = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-  const parts = dtf.formatToParts(new Date(wallClockUtc));
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '0';
-  const tzYear = Number(get('year'));
-  const tzMonth = Number(get('month'));
-  const tzDay = Number(get('day'));
-  const tzHour = Number(get('hour')) % 24;
-  const tzMinute = Number(get('minute'));
-  const tzSecond = Number(get('second'));
-  // The UTC instant whose wall-clock in `timezone` equals (tzYear, tzMonth,
-  // tzDay, tzHour, tzMinute, tzSecond). We want the instant that, when
-  // formatted in `timezone`, shows (y, m, d, hh, mm). That instant is:
-  //   wallClockUtc - (tzOffsetMs)
-  // where tzOffsetMs = wallClockUtc - instantRepresentingTzWallClock.
-  const tzWall = Date.UTC(tzYear, tzMonth - 1, tzDay, tzHour, tzMinute, tzSecond);
-  // Double-iteration offset: the difference between "desired wall-clock read
-  // as UTC" and "the same instant re-read as UTC after one tz round-trip".
-  // For New York (EDT = UTC-4): desired local 04:00 → wallClockUtc = 04:00Z,
-  // displayed back as 00:00 EDT → tzWall = 00:00Z → offset = +4h →
-  // instant = 08:00Z, which is exactly 04:00 EDT.
-  const offsetMs = wallClockUtc - tzWall;
-  const instant = wallClockUtc + offsetMs;
-  return new Date(instant).toISOString();
 }
 
 /**

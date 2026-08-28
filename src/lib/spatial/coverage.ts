@@ -218,3 +218,46 @@ export function formatCoverageLine(c: AoiThermalCoverage): string {
     `(inside ${c.cellsFullyInsideAoi} / crossing ${c.cellsCrossingBoundary} / outside ${c.cellsOutsideAoi})`
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USER-FACING COVERAGE STATUS (honest gap disclosure)
+//
+// The provider field covers what it covers — gaps are NEVER filled, smoothed,
+// or edge-completed. This summary surfaces the truth in the UI: full / partial
+// / none, with the provider cell count. Pure measurement; never modifies
+// provider geometry.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CoverageStatus {
+  /** Provider cells in the field. */
+  cells: number;
+  /** AOI area covered by provider cells (0..1; sampled planar estimate). */
+  coverageRatio: number;
+  /** 'full' (≥99%), 'partial' (some gap), 'none' (no coverage). */
+  status: 'full' | 'partial' | 'none';
+  /** e.g. "425 provider cells · partial coverage (62%)" */
+  label: string;
+}
+
+/**
+ * Summarize the honest provider-coverage status of an analysis: what fraction
+ * of the requested AOI the ACTUAL provider cells cover. Gaps are reported,
+ * never hidden or filled — the UI presents them as an intentional, explainable
+ * property of the provider response.
+ */
+export function summarizeCoverageStatus(
+  analysisAoi: PolygonAOI | null | undefined,
+  spatialField: PolygonAOI | null | undefined,
+): CoverageStatus | null {
+  if (!analysisAoi || !spatialField || !spatialField.features?.length) return null;
+  const c = computeAoiThermalCoverage(analysisAoi, spatialField);
+  if (!c || c.cells === 0) return null;
+  const pct = Math.round(c.coverageRatio * 100);
+  const status: CoverageStatus['status'] =
+    c.coverageRatio >= 0.99 ? 'full' : c.coverageRatio > 0 ? 'partial' : 'none';
+  const label =
+    status === 'full'
+      ? `${c.cells} provider cells`
+      : `${c.cells} provider cells · ${status} coverage (${pct}%)`;
+  return { cells: c.cells, coverageRatio: c.coverageRatio, status, label };
+}

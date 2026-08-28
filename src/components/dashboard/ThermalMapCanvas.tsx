@@ -23,7 +23,16 @@ interface ThermalMapCanvasProps {
   resolution?: number;
   /** Data source mode for the provenance line (LIVE · FortyGuard / DEMO · Captured). */
   mode?: 'LIVE' | 'FIXTURE';
+  /** Loading state. */
   loading: boolean;
+  /**
+   * Honest provider-coverage label (P0 — SHOW THE GAP), e.g.
+   * "425 provider cells · partial coverage (74%)". Computed from the ACTUAL
+   * provider cells vs the requested AOI — gaps are reported, never filled.
+   */
+  coverageLabel?: string;
+  /** Coverage verdict for styling ('partial' gets the honest-amber tone). */
+  coverageStatus?: 'full' | 'partial' | 'none';
   /** All ranked candidate sites (drives the map pins). */
   rankedCandidates?: unknown;
   /** The recommended site's locationId. */
@@ -56,6 +65,8 @@ export function ThermalMapCanvas({
   resolution,
   mode,
   loading,
+  coverageLabel,
+  coverageStatus,
   temporalInput,
   timezone,
   unit,
@@ -93,13 +104,32 @@ export function ThermalMapCanvas({
                 <span className="tnum">{temporalLabel}</span>
               </>
             )}
-            {typeof thermalCellCount === 'number' && thermalCellCount > 0 && (
+            {coverageLabel ? (
               <>
                 <span className="text-text-dimmed" aria-hidden="true">·</span>
-                <span className="tnum" data-testid="thermal-cell-count">
-                  {thermalCellCount} cells
+                <span
+                  className="tnum"
+                  data-testid="thermal-coverage-status"
+                  style={{ color: coverageStatus === 'partial' ? 'var(--accent-amber)' : undefined }}
+                  title={
+                    coverageStatus === 'partial'
+                      ? 'The provider returned cells covering part of the requested area — the gap is shown, never filled.'
+                      : undefined
+                  }
+                >
+                  {coverageLabel}
                 </span>
               </>
+            ) : (
+              typeof thermalCellCount === 'number' &&
+              thermalCellCount > 0 && (
+                <>
+                  <span className="text-text-dimmed" aria-hidden="true">·</span>
+                  <span className="tnum" data-testid="thermal-cell-count">
+                    {thermalCellCount} cells
+                  </span>
+                </>
+              )
             )}
             {typeof resolution === 'number' && (
               <>

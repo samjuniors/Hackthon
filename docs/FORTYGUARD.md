@@ -1,8 +1,59 @@
 # FortyGuard Integration & Reconnaissance Specifications
 
 **Status:** VERIFIED LIVE & EVIDENCE GATE LOCKED  
-**Last Updated:** 2026-08-20  
+**Last Updated:** 2026-08-28  
 **Milestone:** M4 — Evidence Gates & Vertical Slice 1  
+
+---
+
+## 0. Provider Contract — Three Layers (NEVER conflated)
+
+Any AOI/temporal limit the product enforces is resolved against these three
+DISTINCT layers, in this order:
+
+### Layer 1 — DOCUMENTED PROVIDER LIMIT (official docs — the baseline)
+
+Verified live on **2026-08-28** against the official API documentation
+(`https://docs-api.fortyguard.com/docs/create-heatmap` and
+`/docs/limitations`):
+
+| Constraint | Documented value |
+| :--- | :--- |
+| Heatmap max area | **API Basic = 10 mi² · API Premium = 50 mi² · API Startup = 10 mi²** |
+| Granularity | 60m / 80m / 100m |
+| filter_type | 1 (Single Hour) · 2 (Range of Hours, same day, **max 23h**, end_time required) · 3 (Single Day) |
+| Date range | **2019-01-01 through now + 12h** (earlier / further → HTTP 400, not charged) |
+| Forecast | up to **+12 hours** past the current time |
+| Regional coverage | **United States only** (current release, all plans) |
+| polygon_aoi | GeoJSON FeatureCollection with a closed Polygon |
+| Credits | deducted only on Completed activities; constraint violations (400) are never charged |
+
+The stale **150 mi²** assumption is permanently retired — tests
+(`tests/provider-plan-limits.test.ts`) guard that it never resurfaces as an
+active limit in executable code.
+
+### Layer 2 — EMPIRICALLY VERIFIED ACCOUNT CAPABILITY (this repo's evidence)
+
+See §1–§3 below: the Hackathon account's wire behavior (async
+activity polling, filter_type-1 hourly requests, env_params `analysis`
+requirement). The account's key-usage endpoint does **NOT** expose an AOI area
+limit — verified live.
+
+### Layer 3 — CURRENT LIVE ACCOUNT STATE (runtime probe)
+
+`probeProviderCapability()` (free `POST /v1/system/fetch-api-key-usage`)
+surfaces the ACTIVE plan name + credit ledger. The APPLICABLE AOI limit is
+resolved from the live plan name against Layer 1
+(`resolveApplicableAoiLimit()` in `src/lib/fortyguard/plan-limits.ts`):
+
+- Plan contains “premium” → documented Premium limit (50 mi²).
+- Plan contains “basic” / “startup” → documented limit (10 mi²).
+- Anything else — including **“Hackathon”** — → the CONSERVATIVE documented
+  Basic limit (**10 mi²**), labelled `documented` (the plan exposes no area
+  limit of its own).
+
+The UI (rail pre-flight, Settings drawer) shows the resolved limit with its
+honest `documented` label — never a fabricated `confirmed` claim.
 
 ---
 

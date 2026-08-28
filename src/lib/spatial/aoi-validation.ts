@@ -9,9 +9,11 @@
  *   2. GEOGRAPHIC BOUNDS — coordinates must lie within valid geographic bounds
  *                          (|lat| ≤ 90, |lng| ≤ 180). No fabricated provider
  *                          coverage claims — just objective coordinate sanity.
- *   3. PROVIDER LIMIT    — the documented FortyGuard 150 mi² single-request
- *                          AOI limit (FORTYGUARD_AOI_LIMIT_MI2). Enforced,
- *                          never silently shrunk.
+ *   3. PROVIDER LIMIT    — the DOCUMENTED FortyGuard heatmap area limit
+ *                          (Basic 10 mi² / Premium 50 mi² — official docs,
+ *                          verified 2026-08-28; conservatively enforced at
+ *                          10 mi² until the account's plan exposes a limit).
+ *                          Enforced BEFORE submission, never silently shrunk.
  *
  * DELIBERATELY ABSENT: state/region-boundary containment. The product's
  * region-boundary polygons are coarse geographic CONTEXT (rendered for
@@ -29,9 +31,10 @@
  */
 import type { PolygonAOI } from '@/types/domain';
 import {
-  analyzeAoiAreaMi2,
+  analyzeAoiArea,
   isAoiWithinLimit,
-  FORTYGUARD_AOI_LIMIT_MI2,
+  resolveApplicableAoiLimit,
+  formatAoiLimitLabel,
 } from './aoi';
 
 /** Validation failure codes (stable identifiers surfaced in the UI + tests). */
@@ -49,6 +52,20 @@ export interface AoiValidationResult {
   message: string;
   /** Human recovery instruction. */
   recovery: string;
+  /** Area facts computed from the canonical geometry (always present when a
+   *  ring exists — powers the pre-flight area/limit display). */
+  area?: {
+    areaMi2: number;
+    areaKm2: number;
+    /** e.g. "4.00 km² · 1.54 mi²" */
+    label: string;
+  };
+  /** The provider limit this validation enforced (with its honest label). */
+  limit?: {
+    limitMi2: number;
+    /** e.g. "FortyGuard Basic limit: 10 mi²" */
+    label: string;
+  };
 }
 
 export interface AoiValidationContext {
@@ -103,16 +120,29 @@ export function validateAnalysisAoi(
     }
   }
 
-  // ── 3. Documented provider AOI limit ──
-  if (!isAoiWithinLimit(aoi)) {
-    const area = analyzeAoiAreaMi2(aoi);
+  // ── 3. Documented provider AOI area limit (pre-flight, zero-credit) ──
+  const applicable = resolveApplicableAoiLimit();
+  const area = analyzeAoiArea(aoi);
+  const areaFacts = {
+    area: {
+      areaMi2: area.areaMi2,
+      areaKm2: area.areaKm2,
+      label: `${area.areaKm2.toFixed(2)} km² · ${area.areaMi2.toFixed(2)} mi²`,
+    },
+    limit: {
+      limitMi2: applicable.limitMi2,
+      label: formatAoiLimitLabel(applicable),
+    },
+  };
+  if (!isAoiWithinLimit(aoi, applicable.limitMi2)) {
     return {
       valid: false,
       code: 'AOI_EXCEEDS_PROVIDER_LIMIT',
-      message: `Analysis area (${area.areaMi2.toFixed(1)} mi²) exceeds the documented FortyGuard ${FORTYGUARD_AOI_LIMIT_MI2} mi² AOI limit.`,
-      recovery: 'Pick a smaller analysis-area size, then generate again.',
+      message: `Analysis area: ${area.areaMi2.toFixed(1)} mi². ${formatAoiLimitLabel(applicable)}. Request blocked before submission — no FortyGuard credits consumed.`,
+      recovery: 'Pick a smaller analysis-area size, then generate again. The area is never silently shrunk.',
+      ...areaFacts,
     };
   }
 
-  return { valid: true, message: '', recovery: '' };
+  return { valid: true, message: '', recovery: '', ...areaFacts };
 }

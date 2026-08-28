@@ -23,7 +23,9 @@ import {
   mapErrorToProductionDetails,
 } from '@/types/errors';
 import { isLocationCoveredByFixture } from '@/lib/location/search';
-import { isPointInAoi, aoiBboxesIntersect } from '@/lib/spatial/aoi';
+import { isPointInAoi, aoiBboxesIntersect, analyzeAoiArea } from '@/lib/spatial/aoi';
+import { resolveApplicableAoiLimit, formatAoiLimitLabel, isWithinDocumentedCoverage } from '@/lib/fortyguard/plan-limits';
+import { validateTemporalWindow } from '@/lib/temporal/validation';
 import {
   getFixtureExtentAoi,
   getFixtureCaptureMetadata,
@@ -260,6 +262,65 @@ export async function POST(request: Request) {
     const canonicalAoi = reqAnalysisAoi as
       | import('@/types/domain').PolygonAOI
       | undefined;
+
+    // ── SERVER PRE-FLIGHT (LIVE): documented provider limits, zero credits ──
+    // Constraint violations are HTTP 400 at the provider and never charged —
+    // this server-side gate mirrors the client pre-flight so a spoofed or
+    // misconfigured request can NEVER reach the provider and spend credits:
+    //   1. AOI area ≤ the applicable documented plan limit.
+    //   2. Temporal window within [2019-01-01, now + 12h].
+    //   3. Analysis area inside the documented US coverage.
+    // (FIXTURE is exempt — it replays one anchored capture and never calls
+    //  the provider.)
+    if (mode === 'LIVE') {
+      const applicable = resolveApplicableAoiLimit();
+      if (canonicalAoi) {
+        const area = analyzeAoiArea(canonicalAoi);
+        if (area.areaMi2 > applicable.limitMi2) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                code: 'AOI_EXCEEDS_PROVIDER_LIMIT',
+                message: `Analysis area: ${area.areaMi2.toFixed(1)} mi². ${formatAoiLimitLabel(applicable)}. Request blocked before submission — no FortyGuard credits consumed.`,
+                recoverySuggestion: 'Pick a smaller analysis-area size, then generate again.',
+                category: 'VALIDATION',
+              } as const,
+            },
+            { status: 400 }
+          );
+        }
+        if (!isWithinDocumentedCoverage(latitude, longitude)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                code: 'OUTSIDE_DOCUMENTED_COVERAGE',
+                message: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) is outside FortyGuard's documented coverage area (United States). Request blocked before submission — no credits consumed.`,
+                recoverySuggestion: 'Select a location within the United States for LIVE analysis, or switch to DEMO for the captured Manhattan field.',
+                category: 'COVERAGE',
+              } as const,
+            },
+            { status: 422 }
+          );
+        }
+      }
+      const temporalCheck = validateTemporalWindow(temporalInput, timezone);
+      if (!temporalCheck.valid) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: temporalCheck.code ?? 'TEMPORAL_INPUT_INVALID',
+              message: temporalCheck.message,
+              recoverySuggestion: temporalCheck.recovery,
+              category: 'VALIDATION',
+            } as const,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // ── DEMO capture-extent gate ──
     // The captured field is FIXED. If the client-supplied AOI does not even

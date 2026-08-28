@@ -262,21 +262,32 @@ export function SettingsDrawer({ open, onOpenChange, capability }: SettingsDrawe
                       </div>
                     </div>
                   )}
-                  {/* AOI limit — honestly labelled (documented, not confirmed) */}
-                  <div className="flex justify-between gap-2 pt-1 border-t border-border">
-                    <span className="text-text-dimmed">AOI limit</span>
-                    <span className="text-text-primary text-right">
-                      {capability.aoiLimitDocumentedMi2} mi²{' '}
-                      <span
-                        className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
-                        style={{
-                          background: 'var(--surface-elevated)',
-                          color: 'var(--text-dimmed)',
-                        }}
-                      >
-                        {capability.aoiLimitConfidence}
+                  {/* AOI limits — documented plan limits + the enforced applicable one */}
+                  <div className="space-y-1 pt-1 border-t border-border">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-text-dimmed">Enforced AOI limit</span>
+                      <span className="text-text-primary text-right">
+                        {capability.applicableAoiLimit.limitMi2} mi² ({capability.applicableAoiLimit.planLabel}){' '}
+                        <span
+                          className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
+                          style={{
+                            background: 'var(--surface-elevated)',
+                            color: 'var(--text-dimmed)',
+                          }}
+                        >
+                          {capability.applicableAoiLimit.confidence}
+                        </span>
                       </span>
-                    </span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-text-dimmed">Documented plan limits</span>
+                      <span className="text-text-muted text-right text-[10.5px]">
+                        Basic {capability.aoiLimitsDocumentedMi2.basic} · Premium {capability.aoiLimitsDocumentedMi2.premium} · Startup {capability.aoiLimitsDocumentedMi2.startup} mi²
+                      </span>
+                    </div>
+                    <p className="text-[9.5px] text-text-dimmed leading-relaxed" title={capability.applicableAoiLimit.note}>
+                      {capability.applicableAoiLimit.note}
+                    </p>
                   </div>
                   {/* Last successful heatmap — server runtime provenance */}
                   {capability.lastSuccessfulHeatmapAt && (

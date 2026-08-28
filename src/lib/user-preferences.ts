@@ -40,10 +40,10 @@ export type { AoiSizeMetres } from '@/lib/spatial/aoi';
  * Implementation detail (half-side/radius) is converted in
  * src/lib/spatial/aoi.ts createAoiFromSpan() and NEVER surfaced in the UI.
  *
- * All presets are well within the FortyGuard 150 mi² AOI limit (largest
- * preset 5000m polygon = ~9.7 mi², 5000m circle = ~7.6 mi²). The 150 mi²
- * limit is still validated client-side in page.tsx via isAoiWithinLimit()
- * so a future custom-draw feature cannot silently send an oversized AOI.
+ * All presets are within the DOCUMENTED FortyGuard heatmap area limit
+ * (Basic 10 mi² — largest preset 5000m square ≈ 9.66 mi², 5000m circle
+ * ≈ 7.56 mi²). The limit is validated on every AOI change via
+ * validateAnalysisAoi() so no geometry can ever silently exceed it.
  */
 export const AOI_SPAN_PRESETS_LOCAL = [250, 400, 1000, 2000, 5000] as const;
 export type AoiSpanMetres = (typeof AOI_SPAN_PRESETS_LOCAL)[number];

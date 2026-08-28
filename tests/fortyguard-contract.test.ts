@@ -523,8 +523,9 @@ describe('FortyGuard contract — DEMO AOI outside the captured field', () => {
     expect(railSrc).toContain('DEMO · Captured FortyGuard');
     expect(railSrc).toContain('m cell resolution');
     expect(railSrc).toContain('FIXTURE_DISPLAY_GRANULARITY');
-    // LIVE billing disclosure exists.
-    expect(railSrc).toContain('FortyGuard hourly request');
+    // LIVE billing disclosure exists (billable heatmap activities, per-hour).
+    expect(railSrc).toContain('FortyGuard heatmap activit');
+    expect(railSrc).toContain('billable heatmap activity');
     // LIVE date hint exists (honest empty-field expectation).
     expect(railSrc).toContain('live-date-hint');
   });

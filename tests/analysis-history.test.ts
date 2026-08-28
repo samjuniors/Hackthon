@@ -199,6 +199,13 @@ describe('Analysis History — repository over REAL IndexedDB (fake-indexeddb)',
     expect(records[0].id).toBe(saved!.id);
     expect(records[0].location.name).toBe('Battery Park Greenway');
     expect(records[0].thermalCellCount).toBe(425);
+    // AOI AREA is computed from the AUTHORITATIVE geometry at save time —
+    // the captured request AOI (~5.6 km² ≈ 2.2 mi², within the documented
+    // Basic 10 mi² limit), never from the size label text.
+    expect(records[0].aoiAreaKm2).toBeGreaterThan(5.0);
+    expect(records[0].aoiAreaKm2).toBeLessThan(6.5);
+    expect(records[0].aoiAreaMi2).toBeGreaterThan(1.9);
+    expect(records[0].aoiAreaMi2).toBeLessThan(2.5);
   });
 
   it('2. the 425-cell fixture is preserved VERBATIM in the saved record', async () => {

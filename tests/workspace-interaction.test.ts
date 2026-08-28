@@ -252,12 +252,21 @@ describe('workspace interaction — validateAnalysisAoi (honest constraints)', (
     expect(result.code).toBe('AOI_OUTSIDE_GEOGRAPHIC_BOUNDS');
   });
 
-  it('rejects an AOI exceeding the documented 150 mi² provider limit (never silently shrunk)', () => {
+  it('rejects an AOI exceeding the documented Basic 10 mi² provider limit (never silently shrunk)', () => {
     const huge = createBoundingAOI(MANHATTAN, 40000, 'polygon'); // 80km × 80km ≈ 2471 mi²
     const result = validateAnalysisAoi(huge);
     expect(result.valid).toBe(false);
     expect(result.code).toBe('AOI_EXCEEDS_PROVIDER_LIMIT');
-    expect(result.message).toContain('150');
+    // The message names the AREA, the DOCUMENTED plan limit (10 mi² — Basic),
+    // and the zero-credit pre-flight block. The stale 150 must NEVER appear.
+    expect(result.message).toContain('mi²');
+    expect(result.message).toContain('10 mi²');
+    expect(result.message).toContain('blocked before submission');
+    expect(result.message).not.toContain('150');
+    // Area + limit facts ride along for the pre-flight UI display.
+    expect(result.area?.areaMi2).toBeGreaterThan(2000);
+    expect(result.limit?.limitMi2).toBe(10);
+    expect(result.limit?.label).toBe('FortyGuard Basic limit: 10 mi²');
   });
 
   it('rejects degenerate/empty geometry', () => {

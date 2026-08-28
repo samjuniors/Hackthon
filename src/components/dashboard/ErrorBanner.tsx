@@ -30,6 +30,9 @@ export function ErrorBanner({
   onSwitchToLive,
   onSelectAltLocation,
 }: ErrorBannerProps) {
+  // HTTP 402 — credits exhausted: retrying CANNOT help (audit §6). The
+  // actionable path is switching to the (free) captured DEMO field.
+  const retryIsPointless = errorDetails.code === 'FORTYGUARD_CREDITS_EXHAUSTED';
   return (
     <div
       className="rounded-xl bg-surface-card border border-border border-l-2 p-4 space-y-3 card-enter"
@@ -56,12 +59,14 @@ export function ErrorBanner({
           </p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
-          <button
-            onClick={onRetry}
-            className="px-3 h-9 text-xs font-semibold rounded-lg border border-border bg-surface-elevated text-text-primary hover:bg-surface-deep transition-colors duration-150"
-          >
-            {mode === 'LIVE' ? 'Retry Live' : 'Retry'}
-          </button>
+          {!retryIsPointless && (
+            <button
+              onClick={onRetry}
+              className="px-3 h-9 text-xs font-semibold rounded-lg border border-border bg-surface-elevated text-text-primary hover:bg-surface-deep transition-colors duration-150"
+            >
+              {mode === 'LIVE' ? 'Retry Live' : 'Retry'}
+            </button>
+          )}
           {mode === 'LIVE' && (
             <button
               onClick={onSwitchToDemo}

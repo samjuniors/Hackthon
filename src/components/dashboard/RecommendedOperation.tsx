@@ -52,13 +52,13 @@ export function RecommendedOperation({ jointDecision, unit, timezone, mode, temp
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      aria-label="Recommended site"
+      aria-label="Recommended operational location"
     >
       <div className="px-5 pt-5 pb-4">
         {/* Heading row */}
         <div className="flex items-center justify-between gap-3">
           <span className="text-[11px] font-semibold uppercase tracking-widest text-text-dimmed">
-            Recommended Site
+            Recommended Operational Location
           </span>
           <span className="text-[11px] font-medium text-text-muted tnum" data-testid="recommended-rank">
             #1 of {jointDecision.searchSpace.locationCount}

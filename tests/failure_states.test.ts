@@ -9,6 +9,7 @@ import {
   FortyGuardTimeoutError,
   IncompleteTemporalCoverageError,
   OutsideCoverageError,
+  mapErrorToProductionDetails,
 } from '@/types/errors';
 import type { ExplainableDecisionInput } from '@/types/explanation';
 import type {
@@ -292,5 +293,45 @@ describe('Milestone 9 — Comprehensive System Hardening & Failure-State Suite',
 
     expect(res.size).toBe(1);
     expect(fixtureAdapter.mode).toBe('FIXTURE');
+  });
+
+  // ── DISTINCT actionable states per provider HTTP status (audit §6) ──
+  it('14. HTTP 402 maps to FORTYGUARD_CREDITS_EXHAUSTED — recovery NEVER suggests retrying', () => {
+    const details = mapErrorToProductionDetails(
+      new FortyGuardApiError('Insufficient credits: this request costs 4220 credits and 0 remain', 402)
+    );
+    expect(details.code).toBe('FORTYGUARD_CREDITS_EXHAUSTED');
+    expect(details.message).toContain('402');
+    expect(details.recoverySuggestion).toContain('no remaining credits');
+    expect(details.recoverySuggestion).toContain('retrying cannot help');
+    expect(details.recoverySuggestion).toContain('DEMO');
+    // Never a DEMO fallback — only the explicit suggestion to switch.
+    expect(details.recoverySuggestion).not.toContain('Retry Live');
+  });
+
+  it('15. HTTP 429 maps to FORTYGUARD_RATE_LIMITED — advises waiting, not immediate retry', () => {
+    const details = mapErrorToProductionDetails(new FortyGuardApiError('Too Many Requests', 429));
+    expect(details.code).toBe('FORTYGUARD_RATE_LIMITED');
+    expect(details.recoverySuggestion).toContain('Wait');
+    expect(details.recoverySuggestion).not.toContain('Retry Live');
+  });
+
+  it('16. provider HTTP 400 maps to FORTYGUARD_REJECTED_REQUEST (validation, never charged)', () => {
+    const details = mapErrorToProductionDetails(new FortyGuardApiError('start_date invalid', 400));
+    expect(details.code).toBe('FORTYGUARD_REJECTED_REQUEST');
+    expect(details.message).toContain('never charged');
+    expect(details.category).toBe('VALIDATION');
+  });
+
+  it('17. HTTP 5xx keeps the transient PROVIDER_ERROR state (retry is reasonable)', () => {
+    const details = mapErrorToProductionDetails(new FortyGuardApiError('Bad gateway', 502));
+    expect(details.code).toBe('FORTYGUARD_PROVIDER_ERROR');
+    expect(details.recoverySuggestion).toContain('Retry Live');
+  });
+
+  it('18. HTTP 401/403 remain AuthenticationError with a distinct code', () => {
+    const details = mapErrorToProductionDetails(new AuthenticationError());
+    expect(details.code).toBe('FORTYGUARD_AUTH_ERROR');
+    expect(details.recoverySuggestion).toContain('FORTYGUARD_API_KEY');
   });
 });

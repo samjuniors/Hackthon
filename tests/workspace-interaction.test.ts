@@ -252,21 +252,23 @@ describe('workspace interaction — validateAnalysisAoi (honest constraints)', (
     expect(result.code).toBe('AOI_OUTSIDE_GEOGRAPHIC_BOUNDS');
   });
 
-  it('rejects an AOI exceeding the documented Basic 10 mi² provider limit (never silently shrunk)', () => {
+  it('rejects an AOI exceeding the enforced 10 mi² conservative documented limit (never silently shrunk)', () => {
     const huge = createBoundingAOI(MANHATTAN, 40000, 'polygon'); // 80km × 80km ≈ 2471 mi²
     const result = validateAnalysisAoi(huge);
     expect(result.valid).toBe(false);
     expect(result.code).toBe('AOI_EXCEEDS_PROVIDER_LIMIT');
-    // The message names the AREA, the DOCUMENTED plan limit (10 mi² — Basic),
+    // The message names the AREA, the enforced documented limit (10 mi²),
     // and the zero-credit pre-flight block. The stale 150 must NEVER appear.
     expect(result.message).toContain('mi²');
     expect(result.message).toContain('10 mi²');
     expect(result.message).toContain('blocked before submission');
     expect(result.message).not.toContain('150');
-    // Area + limit facts ride along for the pre-flight UI display.
+    // Area + limit facts ride along for the pre-flight UI display. The label is
+    // the HONEST conservative form (the plan's own area limit is UNKNOWN —
+    // it must never claim this account is "Basic").
     expect(result.area?.areaMi2).toBeGreaterThan(2000);
     expect(result.limit?.limitMi2).toBe(10);
-    expect(result.limit?.label).toBe('FortyGuard Basic limit: 10 mi²');
+    expect(result.limit?.label).toBe('Conservative documented FortyGuard limit: 10 mi² (this plan\'s own area limit is UNKNOWN)');
   });
 
   it('rejects degenerate/empty geometry', () => {
@@ -402,6 +404,51 @@ describe('workspace interaction — DEMO/LIVE separation + stale invariants', ()
     const inside = { locationId: 'SITE-01', name: 'A', location: { latitude: 40.7125, longitude: -73.9975 }, origin: 'map-click' as const };
     expect(applyCandidateMove([inside], 'SITE-01', { latitude: 40.7125, longitude: -73.9975 }, aoi).accepted).toBe(true);
     expect(applyCandidateMove([inside], 'SITE-01', { latitude: 40.75, longitude: -73.9 }, aoi).accepted).toBe(false);
+  });
+});
+
+// ── Stale-state transitions (adversarial audit §10) ─────────────────────────
+
+describe('workspace interaction — NO stale field or recommendation survives an invalidating change', () => {
+  it('22. USER temporal change clears displayed results + invalidates in-flight pipelines', () => {
+    const body = handlerBody(pageSrc, 'handleTemporalChange');
+    expect(body).toContain('clearResults()');
+    expect(body).toContain('activeRequestIdRef.current++');
+  });
+
+  it('23. AOI shape/span/resolution change clears displayed results', () => {
+    // The effect watching shape/span/resolution must call clearResults
+    // (guarded only by the restore flag).
+    const marker = '}, [prefs.analysisAreaShape, prefs.analysisAoiSpanMetres, prefs.analysisResolution]);';
+    const idx = pageSrc.indexOf(marker);
+    expect(idx).toBeGreaterThan(-1);
+    const effectBody = pageSrc.slice(Math.max(0, idx - 700), idx);
+    expect(effectBody).toContain('clearResults()');
+  });
+
+  it('24. a FAILED analysis nulls every displayed result (no stale field after a failed request)', () => {
+    // The !ok branch of the pipeline: decision, spatialDecision, jointDecision,
+    // scenarioAnalysis, explanation, spatialField, metadata → all nulled.
+    const marker = 'if (!ok || !data || !data.success || data.error) {';
+    const idx = pageSrc.indexOf(marker);
+    expect(idx).toBeGreaterThan(-1);
+    const branch = pageSrc.slice(idx, idx + 700);
+    expect(branch).toContain('setDecision(null)');
+    expect(branch).toContain('setJointDecision(null)');
+    expect(branch).toContain('setSpatialField(null)');
+    expect(branch).toContain('setExplanation(null)');
+  });
+
+  it('25. mode switch clears displayed results (LIVE never reuses DEMO cells and vice versa)', () => {
+    const marker = '// Clear model state on mode switch';
+    const idx = pageSrc.indexOf(marker);
+    expect(idx).toBeGreaterThan(-1);
+    expect(pageSrc.slice(idx, idx + 300)).toContain('clearResults()');
+  });
+
+  it('26. restore invalidates in-flight pipelines BEFORE rehydrating (atomic restore)', () => {
+    const body = handlerBody(pageSrc, 'handleRestoreHistory');
+    expect(body).toContain('activeRequestIdRef.current++');
   });
 });
 

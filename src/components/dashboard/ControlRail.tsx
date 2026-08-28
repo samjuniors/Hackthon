@@ -238,7 +238,7 @@ export function ControlRail({
           onClick={onReset}
           title="Reset analysis"
           aria-label="Reset analysis"
-          className="flex items-center gap-1.5 h-7 px-2 rounded-md text-[11px] font-medium text-text-muted hover:text-text-primary hover:bg-surface-deep transition-colors duration-150"
+          className="flex items-center gap-1.5 h-11 sm:h-7 min-w-[44px] sm:min-w-0 px-2 rounded-md text-[11px] font-medium text-text-muted hover:text-text-primary hover:bg-surface-deep transition-colors duration-150"
         >
           <RotateCcw className="size-3" aria-hidden="true" />
           <span className="hidden sm:inline">Reset</span>
@@ -332,7 +332,7 @@ export function ControlRail({
                   data-testid={`aoi-shape-${shape}`}
                   onClick={() => setters.setAnalysisAreaShape(shape)}
                   aria-pressed={prefs.analysisAreaShape === shape}
-                  className={`h-9 rounded-lg text-xs font-medium border transition-colors duration-150 ${
+                  className={`h-11 sm:h-9 rounded-lg text-xs font-medium border transition-colors duration-150 ${
                     prefs.analysisAreaShape === shape
                       ? 'border-primary bg-primary/10 text-text-primary'
                       : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
@@ -353,7 +353,7 @@ export function ControlRail({
                     data-testid={`aoi-size-${size}`}
                     onClick={() => setters.setAnalysisAoiSpanMetres(size)}
                     aria-pressed={active}
-                    className={`h-9 rounded-md text-[10.5px] font-medium border tnum transition-colors duration-150 ${
+                    className={`h-11 sm:h-9 rounded-md text-[10.5px] font-medium border tnum transition-colors duration-150 ${
                       active
                         ? 'border-primary bg-primary/10 text-text-primary'
                         : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
@@ -450,7 +450,7 @@ export function ControlRail({
                     onClick={() => setters.setAnalysisResolution(r)}
                     aria-pressed={active}
                     title={`FortyGuard thermal-cell granularity ${r}m × ${r}m (does not change map zoom)`}
-                    className={`h-9 rounded-lg text-[11px] font-medium border tnum transition-colors duration-150 ${
+                    className={`h-11 sm:h-9 rounded-lg text-[11px] font-medium border tnum transition-colors duration-150 ${
                       active
                         ? 'border-primary bg-primary/10 text-text-primary'
                         : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
@@ -512,7 +512,7 @@ export function ControlRail({
                 aria-pressed={active}
                 disabled={isFixtureAnchored}
                 title={isFixtureAnchored ? 'DEMO capture contains one hour only — mode is fixed.' : opt.description}
-                className={`h-9 rounded-lg text-[11px] font-medium border transition-colors duration-150 ${
+                className={`h-11 sm:h-9 rounded-lg text-[11px] font-medium border transition-colors duration-150 ${
                   active
                     ? 'border-primary bg-primary/10 text-text-primary'
                     : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
@@ -532,7 +532,7 @@ export function ControlRail({
             value={temporalInput.date}
             onChange={(e) => update({ date: e.target.value })}
             disabled={isFixtureAnchored}
-            className={`mt-1 w-full h-10 rounded-lg border bg-surface-card px-3 text-[13px] tnum text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors duration-150 ${
+            className={`mt-1 w-full h-11 sm:h-10 rounded-lg border bg-surface-card px-3 text-[13px] tnum text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors duration-150 ${
               dateValid ? 'border-input' : 'border-destructive'
             } ${isFixtureAnchored ? 'opacity-60 cursor-not-allowed' : ''}`}
             aria-label="Analysis date"
@@ -558,7 +558,7 @@ export function ControlRail({
               value={temporalInput.startTime}
               onChange={(e) => update({ startTime: e.target.value })}
               disabled={isFixtureAnchored}
-              className={`mt-1 w-full h-10 rounded-lg border bg-surface-card px-3 text-[13px] tnum text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors duration-150 ${
+              className={`mt-1 w-full h-11 sm:h-10 rounded-lg border bg-surface-card px-3 text-[13px] tnum text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors duration-150 ${
                 startValid ? 'border-input' : 'border-destructive'
               } ${isFixtureAnchored ? 'opacity-60 cursor-not-allowed' : ''}`}
               aria-label="Analysis start time"
@@ -572,7 +572,7 @@ export function ControlRail({
                 value={temporalInput.endTime}
                 onChange={(e) => update({ endTime: e.target.value })}
                 disabled={isFixtureAnchored}
-                className={`mt-1 w-full h-10 rounded-lg border bg-surface-card px-3 text-[13px] tnum text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors duration-150 ${
+                className={`mt-1 w-full h-11 sm:h-10 rounded-lg border bg-surface-card px-3 text-[13px] tnum text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors duration-150 ${
                   endValid ? 'border-input' : 'border-destructive'
                 } ${isFixtureAnchored ? 'opacity-60 cursor-not-allowed' : ''}`}
                 aria-label="Analysis end time"
@@ -687,7 +687,7 @@ export function ControlRail({
             </span>
           }
         >
-          Candidate Sites
+          Candidate Locations
         </SectionLabel>
 
         {mode === 'FIXTURE' ? (
@@ -721,7 +721,7 @@ export function ControlRail({
                 data-testid="add-site-map-btn"
                 onClick={onToggleAddSiteMode}
                 aria-pressed={addSiteMode}
-                className={`h-9 rounded-lg text-[11.5px] font-medium border flex items-center justify-center gap-1.5 transition-colors duration-150 ${
+                className={`h-11 sm:h-9 rounded-lg text-[11.5px] font-medium border flex items-center justify-center gap-1.5 transition-colors duration-150 ${
                   addSiteMode
                     ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
                     : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
@@ -735,7 +735,7 @@ export function ControlRail({
                 data-testid="add-site-search-btn"
                 onClick={() => setShowSiteSearch((v) => !v)}
                 aria-pressed={showSiteSearch}
-                className={`h-9 rounded-lg text-[11.5px] font-medium border flex items-center justify-center gap-1.5 transition-colors duration-150 ${
+                className={`h-11 sm:h-9 rounded-lg text-[11.5px] font-medium border flex items-center justify-center gap-1.5 transition-colors duration-150 ${
                   showSiteSearch
                     ? 'border-primary text-text-primary bg-primary/10'
                     : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
@@ -769,7 +769,7 @@ export function ControlRail({
             {/* Site list */}
             {candidateSites.length === 0 ? (
               <p className="text-[10.5px] text-text-muted leading-relaxed" data-testid="no-candidate-sites">
-                No candidate sites yet. LIVE never fabricates sites — add one on the map or from search, then Generate.
+                No candidate locations yet. LIVE never fabricates candidates — add one on the map or from search, then Generate.
               </p>
             ) : (
               <ul className="space-y-1 max-h-40 overflow-y-auto" data-testid="candidate-sites-list">

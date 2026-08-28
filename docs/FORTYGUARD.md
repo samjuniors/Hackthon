@@ -48,12 +48,15 @@ resolved from the live plan name against Layer 1
 
 - Plan contains “premium” → documented Premium limit (50 mi²).
 - Plan contains “basic” / “startup” → documented limit (10 mi²).
-- Anything else — including **“Hackathon”** — → the CONSERVATIVE documented
-  Basic limit (**10 mi²**), labelled `documented` (the plan exposes no area
-  limit of its own).
+- Anything else — including **“Hackathon”** — → the plan's own area limit is
+  **UNKNOWN**; the CONSERVATIVE documented ceiling (**10 mi²**, the smallest
+  documented plan limit) is enforced and labelled `conservative` — the account
+  is never silently represented as “Basic”.
 
-The UI (rail pre-flight, Settings drawer) shows the resolved limit with its
-honest `documented` label — never a fabricated `confirmed` claim.
+The UI (rail pre-flight, Settings drawer) shows the resolved limit with an
+honest label — for the Hackathon account: "Conservative documented FortyGuard
+limit: 10 mi² (this plan's own area limit is UNKNOWN)" — never a fabricated
+`confirmed` claim and never a misleading "Basic" account claim.
 
 ---
 

@@ -47,9 +47,10 @@ export function spanToRadius(spanMetres: number): number {
  * DOCUMENTED PROVIDER LIMIT (official docs, verified 2026-08-28): heatmap
  * max area is 10 mi² on Basic/Startup plans and 50 mi² on Premium.
  * EMPIRICAL ACCOUNT FACT: the Hackathon plan's key-usage endpoint exposes no
- * area limit, so the CONSERVATIVE documented Basic limit (10 mi²) is enforced
- * and labelled "documented". The former 150 mi² value was a stale assumption
- * and is permanently retired (tests/plan-limits guard it).
+ * area limit — the plan's own limit is UNKNOWN, so the CONSERVATIVE documented
+ * ceiling (10 mi², the smallest documented plan limit) is enforced and labelled
+ * "conservative" (never a "Basic" account claim). The former 150 mi² value was
+ * a stale assumption and is permanently retired (tests/plan-limits guard it).
  *
  * See src/lib/fortyguard/plan-limits.ts for the full documented contract and
  * resolveApplicableAoiLimit() for plan-aware resolution.

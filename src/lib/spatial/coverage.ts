@@ -235,8 +235,18 @@ export interface CoverageStatus {
   coverageRatio: number;
   /** 'full' (≥99%), 'partial' (some gap), 'none' (no coverage). */
   status: 'full' | 'partial' | 'none';
-  /** e.g. "425 provider cells · partial coverage (62%)" */
+  /**
+   * e.g. "425 provider cells · partial coverage — 73% of AOI area".
+   *
+   * MATHEMATICAL DEFINITION (audit §4): the percentage is
+   *   (provider-covered AOI area) ÷ (requested AOI area)
+   * measured from the actual cell polygons (sampled planar estimate) — it is
+   * NOT a cell count, NOT a share of cells, and NOT visual/screen pixel
+   * coverage. The label says "of AOI area" so the denominator is explicit.
+   */
   label: string;
+  /** One-line formula for UI tooltips (audit §4 — label it accordingly). */
+  metricDefinition: string;
 }
 
 /**
@@ -257,7 +267,11 @@ export function summarizeCoverageStatus(
     c.coverageRatio >= 0.99 ? 'full' : c.coverageRatio > 0 ? 'partial' : 'none';
   const label =
     status === 'full'
-      ? `${c.cells} provider cells`
-      : `${c.cells} provider cells · ${status} coverage (${pct}%)`;
-  return { cells: c.cells, coverageRatio: c.coverageRatio, status, label };
+      ? `${c.cells} provider cells · full coverage — 100% of AOI area`
+      : status === 'partial'
+        ? `${c.cells} provider cells · partial coverage — ${pct}% of AOI area`
+        : `${c.cells} provider cells · no coverage of the requested AOI area`;
+  const metricDefinition =
+    'Coverage = provider-covered AOI area ÷ requested AOI area, measured from the actual cell polygons (sampled planar estimate). Not a cell count, not screen pixels. Gaps are shown, never filled.';
+  return { cells: c.cells, coverageRatio: c.coverageRatio, status, label, metricDefinition };
 }

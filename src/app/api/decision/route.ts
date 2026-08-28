@@ -250,8 +250,8 @@ export async function POST(request: Request) {
           success: false,
           error: {
             code: 'OUTSIDE_COVERAGE',
-            message: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) is outside the captured DEMO thermal field (Lower Manhattan). Switch to LIVE mode to analyse any location in real time.`,
-            recoverySuggestion: 'Switch to LIVE mode or select a DEMO candidate site inside the captured field.',
+            message: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)}) is outside the captured DEMO thermal field (Lower Manhattan). Switch to LIVE mode to submit a new FortyGuard request for any covered location.`,
+            recoverySuggestion: 'Switch to LIVE mode (new provider request) or select a DEMO candidate location inside the captured field.',
             category: 'COVERAGE',
           } as const,
         },
@@ -375,8 +375,8 @@ export async function POST(request: Request) {
           success: false,
           error: {
             code: 'CANDIDATES_REQUIRED',
-            message: 'No candidate sites provided. LIVE mode never fabricates candidate sites — add at least one candidate site inside the analysis area.',
-            recoverySuggestion: 'Use "+ Add site" to place candidate sites inside the analysis area (search an address or click the map), then Generate again.',
+            message: 'No candidate locations provided. LIVE mode never fabricates candidates — add at least one candidate location inside the analysis area.',
+            recoverySuggestion: 'Use "Add on map" (click inside the analysis area) or "From search", then Generate again.',
             category: 'VALIDATION',
           } as const,
         },
@@ -400,7 +400,7 @@ export async function POST(request: Request) {
               success: false,
               error: {
                 code: 'CANDIDATE_OUTSIDE_AOI',
-                message: `Candidate site "${cand.name}" is outside the analysis area.`,
+                message: `Candidate location "${cand.name}" is outside the analysis area.`,
                 recoverySuggestion: 'Move the candidate inside the analysis area (or move/drag the AOI to cover it), then Generate again.',
                 category: 'VALIDATION',
               } as const,

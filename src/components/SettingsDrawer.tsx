@@ -175,8 +175,8 @@ export function SettingsDrawer({ open, onOpenChange, capability }: SettingsDrawe
             </div>
             <p className="text-[11px] text-text-muted leading-relaxed">
               {prefs.dataSourceMode === 'LIVE'
-                ? 'Live FortyGuard API calls. Real-time thermal data for any location.'
-                : 'Captured 12-hour Manhattan thermal field. No API calls required.'}
+                ? 'New FortyGuard request per analysis (credits apply). Modeled thermal data — historical, current, or up to +12 h forecast — within documented US coverage.'
+                : 'Replay of one genuine captured Manhattan thermal field (single hour, 2026-08-14 12:00 UTC). Zero API calls — parameters outside the capture are locked.'}
             </p>
           </section>
 

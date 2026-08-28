@@ -107,9 +107,10 @@ export function Header({
             </svg>
           </span>
           <div className="min-w-0">
-            {/* Brand text hides below 400px so the mobile header (theme ·
-                history · menu + unit toggle) never overflows the viewport. */}
-            <div className="hidden min-[400px]:block text-[13.5px] font-semibold tracking-tight text-text-primary leading-none">
+            {/* Brand text hides below sm so the mobile header (unit toggle ·
+                theme · history · menu — all 44px touch targets) never
+                overflows the viewport at 390/430px. */}
+            <div className="hidden sm:block text-[13.5px] font-semibold tracking-tight text-text-primary leading-none">
               Thermal Decision Engine
             </div>
           </div>
@@ -213,7 +214,7 @@ export function Header({
                 aria-pressed={unit === u}
                 data-testid={`temp-unit-${u.toLowerCase()}`}
                 onClick={() => onToggleUnit(u)}
-                className={`h-7 min-w-[34px] px-1.5 rounded-md text-[11px] font-semibold tnum transition-colors duration-150 ${
+                className={`h-11 min-w-[44px] sm:h-7 sm:min-w-[34px] px-1.5 sm:px-1.5 rounded-md text-[11px] font-semibold tnum transition-colors duration-150 ${
                   unit === u
                     ? 'bg-slate-900 text-white dark:bg-cyan-400 dark:text-slate-950'
                     : 'text-text-muted hover:text-text-primary'
@@ -230,7 +231,7 @@ export function Header({
             onClick={onToggleTheme}
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            className="flex items-center justify-center size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
+            className="flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
           >
             {theme === 'dark' ? (
               <Sun className="size-4" aria-hidden="true" />
@@ -248,7 +249,7 @@ export function Header({
               aria-label={`Analysis history${historyCount > 0 ? ` (${historyCount} saved)` : ''}`}
               title="Analysis history — saved completed analyses"
               data-testid="history-open-btn"
-              className="relative flex items-center justify-center size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
+              className="relative flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
             >
               <History className="size-4" aria-hidden="true" />
               {historyCount > 0 && (
@@ -283,7 +284,7 @@ export function Header({
               aria-expanded={mobileSheetOpen}
               aria-label={mobileSheetOpen ? 'Close analysis panel' : 'Open analysis panel'}
               data-testid="mobile-menu-btn"
-              className="md:hidden flex items-center justify-center size-8 rounded-lg border border-border bg-surface-card text-text-primary hover:bg-surface-elevated transition-colors duration-150"
+              className="md:hidden flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-primary hover:bg-surface-elevated transition-colors duration-150"
             >
               {mobileSheetOpen ? (
                 <X className="size-4" aria-hidden="true" />

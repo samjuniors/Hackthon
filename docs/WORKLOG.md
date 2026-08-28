@@ -1,8 +1,19 @@
 # Engineering Worklog — Milestone 4 / Vertical Slice 1 Execution Report
 
+> **⚠ HISTORICAL DOCUMENT — read as an execution report, not current state.**
+> The entries below are dated milestone reports (2026-08-20 → 2026-08-25) written
+> at the time each milestone completed. Test counts, model names, provider
+> findings, and UI descriptions reflect the state ON THOSE DATES and are
+> superseded by later passes. For the CURRENT verified state see
+> `docs/CURRENT-SPRINT.md` (single source of truth) — as of 2026-08-28:
+> 394 vitest tests across 34 files, runner `bun run test` (vitest, NOT raw
+> `bun test`), DEMO = single-hour 425-cell Manhattan capture, LIVE account
+> credits exhausted (402 state), enforced AOI limit = conservative documented
+> 10 mi² ceiling (Hackathon plan never labelled "Basic"), 150 mi² retired.
+
 **Date:** 2026-08-20  
 **Milestone:** Milestone 4 — Vertical Slice 1 Execution & Evidence Gates  
-**Status:** COMPLETED & VERIFIED  
+**Status:** COMPLETED & VERIFIED (historical)  
 
 ---
 
@@ -439,10 +450,45 @@
 
 
 
-### 2026-08-25: Final Submission Verification
+### 2026-08-25: Final Submission Verification (historical)
 
 - **Final Quality Gates Run:** Ran the full E2E suite one last time.
 - **Vitest Unit Tests (pnpm test):** 18 test suites passed, 178 tests passed (100% pass rate).
 - **Playwright E2E Suite (pnpm test:e2e):** 85/90 tests passed. 5 failures isolated to California LIVE browser tests due to external FortyGuard API latency under load. Classified as external integration flakiness; tests not weakened.
 - **Production Smoke Test:** Passed on https://thermal.samjuniors.com/
 - **Verdict:** READY TO SUBMIT.
+
+---
+
+## 2026-08-28: Final Adversarial Audit Pass (current)
+
+Supersedes all counts above. No features added — hardening only.
+
+- **Test suite:** 394 vitest tests across 34 files (`bun run test`), lint 0/0,
+  typecheck clean. The historical "178 tests / 82–85 Playwright" numbers belong to
+  the 2026-08-25 state and are retained above as history only.
+- **Plan-limit honesty:** the Hackathon account is never labelled "Basic"; the
+  enforced limit is the conservative documented ceiling (10 mi²) with an explicit
+  "plan's own area limit is UNKNOWN" label (three-layer contract in
+  `src/lib/fortyguard/plan-limits.ts`, test-guarded).
+- **AOI geometry chain proven end-to-end** for square/circle × 400m/1km/2km:
+  rendered UI geometry == submitted == server == provider wire `polygon_aoi`
+  (deep-equal, via the real decision route with an intercepted provider fetch).
+- **Coverage metric made mathematically explicit:** label now reads
+  "N provider cells · partial coverage — P% of AOI area"; tooltip states
+  "provider-covered AOI area ÷ requested AOI area … not a cell count, not screen pixels".
+- **Distinct LIVE failure states** for HTTP 400 / 401 / 402 / 403 / 429 / 5xx —
+  402 (credits exhausted) never suggests retrying; 429 advises waiting.
+- **Stale-data fix:** user temporal changes (date/start/end/mode) now clear the
+  displayed thermal field + recommendation and invalidate in-flight pipelines
+  (previously the old field survived under the new Evaluation-Window inputs).
+- **Decision evidence surface added** (Top Candidates → Data provenance): the full
+  candidate → tile → hourly observations → window mean → ranking → recommendation
+  chain, inspectable by a judge.
+- **Language audit:** removed unsupported "surface temperature" claims (map legend,
+  aria-labels — now "modeled temperature" with the honest UNKNOWN-sensor-height
+  tooltip), "Real-time thermal data" (DEMO/LIVE descriptions now state replay vs
+  new request), "in real time" recovery text, and stale UI descriptions referencing
+  controls that no longer exist. Candidate/recommended "site" wording → "location".
+- **Docs:** CURRENT-SPRINT.md rewritten to the current verified state; this file
+  banner-marked as historical.

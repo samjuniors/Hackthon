@@ -94,9 +94,10 @@ export const DEFAULT_PROVIDER_CAPABILITY: ProviderCapability = {
   aoiLimitsDocumentedMi2: FORTYGUARD_AOI_LIMITS_DOCUMENTED_MI2,
   applicableAoiLimit: {
     limitMi2: 10,
-    planLabel: 'Basic',
+    planLabel: 'conservative',
+    kind: 'conservative-fallback',
     confidence: 'documented',
-    note: 'Conservative documented Basic limit enforced until the configured plan exposes its own area limit.',
+    note: 'The configured plan has not exposed its own area limit (UNKNOWN) — the conservative documented ceiling (10 mi², the smallest documented plan limit) is enforced until a live probe resolves the plan.',
   },
   aoiLimitConfidence: 'documented',
   supportedResolutions: [60, 80, 100],

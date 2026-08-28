@@ -61,18 +61,27 @@ describe('applicable-limit resolution (documented vs account capability)', () =>
     expect(resolveApplicableAoiLimit('Startup').planLabel).toBe('Startup');
   });
 
-  it('resolves the Hackathon account (no exposed area limit) to the CONSERVATIVE documented Basic limit', () => {
+  it('resolves the Hackathon account (no exposed area limit) to the CONSERVATIVE documented ceiling — never labelled "Basic"', () => {
     const r = resolveApplicableAoiLimit('Hackathon');
     expect(r.limitMi2).toBe(10);
-    expect(r.planLabel).toBe('Basic');
+    expect(r.planLabel).toBe('conservative');
+    expect(r.kind).toBe('conservative-fallback');
     expect(r.confidence).toBe('documented');
     expect(r.note).toContain('does not expose a heatmap area limit');
+    expect(r.note).toContain('UNKNOWN');
+    // The human label must never represent the Hackathon account as "Basic".
+    expect(formatAoiLimitLabel(r)).toBe(
+      'Conservative documented FortyGuard limit: 10 mi² (this plan\'s own area limit is UNKNOWN)'
+    );
+    expect(formatAoiLimitLabel(r)).not.toContain('Basic');
   });
 
-  it('resolves unknown/undefined plans to the conservative Basic limit too', () => {
+  it('resolves unknown/undefined plans to the conservative documented ceiling too', () => {
     expect(resolveApplicableAoiLimit(undefined).limitMi2).toBe(10);
+    expect(resolveApplicableAoiLimit(undefined).kind).toBe('conservative-fallback');
     expect(resolveApplicableAoiLimit(null).limitMi2).toBe(10);
     expect(resolveApplicableAoiLimit('Some Custom Plan').limitMi2).toBe(10);
+    expect(resolveApplicableAoiLimit('Some Custom Plan').planLabel).toBe('conservative');
   });
 
   it('NEVER resolves to the stale 150 mi² value for any plan name', () => {
@@ -92,9 +101,10 @@ describe('the active enforced limit in this application', () => {
     expect(isAoiWithinLimit(oversized, 50)).toBe(true); // documented Premium limit would allow it
   });
 
-  it('defaults the capability model to the documented limits — never 150', () => {
+  it('defaults the capability model to the documented limits — never 150, never a fabricated "Basic" account claim', () => {
     expect(DEFAULT_PROVIDER_CAPABILITY.applicableAoiLimit.limitMi2).toBe(10);
-    expect(DEFAULT_PROVIDER_CAPABILITY.applicableAoiLimit.planLabel).toBe('Basic');
+    expect(DEFAULT_PROVIDER_CAPABILITY.applicableAoiLimit.planLabel).toBe('conservative');
+    expect(DEFAULT_PROVIDER_CAPABILITY.applicableAoiLimit.kind).toBe('conservative-fallback');
     expect(DEFAULT_PROVIDER_CAPABILITY.aoiLimitsDocumentedMi2).toEqual({ basic: 10, premium: 50, startup: 10 });
   });
 });

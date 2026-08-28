@@ -161,7 +161,7 @@ function createCandidatePinElement({
   el.className = `map-pin${isWinner ? ' map-pin--winner' : ''}`;
   el.setAttribute('data-draggable', String(!!draggable));
   el.setAttribute('role', 'button');
-  el.setAttribute('aria-label', isWinner ? `Recommended site rank ${rank}` : `Candidate site rank ${rank}`);
+  el.setAttribute('aria-label', isWinner ? `Recommended location rank ${rank}` : `Candidate location rank ${rank}`);
   el.style.zIndex = isWinner ? '30' : '20';
   el.innerHTML = candidatePinInnerHtml({ rank, color, isWinner, isDark });
   return el;
@@ -897,14 +897,14 @@ export function ThermalMap({
       if (addSiteModeRef.current) {
         const aoi = aoiGeometryRef.current?.aoi;
         if (!aoi) {
-          showToast('Select an operating location before placing candidate sites.', 'warning');
+          showToast('Select an operating location before placing candidate locations.', 'warning');
           return;
         }
         const inside = isPointInAoi({ latitude: e.lngLat.lat, longitude: e.lngLat.lng }, aoi);
         if (inside) {
           onAddSiteAtRef.current?.(e.lngLat.lng, e.lngLat.lat);
         } else {
-          showToast('Candidate site must be inside the analysis area.', 'warning');
+          showToast('Candidate location must be inside the analysis area.', 'warning');
         }
       }
     };
@@ -1219,7 +1219,7 @@ export function ThermalMap({
       const existing = candidateMarkersRef.current.get(item.locationId);
 
       const popupHtml = popupCardHtml({
-        eyebrow: isWinner ? 'Recommended Site' : 'Candidate Site',
+        eyebrow: isWinner ? 'Recommended Location' : 'Candidate Location',
         eyebrowColor: isWinner ? '#0e7490' : 'var(--text-dimmed)',
         title: cleanName,
         coords: `${item.location.latitude.toFixed(4)}°, ${item.location.longitude.toFixed(4)}°`,
@@ -1246,7 +1246,7 @@ export function ThermalMap({
         el.setAttribute('data-location-id', item.locationId);
         el.style.zIndex = isWinner ? '30' : '20';
         el.setAttribute('data-draggable', String(!!candidatesDraggable));
-        el.setAttribute('aria-label', isWinner ? `Recommended site ${cleanName}` : `Candidate site ${cleanName}`);
+        el.setAttribute('aria-label', isWinner ? `Recommended location ${cleanName}` : `Candidate location ${cleanName}`);
 
         // Only update the pin DOM if the winner state, index, or THEME changed
         // — prevents DOM destruction (and drag interruption) mid-interaction.
@@ -1315,7 +1315,7 @@ export function ThermalMap({
 
             if (!inside) {
               marker.setLngLat(entry.lastValid);
-              showToast('Candidate site must remain inside the analysis area.', 'warning');
+              showToast('Candidate location must remain inside the analysis area.', 'warning');
               return;
             }
 
@@ -1410,7 +1410,7 @@ export function ThermalMap({
   return (
     <div
       role="region"
-      aria-label="Hyperlocal thermal context map showing FortyGuard surface temperature tiles, the selected analysis area, candidate sites, and the recommended site"
+      aria-label="Hyperlocal thermal context map showing FortyGuard provider thermal cells, the selected analysis area, application-defined candidate locations, and the recommended operational location"
       className={
         isExpanded
           ? 'fixed inset-0 z-[90] overflow-hidden bg-surface-bg'
@@ -1455,7 +1455,7 @@ export function ThermalMap({
             />
             <LayerToggleRow
               checked={layerVisibility.candidates !== false}
-              label="Candidate sites"
+              label="Candidate locations"
               onClick={() => toggleLayer('candidates')}
             />
             <LayerToggleRow
@@ -1492,8 +1492,8 @@ export function ThermalMap({
           <button
             type="button"
             data-testid="map-sites-btn"
-            title="Candidate sites"
-            aria-label="Candidate sites"
+            title="Candidate locations"
+            aria-label="Candidate locations"
             aria-haspopup="menu"
             aria-expanded={openMenu === 'sites'}
             onClick={() => setOpenMenu(openMenu === 'sites' ? null : 'sites')}
@@ -1505,15 +1505,15 @@ export function ThermalMap({
           {openMenu === 'sites' && (
           <div
             role="menu"
-            aria-label="Candidate site controls"
+            aria-label="Candidate location controls"
             className="absolute right-0 top-full mt-1.5 w-60 rounded-xl border border-border bg-surface-card shadow-xl p-1.5 card-enter z-30"
           >
             <div className="px-2 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-text-dimmed">
-              Candidate sites
+              Candidate locations
             </div>
             <LayerToggleRow
               checked={layerVisibility.candidates !== false}
-              label="Show sites"
+              label="Show candidate locations"
               onClick={() => toggleLayer('candidates')}
             />
             {candidatesDraggable && onToggleAddSiteMode ? (
@@ -1532,12 +1532,12 @@ export function ThermalMap({
                 <span className="flex h-4 w-4 items-center justify-center shrink-0">
                   <Plus className="size-3.5" aria-hidden="true" />
                 </span>
-                <span className="flex-1">{addSiteMode ? 'Placing — click the map' : 'Add site on map'}</span>
+                <span className="flex-1">{addSiteMode ? 'Placing — click the map' : 'Add candidate on map'}</span>
               </button>
             ) : null}
             <div className="px-2 pb-1 pt-1.5 border-t border-border/70 mt-1 text-[10px] text-text-dimmed leading-snug">
               {candidatesDraggable
-                ? 'Sites must stay inside the analysis area — outside drops are rejected.'
+                ? 'Candidates must stay inside the analysis area — outside drops are rejected.'
                 : 'DEMO candidates are application-defined points evaluated against the captured field.'}
             </div>
           </div>
@@ -1695,8 +1695,9 @@ export function ThermalMap({
         <div
           className="text-[10px] font-semibold text-text-dimmed uppercase tracking-wider mb-1.5 flex items-center justify-between gap-3"
           data-testid="map-legend-header"
+          title="FortyGuard modeled tile-level thermal value (average_temperature). The provider does not document a sensor height or physical surface level — no surface-vs-air claim is made."
         >
-          <span>Surface temperature ({tempUnitSuffix(unit)})</span>
+          <span>Modeled temperature ({tempUnitSuffix(unit)})</span>
           {selectedTileId && (
             <span className="text-[9px] text-accent-cyan font-mono font-normal">
               Tile {selectedTileId}

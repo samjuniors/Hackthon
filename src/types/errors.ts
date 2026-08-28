@@ -147,6 +147,38 @@ export function mapErrorToProductionDetails(error: unknown): ProductionErrorDeta
   }
 
   if (error instanceof FortyGuardApiError) {
+    // DISTINCT actionable states per provider HTTP status (audit §6):
+    // 400 = provider-side validation rejection (never charged)
+    // 402 = insufficient credits (retrying CANNOT help)
+    // 429 = rate limited (retry only after waiting)
+    // 5xx / network = transient outage (retry is reasonable)
+    if (error.originalStatusCode === 402) {
+      return {
+        code: 'FORTYGUARD_CREDITS_EXHAUSTED',
+        message: 'FortyGuard rejected the request: insufficient credits on this API key (HTTP 402).',
+        recoverySuggestion:
+          'This API key has no remaining credits — the request was NOT completed and no thermal data was produced (retrying cannot help). DEMO mode replays the captured field without credits.',
+        category: 'PROVIDER',
+      };
+    }
+    if (error.originalStatusCode === 429) {
+      return {
+        code: 'FORTYGUARD_RATE_LIMITED',
+        message: 'FortyGuard rate limit reached for this API key (HTTP 429).',
+        recoverySuggestion:
+          'Wait a moment before retrying LIVE analysis. DEMO mode remains available without provider requests.',
+        category: 'PROVIDER',
+      };
+    }
+    if (error.originalStatusCode === 400) {
+      return {
+        code: 'FORTYGUARD_REJECTED_REQUEST',
+        message: 'FortyGuard rejected the request as invalid (HTTP 400 — constraint violations are never charged).',
+        recoverySuggestion:
+          'Adjust the analysis area, date/time, or location to satisfy the documented FortyGuard constraints, then retry.',
+        category: 'VALIDATION',
+      };
+    }
     return {
       code: 'FORTYGUARD_PROVIDER_ERROR',
       message: 'FortyGuard API returned an unexpected error or outage.',

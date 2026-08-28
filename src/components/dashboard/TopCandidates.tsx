@@ -24,6 +24,7 @@ export function TopCandidates({ jointDecision, unit, timezone }: TopCandidatesPr
   const [showProvenance, setShowProvenance] = useState(false);
 
   const ranked = jointDecision.rankedPlans;
+  const recommended = jointDecision.recommendedPlan;
   const top3 = ranked.slice(0, 3);
   const remaining = ranked.slice(3);
 
@@ -177,6 +178,49 @@ export function TopCandidates({ jointDecision, unit, timezone }: TopCandidatesPr
                 </div>
                 <p className="text-text-muted">
                   Tile averages are FortyGuard spatial polygon aggregations (<span style={{ color: 'var(--accent-cyan)' }}>DERIVED</span>).
+                </p>
+              </div>
+              {/* ── DECISION EVIDENCE — the inspectable deterministic chain ──
+                  candidate coordinate → containing provider polygon/tile →
+                  hourly provider temperature observations → window mean →
+                  exposure score → deterministic ranking → recommendation.
+                  Pure display of jointDecision.recommendedPlan — nothing is
+                  recomputed or invented here. */}
+              <div className="rounded-lg p-3 border border-border bg-surface-elevated space-y-1.5 sm:col-span-2" data-testid="decision-evidence-chain">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-emerald)' }} />
+                  <span className="font-semibold" style={{ color: 'var(--accent-emerald)' }}>DECISION EVIDENCE — RECOMMENDED PLAN</span>
+                </div>
+                <ol className="font-mono text-[10px] leading-relaxed text-text-muted tnum space-y-0.5 list-decimal list-inside">
+                  <li>
+                    candidate {recommended.location.locationId} ({shortLocationName(recommended.location.name)}) at{' '}
+                    {recommended.location.location.latitude.toFixed(5)}, {recommended.location.location.longitude.toFixed(5)}
+                  </li>
+                  <li>
+                    → containing provider thermal cell (polygon rendered in the field): tile{' '}
+                    <span className="font-semibold">{String(recommended.tileId)}</span>
+                  </li>
+                  <li>
+                    → provider hourly modeled temperatures:{' '}
+                    {recommended.thermalValues.length > 0
+                      ? recommended.thermalValues
+                          .map((tv) => `${fmtTimeWindow(tv.timestamp, tv.timestamp, timezone).split('–')[0]} ${fmtTemp(tv.temperatureCelsius, unit)}`)
+                          .join(' · ')
+                      : 'single-hour evaluation'}
+                  </li>
+                  <li>
+                    → window mean E(W) = {fmtTemp(recommended.exposureScore, unit)} across{' '}
+                    {recommended.thermalValues.length || recommended.window.durationHours} hourly observation
+                    {recommended.thermalValues.length === 1 ? '' : 's'} (
+                    {fmtTimeWindow(recommended.window.startTime, recommended.window.endTime, timezone)})
+                  </li>
+                  <li>
+                    → deterministic ranking: rank #{recommended.rank} of {ranked.length} plans (lowest mean wins; ties break to the earlier start)
+                  </li>
+                  <li>→ recommendation: this plan (the engine, not the AI explainer, determines the result)</li>
+                </ol>
+                <p className="text-[9.5px] text-text-dimmed">
+                  Model {jointDecision.modelVersion} · the AI explanation narrates this result and is grounding-validated — it never alters the ranking.
                 </p>
               </div>
             </div>

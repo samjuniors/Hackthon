@@ -120,7 +120,7 @@ export function deriveGenerateReadiness(input: GenerateReadinessInput): Generate
     if (input.candidateCount === 0) {
       return {
         enabled: false,
-        reason: 'Add at least one candidate site inside the analysis area — LIVE never fabricates sites.',
+        reason: 'Add at least one candidate location inside the analysis area — LIVE never fabricates candidates.',
       };
     }
     if (input.outsideCandidateCount > 0) {

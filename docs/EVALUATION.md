@@ -41,9 +41,9 @@ The Thermal Decision Engine uses a structured test matrix covering point-to-tile
 ## 3. Milestone Verification Checklist
 
 Before declaring any milestone or vertical slice complete, verify:
-- [ ] TypeScript typecheck passes (`pnpm typecheck`)
-- [ ] Linter passes with zero errors (`pnpm lint`)
-- [ ] Automated unit test suite passes (`pnpm test`)
-- [ ] Production build succeeds (`pnpm build`)
+- [ ] TypeScript typecheck passes (`bun run typecheck`)
+- [ ] Linter passes with zero errors (`bun run lint`)
+- [ ] Automated unit test suite passes (`bun run test` — vitest; the raw `bun test` bun-native runner is NOT supported)
+- [ ] Production build succeeds (`bun run build`)
 - [ ] No secrets committed in code or documentation
 - [ ] Documentation updated to reflect changes

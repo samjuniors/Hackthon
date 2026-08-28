@@ -70,7 +70,7 @@ function Dot({ spec }: { spec: DotSpec }) {
 }
 
 const testButtonClass =
-  'px-3 py-1.5 min-h-[36px] text-xs font-medium rounded-lg border border-border bg-surface-elevated text-text-secondary hover:text-text-primary hover:bg-surface-deep transition-colors touch-manipulation';
+  'px-3 py-1.5 min-h-[44px] sm:min-h-[36px] text-xs font-medium rounded-lg border border-border bg-surface-elevated text-text-secondary hover:text-text-primary hover:bg-surface-deep transition-colors touch-manipulation';
 
 export function SystemStatus({
   mode,

@@ -27,12 +27,15 @@ interface ThermalMapCanvasProps {
   loading: boolean;
   /**
    * Honest provider-coverage label (P0 — SHOW THE GAP), e.g.
-   * "425 provider cells · partial coverage (74%)". Computed from the ACTUAL
-   * provider cells vs the requested AOI — gaps are reported, never filled.
+   * "425 provider cells · partial coverage — 73% of AOI area". Computed from
+   * the ACTUAL provider cells vs the requested AOI — gaps are reported, never
+   * filled.
    */
   coverageLabel?: string;
   /** Coverage verdict for styling ('partial' gets the honest-amber tone). */
   coverageStatus?: 'full' | 'partial' | 'none';
+  /** Mathematical definition of the coverage metric (tooltip, audit §4). */
+  coverageDefinition?: string;
   /** All ranked candidate sites (drives the map pins). */
   rankedCandidates?: unknown;
   /** The recommended site's locationId. */
@@ -67,6 +70,7 @@ export function ThermalMapCanvas({
   loading,
   coverageLabel,
   coverageStatus,
+  coverageDefinition,
   temporalInput,
   timezone,
   unit,
@@ -112,9 +116,10 @@ export function ThermalMapCanvas({
                   data-testid="thermal-coverage-status"
                   style={{ color: coverageStatus === 'partial' ? 'var(--accent-amber)' : undefined }}
                   title={
-                    coverageStatus === 'partial'
+                    coverageDefinition ??
+                    (coverageStatus === 'partial'
                       ? 'The provider returned cells covering part of the requested area — the gap is shown, never filled.'
-                      : undefined
+                      : undefined)
                   }
                 >
                   {coverageLabel}
@@ -180,7 +185,7 @@ export function ThermalMapCanvas({
                 DEMO dataset or a LIVE FortyGuard request.
               </p>
               <p className="text-[9px] font-mono text-text-dimmed mt-3 leading-relaxed tracking-wide">
-                LOCATION → ANALYSIS AREA → FORTYGUARD THERMAL OBSERVATIONS → CANDIDATE SITES → RECOMMENDATION
+                LOCATION → ANALYSIS AREA → FORTYGUARD THERMAL OBSERVATIONS → CANDIDATE LOCATIONS → RECOMMENDATION
               </p>
             </div>
           </div>

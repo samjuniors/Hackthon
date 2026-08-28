@@ -156,7 +156,7 @@ export function LocationSearch({
         <button
           type="button"
           onClick={() => setShowCoords(!showCoords)}
-          className="text-[10px] text-accent-cyan hover:underline font-mono"
+          className="flex items-center min-h-[44px] sm:min-h-[24px] px-1 -my-2 sm:my-0 text-[10px] text-accent-cyan hover:underline font-mono"
         >
           {showCoords ? 'Hide Lat/Lon' : 'Coordinates'}
         </button>
@@ -289,7 +289,7 @@ export function LocationSearch({
                 }
               }}
               placeholder={compact ? 'Search a site or address…' : isFixture ? 'Search places, streets, addresses…' : 'Search any city, street, address, ZIP…'}
-              className="w-full bg-surface-deep border border-border rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-dimmed focus:outline-none focus:border-accent-cyan font-sans transition-colors"
+              className="w-full bg-surface-deep border border-border rounded-lg px-3 py-2 min-h-[44px] sm:min-h-0 text-xs text-text-primary placeholder:text-text-dimmed focus:outline-none focus:border-accent-cyan font-sans transition-colors"
               data-testid="location-search-input"
             />
             {isSearching ? (
@@ -317,7 +317,7 @@ export function LocationSearch({
             disabled={isLocating}
             onClick={handleUseCurrentLocation}
             title="Use current GPS location"
-            className="px-3 text-xs border-border bg-surface-elevated text-text-secondary hover:text-accent-cyan hover:border-accent-cyan min-h-[36px] rounded-lg transition-colors"
+            className="px-3 text-xs border-border bg-surface-elevated text-text-secondary hover:text-accent-cyan hover:border-accent-cyan min-h-[44px] sm:min-h-[36px] rounded-lg transition-colors"
             data-testid="gps-location-button"
             style={compact ? { display: 'none' } : undefined}
           >
@@ -455,7 +455,7 @@ export function LocationSearch({
                   setIsOpen(false);
                   onSelectLocation(loc);
                 }}
-                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
+                className={`px-2.5 py-1.5 min-h-[44px] sm:min-h-0 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
                   isSelected
                     ? 'bg-accent-cyan text-white shadow-md font-bold ring-1 ring-accent-cyan'
                     : 'bg-surface-deep border border-border text-text-secondary hover:border-accent-cyan/50 hover:text-text-primary hover:bg-surface-elevated'

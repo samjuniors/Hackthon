@@ -262,6 +262,24 @@
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
+/* Touch-target floor (audit §12): 44px on coarse-pointer / small screens. */
+@media (max-width: 767px), (pointer: coarse) {
+  .map-tool-btn {
+    width: 44px;
+    height: 44px;
+  }
+  /* MapLibre default zoom/compass buttons are 29px — raise the same floor. */
+  .maplibregl-ctrl-group button {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .maplibregl-ctrl-group button + button {
+    border-top-width: 1px !important;
+  }
+  .maplibregl-ctrl-group {
+    border-radius: 10px !important;
+  }
+}
 .map-tool-btn:hover {
   background: var(--surface-deep);
   color: var(--text-primary);

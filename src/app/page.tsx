@@ -297,6 +297,8 @@ export default function WorkspacePage() {
   const selectedScenarioIdRef = useRef(selectedScenarioId);
   const jointDecisionRef = useRef<JointDecisionResult | null>(null);
   const scenarioAnalysisRef = useRef<ScenarioAnalysisResult | null>(null);
+  const decisionRef = useRef<DecisionResult | null>(null);
+  const spatialFieldRef = useRef<PolygonAOI | null>(null);
   const didMountRef = useRef(false);
   const candidateSitesRef = useRef(candidateSites.sites);
   const regionBoundaryRef = useRef(regionBoundary);
@@ -325,10 +327,12 @@ export default function WorkspacePage() {
     selectedScenarioIdRef.current = selectedScenarioId;
     jointDecisionRef.current = jointDecision;
     scenarioAnalysisRef.current = scenarioAnalysis;
+    decisionRef.current = decision;
+    spatialFieldRef.current = spatialField;
     candidateSitesRef.current = candidateSites.sites;
     regionBoundaryRef.current = regionBoundary;
     regionDisplayNameRef.current = regionDisplayName;
-  }, [mode, selectedLocation, aoiCenter, temporalInput, prefs.preferredAIProvider, selectedScenarioId, jointDecision, scenarioAnalysis, candidateSites.sites, regionBoundary, regionDisplayName]);
+  }, [mode, selectedLocation, aoiCenter, temporalInput, prefs.preferredAIProvider, selectedScenarioId, jointDecision, scenarioAnalysis, decision, spatialField, candidateSites.sites, regionBoundary, regionDisplayName]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Clear stale results (Section 20: stale thermal cleared on location/AOI change)
@@ -508,7 +512,7 @@ export default function WorkspacePage() {
       setErrorDetails({
         code: 'NO_DEMO_CAPTURE',
         message: 'NO DEMO CAPTURE AVAILABLE FOR THIS LOCATION',
-        recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate sites, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
+        recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate locations, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
         category: 'COVERAGE',
       });
       return;
@@ -584,8 +588,8 @@ export default function WorkspacePage() {
       setLoading(false);
       setErrorDetails({
         code: 'CANDIDATES_REQUIRED',
-        message: 'No candidate sites provided. LIVE mode never fabricates candidate sites — add at least one candidate site inside the analysis area.',
-        recoverySuggestion: 'Use "+ Site" on the map (click inside the analysis area) or add a site from search, then Generate again.',
+        message: 'No candidate locations provided. LIVE mode never fabricates candidates — add at least one candidate location inside the analysis area.',
+        recoverySuggestion: 'Use "Add on map" (click inside the analysis area) or "From search", then Generate again.',
         category: 'VALIDATION',
       });
       return;
@@ -598,7 +602,7 @@ export default function WorkspacePage() {
         setLoading(false);
         setErrorDetails({
           code: 'CANDIDATE_OUTSIDE_AOI',
-          message: `Candidate site "${outside.name}" is outside the analysis area.`,
+          message: `Candidate location "${outside.name}" is outside the analysis area.`,
           recoverySuggestion: 'Move the candidate inside the analysis area (or drag the AOI to cover it), then Generate again.',
           category: 'VALIDATION',
         });
@@ -690,8 +694,30 @@ export default function WorkspacePage() {
         setSpatialFieldMeta(null);
         setRestoredAnalysis(null);
         if (data?.error) {
-          setErrorDetails(data.error);
-          showErrorToast(data.error.code ?? 'ANALYSIS_FAILED');
+          // Prefer the CURATED production state (distinct per provider failure
+          // class — audit §6: 400/401/402/403/429/5xx each get an actionable
+          // state) when the route mapped one; fall back to the raw error
+          // shape. The VERBATIM provider text rides along as evidence so a
+          // judge can still read the provider's exact response.
+          const curated = (data.error as { details?: ProductionErrorDetails }).details;
+          const rawMessage = data.error.message ?? '';
+          setErrorDetails(
+            curated
+              ? {
+                  ...curated,
+                  message:
+                    rawMessage && !rawMessage.includes(curated.message)
+                      ? `${curated.message} — Provider response: ${rawMessage}`
+                      : curated.message,
+                }
+              : {
+                  code: data.error.code,
+                  message: rawMessage,
+                  recoverySuggestion: (data.error as { recoverySuggestion?: string }).recoverySuggestion ?? '',
+                  category: (data.error as { category?: ProductionErrorDetails['category'] }).category ?? 'PROVIDER',
+                }
+          );
+          showErrorToast(curated?.code ?? data.error.code ?? 'ANALYSIS_FAILED');
         }
         if (dataSourceMode === 'LIVE') setFgStatus('ERROR');
         return; // failed analysis → NO history record (Phase 5)
@@ -852,7 +878,7 @@ export default function WorkspacePage() {
         setErrorDetails({
           code: 'NO_DEMO_CAPTURE',
           message: 'NO DEMO CAPTURE AVAILABLE FOR THIS LOCATION',
-          recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate sites, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
+          recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate locations, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
           category: 'COVERAGE',
         });
       }
@@ -865,9 +891,18 @@ export default function WorkspacePage() {
   }, [clearResults, requestCamera, runDecisionPipeline]);
 
   const handleTemporalChange = useCallback((next: AnalysisTemporalInput) => {
+    // USER-initiated WHEN change (date/start/end/mode): any displayed thermal
+    // field or recommendation belongs to the PREVIOUS request — it must NOT
+    // survive under the new Evaluation-Window inputs (stale-data audit §10).
+    // Invalidate in-flight pipelines too: their responses would be stale the
+    // moment they land. A new analysis requires explicit Generate.
+    if (decisionRef.current || spatialFieldRef.current) {
+      activeRequestIdRef.current++;
+      clearResults();
+    }
     setTemporalInput(next);
     temporalInputRef.current = next;
-  }, []);
+  }, [clearResults]);
 
   const handleModeChange = useCallback((newMode: DataSourceMode) => {
     prefSetters.setDataSourceMode(newMode);
@@ -1163,7 +1198,7 @@ export default function WorkspacePage() {
         setErrorDetails({
           code: 'NO_DEMO_CAPTURE',
           message: 'NO DEMO CAPTURE AVAILABLE FOR THIS LOCATION',
-          recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate sites, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
+          recoverySuggestion: `The captured FortyGuard DEMO dataset covers Lower Manhattan only — no thermal cells, candidate locations, or recommendation exist for "${loc.name}". Switch to LIVE to request genuine FortyGuard data for this location, or select a Manhattan DEMO location.`,
           category: 'COVERAGE',
         });
       }
@@ -1564,7 +1599,7 @@ export default function WorkspacePage() {
             type="button"
             onClick={() => setSheetOpen(true)}
             aria-label="Select operating location"
-            className="flex items-center gap-1.5 min-w-0 flex-1 h-9 px-2.5 rounded-lg border border-border bg-surface-card text-[12px] text-text-primary transition-colors duration-150"
+            className="flex items-center gap-1.5 min-w-0 flex-1 h-11 px-2.5 rounded-lg border border-border bg-surface-card text-[12px] text-text-primary transition-colors duration-150"
           >
             <svg className="size-3.5 shrink-0" style={{ color: 'var(--accent-cyan)' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
@@ -1575,7 +1610,7 @@ export default function WorkspacePage() {
           <button
             type="button"
             onClick={() => setSheetOpen(true)}
-            className="hidden xs:flex items-center h-9 px-2.5 rounded-lg border border-border bg-surface-card text-[11px] text-text-muted tnum transition-colors duration-150"
+            className="hidden xs:flex items-center h-11 px-2.5 rounded-lg border border-border bg-surface-card text-[11px] text-text-muted tnum transition-colors duration-150"
             aria-label="Evaluation window"
           >
             <span className="truncate max-w-[110px]">{headerTemporalLabel}</span>
@@ -1592,7 +1627,7 @@ export default function WorkspacePage() {
                 type="button"
                 aria-pressed={mode === m}
                 onClick={() => handleModeChange(m)}
-                className={`h-8 px-2 rounded-md text-[10.5px] font-semibold tracking-wide transition-colors duration-150 ${
+                className={`h-11 px-2.5 rounded-md text-[10.5px] font-semibold tracking-wide transition-colors duration-150 ${
                   mode === m
                     ? m === 'LIVE'
                       ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
@@ -1702,6 +1737,7 @@ export default function WorkspacePage() {
               unit={unit}
               coverageLabel={coverageStatus?.label}
               coverageStatus={coverageStatus?.status}
+              coverageDefinition={coverageStatus?.metricDefinition}
               selectedLocation={selectedLocation ?? undefined}
               analysisCenter={selectedLocation ? aoiCenter : undefined}
               temporalInput={temporalInput}
@@ -1808,7 +1844,7 @@ export default function WorkspacePage() {
                           captured DEMO dataset load it explicitly; every other location runs LIVE against FortyGuard.
                         </p>
                         <p className="text-[10px] font-mono text-text-dimmed mt-3 tracking-wide">
-                          LOCATION → ANALYSIS AREA → FORTYGUARD THERMAL OBSERVATIONS → CANDIDATE SITES → RECOMMENDATION
+                          LOCATION → ANALYSIS AREA → FORTYGUARD THERMAL OBSERVATIONS → CANDIDATE LOCATIONS → RECOMMENDATION
                         </p>
                       </>
                     ) : (

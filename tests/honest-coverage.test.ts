@@ -43,7 +43,7 @@ describe('summarizeCoverageStatus (honest gap disclosure)', () => {
     const status = summarizeCoverageStatus(createAoiFromSpan(CENTER, 1000, 'polygon'), big);
     expect(status).not.toBeNull();
     expect(status!.status).toBe('full');
-    expect(status!.label).toBe('1 provider cells');
+    expect(status!.label).toBe('1 provider cells · full coverage — 100% of AOI area');
   });
 
   it('reports PARTIAL when the provider cells cover only part of the AOI (gap SHOWN, never filled)', () => {
@@ -51,7 +51,7 @@ describe('summarizeCoverageStatus (honest gap disclosure)', () => {
     const west = cellField({ minLng: -74.0145, maxLng: -74.006, minLat: 40.70, maxLat: 40.72 });
     const status = summarizeCoverageStatus(createAoiFromSpan(CENTER, 1000, 'polygon'), west);
     expect(status!.status).toBe('partial');
-    expect(status!.label).toMatch(/^1 provider cells · partial coverage \(\d+%\)$/);
+    expect(status!.label).toMatch(/^1 provider cells · partial coverage — \d+% of AOI area$/);
     expect(status!.coverageRatio).toBeGreaterThan(0);
     expect(status!.coverageRatio).toBeLessThan(0.99);
   });
@@ -70,7 +70,16 @@ describe('summarizeCoverageStatus (honest gap disclosure)', () => {
     expect(status!.status).toBe('partial');
     expect(status!.coverageRatio).toBeGreaterThan(0.5);
     expect(status!.coverageRatio).toBeLessThan(0.99);
-    expect(status!.label).toBe('425 provider cells · partial coverage (73%)');
+    expect(status!.label).toBe('425 provider cells · partial coverage — 73% of AOI area');
+  });
+
+  it('exposes the MATHEMATICAL definition of the coverage metric (audit §4: area ÷ area, not cells, not pixels)', () => {
+    const snapshot = fixture.hourlySnapshots[0];
+    const status = summarizeCoverageStatus(FIXTURE_CAPTURE_REQUEST_AOI, snapshot.aoi as PolygonAOI)!;
+    expect(status.metricDefinition).toContain('provider-covered AOI area ÷ requested AOI area');
+    expect(status.metricDefinition).toContain('Not a cell count');
+    // The label denominator is explicit: "of AOI area".
+    expect(status.label).toMatch(/% of AOI area$/);
   });
 });
 

@@ -62,8 +62,20 @@ export const FORTYGUARD_AOI_LIMIT_MI2 = FORTYGUARD_DOCUMENTED_PLAN_LIMITS_MI2.ba
 export interface ApplicableAoiLimit {
   /** The limit to enforce (mi²). */
   limitMi2: number;
-  /** Human plan label, e.g. "Basic". */
+  /** Human plan label: a documented tier name, or "conservative" for unknown plans. */
   planLabel: string;
+  /**
+   * How the limit was resolved:
+   *   - 'plan-documented'      → the live plan name matches a documented tier
+   *                             (Basic/Startup/Premium) and that tier's
+   *                             DOCUMENTED limit is applied.
+   *   - 'conservative-fallback' → the live plan name (e.g. "Hackathon") exposes
+   *                             NO area limit — its exact limit is UNKNOWN, so
+   *                             the smallest documented plan limit is enforced
+   *                             as a conservative ceiling. The plan is NEVER
+   *                             silently represented as "Basic".
+   */
+  kind: 'plan-documented' | 'conservative-fallback';
   /** Always 'documented' until a live plan endpoint actually surfaces a limit. */
   confidence: 'documented' | 'confirmed';
   /** Honest note about how the limit was resolved. */
@@ -77,9 +89,10 @@ export interface ApplicableAoiLimit {
  *   - Plan names containing "premium"   → documented Premium limit (50 mi²).
  *   - Plan names containing "basic"     → documented Basic limit (10 mi²).
  *   - Plan names containing "startup"   → documented Startup limit (10 mi²).
- *   - Anything else (incl. "Hackathon" / undefined) → the CONSERVATIVE
- *     documented Basic limit (10 mi²), honestly labelled: the plan does not
- *     expose an area limit, so the smallest documented plan limit is enforced.
+ *   - Anything else (incl. "Hackathon" / undefined) → the plan's own area
+ *     limit is UNKNOWN; the CONSERVATIVE documented ceiling (10 mi² — the
+ *     smallest documented plan limit) is enforced and labelled "conservative".
+ *     The account is NEVER silently represented as "Basic".
  */
 export function resolveApplicableAoiLimit(planName?: string | null): ApplicableAoiLimit {
   const name = (planName ?? '').toLowerCase();
@@ -87,6 +100,7 @@ export function resolveApplicableAoiLimit(planName?: string | null): ApplicableA
     return {
       limitMi2: FORTYGUARD_DOCUMENTED_PLAN_LIMITS_MI2.premium,
       planLabel: 'Premium',
+      kind: 'plan-documented',
       confidence: 'documented',
       note: 'Documented FortyGuard Premium heatmap area limit (public API docs).',
     };
@@ -95,6 +109,7 @@ export function resolveApplicableAoiLimit(planName?: string | null): ApplicableA
     return {
       limitMi2: FORTYGUARD_DOCUMENTED_PLAN_LIMITS_MI2.basic,
       planLabel: 'Basic',
+      kind: 'plan-documented',
       confidence: 'documented',
       note: 'Documented FortyGuard Basic heatmap area limit (public API docs).',
     };
@@ -103,21 +118,25 @@ export function resolveApplicableAoiLimit(planName?: string | null): ApplicableA
     return {
       limitMi2: FORTYGUARD_DOCUMENTED_PLAN_LIMITS_MI2.startup,
       planLabel: 'Startup',
+      kind: 'plan-documented',
       confidence: 'documented',
       note: 'Documented FortyGuard Startup heatmap area limit (public API docs).',
     };
   }
   return {
     limitMi2: FORTYGUARD_DOCUMENTED_PLAN_LIMITS_MI2.basic,
-    planLabel: 'Basic',
+    planLabel: 'conservative',
+    kind: 'conservative-fallback',
     confidence: 'documented',
-    note: `Plan "${planName ?? 'unknown'}" does not expose a heatmap area limit — the conservative documented Basic limit (${FORTYGUARD_DOCUMENTED_PLAN_LIMITS_MI2.basic} mi²) is enforced.`,
+    note: `Plan "${planName ?? 'unknown'}" does not expose a heatmap area limit — its exact limit is UNKNOWN, so the conservative documented ceiling (${FORTYGUARD_DOCUMENTED_PLAN_LIMITS_MI2.basic} mi², the smallest documented plan limit) is enforced.`,
   };
 }
 
-/** Human label for an applicable limit, e.g. "FortyGuard Basic limit: 10 mi²". */
+/** Human label for an applicable limit, honestly reflecting its resolution. */
 export function formatAoiLimitLabel(limit: ApplicableAoiLimit): string {
-  return `FortyGuard ${limit.planLabel} limit: ${limit.limitMi2} mi²`;
+  return limit.kind === 'conservative-fallback'
+    ? `Conservative documented FortyGuard limit: ${limit.limitMi2} mi² (this plan's own area limit is UNKNOWN)`
+    : `FortyGuard ${limit.planLabel} limit: ${limit.limitMi2} mi²`;
 }
 
 /**

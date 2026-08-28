@@ -55,7 +55,9 @@ Thumbs.db
 .qodo/
 .gemini/
 
-# package manager locks (using pnpm-lock.yaml only)
-bun.lock
+# package manager locks (using bun.lock only — single lockfile keeps Vercel
+# package-manager detection unambiguous; pnpm artifacts are sandbox-local)
+pnpm-lock.yaml
+pnpm-workspace.yaml
 yarn.lock
 package-lock.json

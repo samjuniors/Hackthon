@@ -563,3 +563,23 @@ Stage Summary:
 - Real bugs found & fixed by the audit: temporal-change stale-field retention; misleading "Basic" plan label for the Hackathon account; generic non-actionable 402/429 error states; two unsupported "surface temperature" claims; one "Real-time" claim; stale control references; 430px header overflow; ~15 sub-44px touch targets.
 - Honesty hardening: coverage metric mathematically explicit; plan-limit three-layer labels; verbatim provider error text preserved alongside curated states; inspectable decision evidence chain.
 - No features added; provider geometry untouched; DEMO fixture untouched; decision engine untouched.
+
+---
+Task ID: 16
+Agent: orchestrator (main)
+Task: Push final audit commit to GitHub; audit and fix Vercel deployment blockers.
+
+Work Log:
+- Pushed main `fef62b8` (final adversarial audit pass, 901 insertions across 30 files) to github.com/samjuniors/Hackthon — remote advanced c2de34e..fef62b8. temporal-provenance confirmed already in sync (both 30024d4).
+- No Vercel CLI/token available in sandbox → performed a repo-side Vercel deployment audit instead of dashboard inspection.
+- Verified Vercel-safe (no action needed): next.config.ts is Vercel-aware (standalone output only when STANDALONE=true AND not VERCEL); scripts/postbuild.mjs safely skips standalone copy when the dir is absent; z-ai-web-dev-sdk is published on public npm (latest 0.0.18 == our ^0.0.18) AND imported dynamically (await import) so unconfigured Vercel runtimes degrade through the AI fallback chain to the deterministic explainer; src/lib/db.ts (Prisma) is imported by NOTHING in the app → never bundled → no prisma-generate requirement; zero runtime fs/process.cwd usage in src/ (DEMO fixture consumed via bundled ESM JSON import); no middleware; all external endpoints are public/keyless or env-configured (photon.komoot.io, nominatim, api.fortyguard.com, Esri raster tiles); .env.example documents every env var a Vercel deployment needs.
+- FOUND + FIXED the one real blocker: MULTIPLE LOCKFILES TRACKED. Both bun.lock AND pnpm-lock.yaml (+ pnpm-workspace.yaml) were committed — Vercel fails builds with "Multiple lockfiles detected", and pnpm-lock.yaml was additionally STALE (last touched at 1ed2488 08-27 16:27, missing fake-indexeddb added in ad02a1e 08-28). Resolution: git rm --cached pnpm-lock.yaml pnpm-workspace.yaml (local copies retained — bun ignores them), leaving bun.lock as the single canonical lockfile (regenerated 08-28 02:29, in sync with package.json).
+- Updated .gitignore lockfile policy section: bun.lock no longer ignored; pnpm-lock.yaml + pnpm-workspace.yaml now ignored; comment updated.
+- Added "packageManager": "bun@1.3.14" to package.json for deterministic Vercel Bun detection.
+- bun run lint: 0 errors / 0 warnings after the changes.
+
+Stage Summary:
+- GitHub: main pushed to fef62b8; both branches fully synced with remote.
+- Vercel: single-lockfile (bun) repo state; build path (next build && node scripts/postbuild.mjs) is Vercel-clean; no runtime secrets or sandbox-private endpoints required for DEMO mode.
+- Vercel dashboard prerequisites for the user (repo-side nothing more needed): set FORTYGUARD_API_KEY (+ optional GEMINI_API_KEY / ANTHROPIC_API_KEY) as Vercel env vars; DEMO mode runs keyless via the bundled capture fixture.
+

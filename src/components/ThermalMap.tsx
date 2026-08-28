@@ -18,7 +18,7 @@ import { useUserPreferences, AOI_SPAN_PRESETS_LOCAL } from '@/lib/user-preferenc
 import { getAoiCenter, isPointInAoi, moveAoiToCenter } from '@/lib/spatial/aoi';
 import { computeAoiThermalCoverage, formatCoverageLine } from '@/lib/spatial/coverage';
 import { logThermalDebug, logThermalFieldStage } from '@/lib/dev/thermal-debug';
-import type { SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
+import type { CameraBehavior } from '@/lib/location/selection-behavior';
 import { Layers3, MapPin, Square, Maximize2, Minimize2, Plus, Check, X } from 'lucide-react';
 import type { FeatureCollection } from 'geojson';
 import type { Map as MapLibreMap } from 'maplibre-gl';
@@ -240,6 +240,11 @@ interface ThermalMapProps {
   cameraBehavior?: CameraBehavior;
   /** Bump to re-apply cameraBehavior. */
   cameraNonce?: number;
+  /**
+   * Point for the 'reveal-point' behavior: the camera moves ONLY when this
+   * point is not already visible (used after a search-added candidate).
+   */
+  cameraRevealPoint?: { latitude: number; longitude: number } | null;
 }
 
 /** Empty FeatureCollection sentinel for source initialization / clear. */
@@ -498,6 +503,7 @@ export function ThermalMap({
   onToggleAddSiteMode,
   cameraBehavior = 'fit-aoi',
   cameraNonce = 0,
+  cameraRevealPoint = null,
 }: ThermalMapProps) {
   const { theme } = useTheme();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -1384,12 +1390,47 @@ export function ThermalMap({
     map.flyTo({ center: [location.longitude, location.latitude], zoom: 16.5, duration: 900 });
   }, [location]);
 
+  /**
+   * Reveal a point ONLY when it is not already visible in the viewport —
+   * a search-added candidate never causes a gratuitous pan/zoom. When the
+   * point IS off-screen, fit the AOI+candidates bounds (guaranteed to make
+   * the new candidate visible).
+   */
+  const revealPoint = useCallback(
+    (point: { latitude: number; longitude: number } | null | undefined) => {
+      const map = mapRef.current;
+      if (!map || !point) return;
+      const lngLat: [number, number] = [point.longitude, point.latitude];
+      try {
+        // Shrink the viewport bounds ~6% — points hugging the edge count as
+        // not-visible. (maplibre LngLatBounds has no .pad — compute manually.)
+        const b = map.getBounds();
+        const sw = b.getSouthWest();
+        const ne = b.getNorthEast();
+        const shrinkX = (ne.lng - sw.lng) * 0.06;
+        const shrinkY = (ne.lat - sw.lat) * 0.06;
+        const visible =
+          lngLat[0] >= sw.lng + shrinkX &&
+          lngLat[0] <= ne.lng - shrinkX &&
+          lngLat[1] >= sw.lat + shrinkY &&
+          lngLat[1] <= ne.lat - shrinkY;
+        if (visible) return; // already visible — no camera move
+      } catch {
+        /* bounds unavailable — fall through to the safe fit */
+      }
+      fitToLocalAoi();
+    },
+    [fitToLocalAoi],
+  );
+
   useEffect(() => {
     if (!mapReady) return;
     if (cameraBehavior === 'fit-region') {
       fitToRegion();
     } else if (cameraBehavior === 'fit-point') {
       fitToPoint();
+    } else if (cameraBehavior === 'reveal-point') {
+      revealPoint(cameraRevealPoint);
     } else {
       fitToLocalAoi();
     }

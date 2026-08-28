@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { RotateCcw, Plus, Search } from 'lucide-react';
 import { LocationSearch } from '@/components/LocationSearch';
+import { CandidateSiteSearch } from '@/components/dashboard/CandidateSiteSearch';
 import type { NamedLocation, ProviderStatus, FortyGuardHealthResponse, AIHealthResponse } from '@/types/provider';
 import type { DataSourceMode } from '@/types/provenance';
 import type { LocationPoint } from '@/types/domain';
-import type { CandidateSite } from '@/hooks/use-candidate-sites';
+import type { CandidateSite, CandidateAddOutcome } from '@/hooks/use-candidate-sites';
 import { getCandidateColor } from '@/components/ThermalMap';
 import { useUserPreferences, AOI_SPAN_PRESETS_LOCAL } from '@/lib/user-preferences';
 import { aoiSpanLabel, aoiAreaLabel } from '@/lib/spatial/aoi';
@@ -71,7 +72,10 @@ interface ControlRailProps {
   onRenameSite: (locationId: string, name: string) => void;
   onToggleAddSiteMode: () => void;
   addSiteMode: boolean;
-  onAddSiteFromSearch: (loc: NamedLocation) => void;
+  /** Select a candidate-search result — returns the applied outcome. */
+  onAddSiteFromSearch: (loc: NamedLocation) => CandidateAddOutcome;
+  /** "Move analysis area here" — explicit AOI recenter for an outside-AOI result. */
+  onMoveAoiToSite: (loc: NamedLocation) => void;
   /** Granularity the captured fixture was ACTUALLY recorded at (DEMO display). */
   fixtureGranularity?: number;
   /**
@@ -166,6 +170,7 @@ export function ControlRail({
   onToggleAddSiteMode,
   addSiteMode,
   onAddSiteFromSearch,
+  onMoveAoiToSite,
   fixtureGranularity,
   aoiAreaFacts,
   temporalFacts,
@@ -181,6 +186,17 @@ export function ControlRail({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [showSiteSearch, setShowSiteSearch] = useState(false);
+  // Duplicate-selection highlight — the "Already added" state on the EXISTING
+  // candidate row (transient ring + scroll into view).
+  const [highlightSiteId, setHighlightSiteId] = useState<string | null>(null);
+  const candidateListRef = useRef<HTMLUListElement | null>(null);
+  useEffect(() => {
+    if (!highlightSiteId) return;
+    const row = candidateListRef.current?.querySelector(`[data-location-id="${highlightSiteId}"]`);
+    row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    const t = setTimeout(() => setHighlightSiteId(null), 3000);
+    return () => clearTimeout(t);
+  }, [highlightSiteId]);
   const aiProvider = aiHealth?.provider;
   // Display timezone: DEMO is UTC-anchored (the capture's request hour is a
   // UTC instant); LIVE uses the selected location's timezone.
@@ -746,22 +762,29 @@ export function ControlRail({
               </button>
             </div>
 
-            {/* Site search inline */}
+            {/* Site search inline — the CANDIDATE search: separate from the
+                Location (AOI) search above; selecting a result ONLY creates
+                candidate state (never moves the AOI, never calls the provider). */}
             {showSiteSearch && (
-              <div className="rounded-lg border border-border bg-surface-deep p-2">
-                <LocationSearch
-                  selectedLocation={selectedLocation}
+              <div
+                className="rounded-lg border border-border bg-surface-deep p-2"
+                data-testid="candidate-site-search-panel"
+              >
+                <CandidateSiteSearch
                   mode={mode}
-                  onSelectLocation={(loc) => {
-                    onAddSiteFromSearch(loc);
-                    setShowSiteSearch(false);
-                  }}
-                  onSwitchToLive={undefined}
-                  compact
+                  existingSites={candidateSites}
                   activeStateFilter={activeStateFilter}
+                  onSelectResult={(loc) => {
+                    const outcome = onAddSiteFromSearch(loc);
+                    setHighlightSiteId(
+                      outcome.status === 'duplicate' ? outcome.existing.locationId : null,
+                    );
+                    return outcome;
+                  }}
+                  onMoveAoiHere={onMoveAoiToSite}
                 />
                 <p className="text-[9.5px] text-text-dimmed mt-1">
-                  Only sites inside the analysis area can be added.
+                  Credit-free place search — only sites inside the analysis area can be added.
                 </p>
               </div>
             )}
@@ -772,14 +795,22 @@ export function ControlRail({
                 No candidate locations yet. LIVE never fabricates candidates — add one on the map or from search, then Generate.
               </p>
             ) : (
-              <ul className="space-y-1 max-h-40 overflow-y-auto" data-testid="candidate-sites-list">
+              <ul
+                className="space-y-1 max-h-40 overflow-y-auto"
+                data-testid="candidate-sites-list"
+                ref={candidateListRef}
+              >
                 {candidateSites.map((site, idx) => (
                   <li
                     key={site.locationId}
-                    className={`rounded-md border px-2.5 py-2 ${
+                    data-location-id={site.locationId}
+                    data-testid={`candidate-row-${site.locationId}`}
+                    className={`rounded-md border px-2.5 py-2 transition-all duration-300 ${
                       site.outsideAoi
                         ? 'border-destructive/50 bg-destructive/5'
-                        : 'border-transparent bg-surface-deep'
+                        : highlightSiteId === site.locationId
+                          ? 'border-accent-cyan/60 bg-accent-cyan-bg ring-1 ring-accent-cyan/40'
+                          : 'border-transparent bg-surface-deep'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -817,7 +848,7 @@ export function ControlRail({
                           className="flex-1 min-w-0 text-left text-xs text-text-secondary hover:text-text-primary transition-colors duration-150 truncate"
                           title="Click to rename"
                         >
-                          {site.name}
+                          #{idx + 1} {site.name}
                         </button>
                       )}
                       <span
@@ -829,11 +860,24 @@ export function ControlRail({
                       <button
                         type="button"
                         onClick={() => onRemoveSite(site.locationId)}
-                        className="text-text-dimmed hover:text-destructive transition-colors duration-150 text-xs flex-shrink-0"
+                        aria-label={`Remove site ${idx + 1} (${site.name})`}
+                        className="min-h-[44px] sm:min-h-[28px] px-2.5 -my-2 rounded-md text-[10px] font-medium text-text-dimmed hover:text-destructive hover:bg-destructive/10 transition-colors duration-150 flex-shrink-0"
+                        data-testid={`remove-site-${site.locationId}`}
                         title="Remove site"
                       >
-                        ✕
+                        Remove
                       </button>
+                    </div>
+                    {/* address / locality (search-added sites) */}
+                    {site.address && (
+                      <div className="text-[9.5px] text-text-muted truncate mt-1 pl-6">
+                        {site.address}
+                      </div>
+                    )}
+                    {/* exact stored coordinates — the SAME value the map pin and
+                        Generate use (locationId-keyed identity chain). */}
+                    <div className="text-[9.5px] font-mono text-text-muted tnum mt-0.5 pl-6 truncate">
+                      {site.location.latitude.toFixed(6)}, {site.location.longitude.toFixed(6)}
                     </div>
                     {site.outsideAoi && (
                       <div className="text-[9.5px] text-destructive mt-1">

@@ -46,7 +46,7 @@ import type { ProviderCapability } from '@/types/fortyguard-capability';
 import { METROPOLITAN_LOCATIONS, isLocationCoveredByFixture } from '@/lib/location/search';
 import { useTempUnit } from '@/lib/temperature';
 import { useUserPreferences } from '@/lib/user-preferences';
-import { useCandidateSites } from '@/hooks/use-candidate-sites';
+import { useCandidateSites, type CandidateAddOutcome } from '@/hooks/use-candidate-sites';
 import {
   createAoiFromSpan,
   isPointInAoi,
@@ -58,7 +58,7 @@ import { summarizeCoverageStatus } from '@/lib/spatial/coverage';
 import { validateTemporalWindow, type TemporalValidationResult } from '@/lib/temporal/validation';
 import { getRegionBoundaryPolygon, getInvertedMaskPolygon, resolveRegionDisplayName } from '@/lib/spatial/region-boundaries';
 import { deriveWorkflowStage, deriveGenerateReadiness } from '@/lib/workspace/stage';
-import { cameraForResultType, type SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
+import { cameraForResultType, type CameraBehavior } from '@/lib/location/selection-behavior';
 import {
   FIXTURE_DISPLAY_GRANULARITY,
   FIXTURE_CAPTURE_REQUEST_AOI,
@@ -164,8 +164,12 @@ export default function WorkspacePage() {
   // ── Camera control (Section 12) ──
   const [cameraBehavior, setCameraBehavior] = useState<CameraBehavior>('fit-aoi');
   const [cameraNonce, setCameraNonce] = useState(0);
-  const requestCamera = useCallback((behavior: CameraBehavior) => {
+  // Point to reveal for the 'reveal-point' behavior (used after a search-add:
+  // the camera moves ONLY when the new candidate is not already visible).
+  const [cameraRevealPoint, setCameraRevealPoint] = useState<{ latitude: number; longitude: number } | null>(null);
+  const requestCamera = useCallback((behavior: CameraBehavior, point?: { latitude: number; longitude: number }) => {
     setCameraBehavior(behavior);
+    setCameraRevealPoint(point ?? null);
     setCameraNonce((n) => n + 1);
   }, []);
 
@@ -1085,32 +1089,68 @@ export default function WorkspacePage() {
     candidateSites.renameSite(locationId, name);
   }, [candidateSites]);
 
-  /** Add a candidate from a searched location. */
-  const handleAddSiteFromSearch = useCallback((loc: NamedLocation) => {
+  /**
+   * Add a candidate from a SEARCH result (the explicit candidate-site search —
+   * separate from the analysis-location search above).
+   *
+   * PURE CANDIDATE STATE: this never moves the AOI, never changes the analysis
+   * location / WHEN / resolution / data-source mode, and NEVER calls the
+   * decision pipeline or FortyGuard — a new analysis requires explicit
+   * Generate. The canonical AOI containment check and the exact-coordinate
+   * duplicate check run inside the hook (pure `resolveCandidateAdd`):
+   *   'added'       → site created with the EXACT returned coordinates
+   *   'duplicate'   → existing candidate highlighted, nothing created
+   *   'outside-aoi' → rejected (never clamped); the search UI offers to move
+   *                   the analysis area here or choose another result
+   */
+  const handleAddSiteFromSearch = useCallback((loc: NamedLocation): CandidateAddOutcome => {
     const activeLoc = selectedLocationRef.current;
-    if (!activeLoc) return;
+    if (!activeLoc) {
+      // No analysis location → no canonical AOI. The candidate search UI is
+      // only reachable with a location selected; treat as outside the area.
+      return { status: 'outside-aoi' };
+    }
     // The AOI is derived from the SAME canonical center Generate uses.
     const aoi = createAoiFromSpan(
       aoiCenterRef.current,
       prefs.analysisAoiSpanMetres,
       prefs.analysisAreaShape
     );
-    const inside = isPointInAoi({ latitude: loc.latitude, longitude: loc.longitude }, aoi);
-    if (!inside) {
-      setErrorDetails({
-        code: 'CANDIDATE_OUTSIDE_AOI',
-        message: `"${loc.name}" is outside the analysis area.`,
-        recoverySuggestion: 'Pick a site inside the analysis area.',
-        category: 'VALIDATION',
+    const outcome = candidateSites.addSiteFromSearch(loc, aoi);
+    if (outcome.status === 'added') {
+      // Invalidate any displayed analysis (stale once candidates change) —
+      // this is a LOCAL state invalidation, NOT a provider request.
+      activeRequestIdRef.current++;
+      clearResults();
+      // Pan/zoom ONLY if the new candidate is not already visible.
+      requestCamera('reveal-point', {
+        latitude: outcome.site.location.latitude,
+        longitude: outcome.site.location.longitude,
       });
-      return;
     }
-    setErrorDetails(null);
-    candidateSites.addSiteAt(loc.latitude, loc.longitude, loc.name.split(',')[0], 'search');
-    activeRequestIdRef.current++;
-    clearResults();
-    requestCamera('fit-aoi');
+    return outcome;
   }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape, requestCamera]);
+
+  /**
+   * "Move analysis area here" — the EXPLICIT user option for an outside-AOI
+   * search result. Recenters the analysis on the chosen site (standard
+   * location-selection semantics: AOI + camera follow, LIVE still requires an
+   * explicit Generate), then adds the site as a candidate — now inside the
+   * recentered AOI. Existing candidates are re-validated against the new AOI
+   * (flagged, never silently moved or removed).
+   */
+  const handleMoveAoiToSite = useCallback((loc: NamedLocation) => {
+    activeRequestIdRef.current++; // invalidate any in-flight request
+    handleSelectLocation(loc);
+    const nextCenter = { latitude: loc.latitude, longitude: loc.longitude };
+    const aoi = createAoiFromSpan(
+      nextCenter,
+      prefs.analysisAoiSpanMetres,
+      prefs.analysisAreaShape
+    );
+    candidateSites.validateAgainstAoi(aoi);
+    candidateSites.addSiteFromSearch(loc, aoi);
+  }, [handleSelectLocation, candidateSites, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
 
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1678,6 +1718,7 @@ export default function WorkspacePage() {
                 onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
                 addSiteMode={addSiteMode}
                 onAddSiteFromSearch={handleAddSiteFromSearch}
+                onMoveAoiToSite={handleMoveAoiToSite}
                 fixtureGranularity={FIXTURE_DISPLAY_GRANULARITY}
                 aoiAreaFacts={aoiAreaFacts}
                 temporalFacts={controlTemporalFacts}
@@ -1785,6 +1826,7 @@ export default function WorkspacePage() {
                 onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
                 cameraBehavior={cameraBehavior}
                 cameraNonce={cameraNonce}
+                cameraRevealPoint={cameraRevealPoint}
               />
             </ThermalMapCanvas>
 
@@ -1972,6 +2014,7 @@ export default function WorkspacePage() {
               onToggleAddSiteMode={() => setAddSiteMode((v) => !v)}
               addSiteMode={addSiteMode}
               onAddSiteFromSearch={handleAddSiteFromSearch}
+              onMoveAoiToSite={handleMoveAoiToSite}
               fixtureGranularity={FIXTURE_DISPLAY_GRANULARITY}
               aoiAreaFacts={aoiAreaFacts}
               temporalFacts={controlTemporalFacts}

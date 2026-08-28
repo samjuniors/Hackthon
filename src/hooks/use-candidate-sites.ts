@@ -19,11 +19,99 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { CandidateLocation, LocationPoint, PolygonAOI } from '@/types/domain';
 import { isPointInAoi } from '@/lib/spatial/aoi';
 
+/**
+ * Structural subset of a geocoder `NamedLocation` the candidate-add path
+ * needs (keeps the hook decoupled from the provider type module).
+ */
+export interface SearchCandidateSource {
+  name: string;
+  latitude: number;
+  longitude: number;
+  city?: string;
+  state?: string;
+}
+
 export interface CandidateSite extends CandidateLocation {
   /** True when the site falls outside the current AOI (validation flag). */
   outsideAoi?: boolean;
   /** How the site was added — provenance label in the UI. */
   origin: 'map-click' | 'search' | 'demo-captured';
+  /** Locality line for search-added sites ("New York, NY") — shown in the candidate list. */
+  address?: string;
+  /** State code for search-added sites ("NY"). */
+  state?: string;
+}
+
+/** Outcome of adding a candidate from a search result (pure, testable). */
+export type CandidateAddOutcome =
+  | { status: 'added'; site: CandidateSite }
+  | { status: 'duplicate'; existing: CandidateSite }
+  | { status: 'outside-aoi' };
+
+/** Inputs for a candidate add from a search result. */
+export interface CandidateAddInput {
+  latitude: number;
+  longitude: number;
+  name: string;
+  /** Locality line ("New York, NY") — preserved for the candidate list. */
+  address?: string;
+  state?: string;
+}
+
+/**
+ * Map a geocoder result to the candidate-add input: a clean display name and
+ * the locality line. Coordinates pass through VERBATIM — the exact returned
+ * latitude/longitude is preserved all the way to the pin and Generate.
+ */
+export function candidateInputFromLocation(loc: SearchCandidateSource): CandidateAddInput {
+  return {
+    latitude: loc.latitude,
+    longitude: loc.longitude,
+    name: loc.name.split(' (')[0].split(',')[0].trim() || loc.name,
+    address: [loc.city, loc.state].filter(Boolean).join(', ') || undefined,
+    state: loc.state,
+  };
+}
+
+/**
+ * Pure candidate-add decision (testable without React).
+ *
+ * ORDER OF AUTHORITY:
+ *   1. Canonical AOI containment — a point outside the analysis area is NEVER
+ *      added and NEVER clamped/moved into the AOI (status 'outside-aoi').
+ *   2. Exact-coordinate duplicate — never duplicated; the EXISTING candidate is
+ *      returned so the UI can highlight it with an "Already added" state.
+ *   3. Otherwise the site is added with the EXACT returned latitude/longitude
+ *      (no rounding — pin, list and Generate all use this same value) and a
+ *      stable `SITE-nn` id.
+ */
+export function resolveCandidateAdd(
+  sites: CandidateSite[],
+  nextLocationId: string,
+  input: CandidateAddInput,
+  aoi: PolygonAOI | null | undefined,
+): CandidateAddOutcome {
+  // 1. Outside the canonical analysis area — rejected, never clamped.
+  if (aoi && !isPointInAoi({ latitude: input.latitude, longitude: input.longitude }, aoi)) {
+    return { status: 'outside-aoi' };
+  }
+  // 2. Exact coordinate already a candidate — no duplicate.
+  const existing = sites.find(
+    (s) => s.location.latitude === input.latitude && s.location.longitude === input.longitude,
+  );
+  if (existing) {
+    return { status: 'duplicate', existing };
+  }
+  // 3. Add with the EXACT returned coordinates (no rounding) + stable id.
+  const site: CandidateSite = {
+    locationId: nextLocationId,
+    name: input.name,
+    location: { latitude: input.latitude, longitude: input.longitude },
+    address: input.address,
+    state: input.state,
+    origin: 'search',
+  };
+  return { status: 'added', site };
 }
 
 /**
@@ -82,6 +170,32 @@ export function useCandidateSites() {
     setSites((prev) => [...prev, site]);
     return site;
   }, []);
+
+  /**
+   * Add a candidate from a SEARCH result.
+   *
+   * The canonical AOI containment check and exact-coordinate duplicate check
+   * run here (pure `resolveCandidateAdd`); coordinates are preserved EXACTLY
+   * as the geocoder returned them. The caller decides how to present the
+   * outcome ('added' / 'duplicate' / 'outside-aoi'). This performs NO provider
+   * request — Generate is the only trigger for the decision pipeline.
+   */
+  const addSiteFromSearch = useCallback(
+    (loc: SearchCandidateSource, aoi: PolygonAOI | null | undefined): CandidateAddOutcome => {
+      const outcome = resolveCandidateAdd(
+        sitesRef.current,
+        `SITE-${String(nextIdRef.current).padStart(2, '0')}`,
+        candidateInputFromLocation(loc),
+        aoi,
+      );
+      if (outcome.status === 'added') {
+        nextIdRef.current++;
+        setSites((prev) => [...prev, outcome.site]);
+      }
+      return outcome;
+    },
+    [],
+  );
 
   const removeSite = useCallback((locationId: string) => {
     setSites((prev) => prev.filter((s) => s.locationId !== locationId));
@@ -153,5 +267,5 @@ export function useCandidateSites() {
     });
   }, []);
 
-  return { sites, addSiteAt, removeSite, renameSite, moveSite, clearSites, replaceSites, validateAgainstAoi };
+  return { sites, addSiteAt, addSiteFromSearch, removeSite, renameSite, moveSite, clearSites, replaceSites, validateAgainstAoi };
 }

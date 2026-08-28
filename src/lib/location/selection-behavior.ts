@@ -12,6 +12,14 @@ import type { NamedLocation } from '@/types/provider';
 
 export type SelectionCameraBehavior = 'fit-aoi' | 'fit-region' | 'fit-point';
 
+/**
+ * Full camera-behavior vocabulary: the location-selection behaviors PLUS the
+ * camera-only 'reveal-point' — move the camera ONLY when the given point is
+ * not already visible in the viewport (used after adding a search candidate:
+ * never a gratuitous pan/zoom).
+ */
+export type CameraBehavior = SelectionCameraBehavior | 'reveal-point';
+
 /** True when a selection is state/region-level (context-only selection). */
 export function isStateLevelSelection(loc: NamedLocation | null | undefined): boolean {
   return loc?.resultType === 'state' || loc?.resultType === 'region';

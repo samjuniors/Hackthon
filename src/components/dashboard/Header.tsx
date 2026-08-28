@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Settings, Sun, Moon, MapPin, Menu, X, ChevronDown, CalendarClock } from 'lucide-react';
+import { Settings, Sun, Moon, MapPin, Menu, X, ChevronDown, CalendarClock, History } from 'lucide-react';
 import { LocationSearch } from '@/components/LocationSearch';
 import type { DataSourceMode } from '@/types/provenance';
 import type { AIProviderName, NamedLocation, ProviderStatus } from '@/types/provider';
@@ -46,6 +46,10 @@ interface HeaderProps {
   /** Mobile only — current open state of the analysis bottom sheet (drives
    *  the button's icon Menu ⇄ X, aria-expanded, and aria-label). */
   mobileSheetOpen?: boolean;
+  /** Opens the analysis-history drawer (desktop + mobile). */
+  onOpenHistory?: () => void;
+  /** Saved-analysis count — subtly badges the History icon. */
+  historyCount?: number;
   /** Active geographic region/state for preset filtering in the location search. */
   activeStateFilter?: string;
 }
@@ -65,6 +69,8 @@ export function Header({
   onModeChange,
   onOpenMobileSheet,
   mobileSheetOpen = false,
+  onOpenHistory,
+  historyCount = 0,
   activeStateFilter,
 }: HeaderProps) {
   const [locationOpen, setLocationOpen] = useState(false);
@@ -101,7 +107,9 @@ export function Header({
             </svg>
           </span>
           <div className="min-w-0">
-            <div className="text-[13.5px] font-semibold tracking-tight text-text-primary leading-none">
+            {/* Brand text hides below 400px so the mobile header (theme ·
+                history · menu + unit toggle) never overflows the viewport. */}
+            <div className="hidden min-[400px]:block text-[13.5px] font-semibold tracking-tight text-text-primary leading-none">
               Thermal Decision Engine
             </div>
           </div>
@@ -230,6 +238,30 @@ export function Header({
               <Moon className="size-4" aria-hidden="true" />
             )}
           </button>
+
+          {/* Analysis history — ONE small icon (desktop + mobile), opens the
+              compact saved-analyses drawer. The count badges it subtly. */}
+          {onOpenHistory ? (
+            <button
+              type="button"
+              onClick={onOpenHistory}
+              aria-label={`Analysis history${historyCount > 0 ? ` (${historyCount} saved)` : ''}`}
+              title="Analysis history — saved completed analyses"
+              data-testid="history-open-btn"
+              className="relative flex items-center justify-center size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
+            >
+              <History className="size-4" aria-hidden="true" />
+              {historyCount > 0 && (
+                <span
+                  className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full text-[8.5px] font-bold leading-[15px] text-white tnum"
+                  style={{ background: 'var(--accent-cyan)' }}
+                  aria-hidden="true"
+                >
+                  {historyCount > 20 ? '20' : historyCount}
+                </span>
+              )}
+            </button>
+          ) : null}
 
           {/* Settings */}
           <button

@@ -112,6 +112,30 @@ export function useCandidateSites() {
     setSites([]);
   }, []);
 
+  /**
+   * Replace the entire site list with the given candidates, preserving their
+   * ORIGINAL locationIds (used by History restoration — the saved decision
+   * results reference the original ids, so the map highlight contract
+   * `recommendedLocationId === candidate.locationId` must keep holding).
+   */
+  const replaceSites = useCallback((sites: CandidateLocation[]) => {
+    setSites(sites.map((s) => ({
+      locationId: s.locationId,
+      name: s.name,
+      location: s.location,
+      origin: 'search' as const,
+      outsideAoi: false,
+    })));
+    // Keep the id counter past any restored SITE-nn id to avoid collisions.
+    for (const s of sites) {
+      const m = /^SITE-(\d+)$/.exec(s.locationId);
+      if (m) {
+        const n = Number(m[1]) + 1;
+        if (n > nextIdRef.current) nextIdRef.current = n;
+      }
+    }
+  }, []);
+
   /** Re-validate every site against the current AOI (flags outsideAoi only if changed). */
   const validateAgainstAoi = useCallback((aoi: PolygonAOI | null) => {
     if (!aoi) return;
@@ -129,5 +153,5 @@ export function useCandidateSites() {
     });
   }, []);
 
-  return { sites, addSiteAt, removeSite, renameSite, moveSite, clearSites, validateAgainstAoi };
+  return { sites, addSiteAt, removeSite, renameSite, moveSite, clearSites, replaceSites, validateAgainstAoi };
 }

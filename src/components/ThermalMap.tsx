@@ -17,6 +17,7 @@ import type { MapLayerVisibility, AnalysisAreaShape } from '@/lib/user-preferenc
 import { useUserPreferences, AOI_SPAN_PRESETS_LOCAL } from '@/lib/user-preferences';
 import { getAoiCenter, isPointInAoi, moveAoiToCenter } from '@/lib/spatial/aoi';
 import { computeAoiThermalCoverage, formatCoverageLine } from '@/lib/spatial/coverage';
+import { logThermalDebug, logThermalFieldStage } from '@/lib/dev/thermal-debug';
 import type { SelectionCameraBehavior as CameraBehavior } from '@/lib/location/selection-behavior';
 import { Layers3, MapPin, Square, Maximize2, Minimize2, Plus, Check, X } from 'lucide-react';
 import type { FeatureCollection } from 'geojson';
@@ -1027,15 +1028,20 @@ export function ThermalMap({
   }, [mapReady, spatialField, analysisAoi, regionBoundary, regionMask]);
 
   // ─────────────────────────────────────────────────────────────────────
-  // DEV-ONLY spatial instrumentation — AOI ↔ provider thermal coverage.
+  // DEV-ONLY spatial instrumentation — AOI ↔ provider thermal coverage +
+  // the MAP-SOURCE stage of the thermal pipeline proof.
   //
   // Measures (never modifies) the relationship between the canonical analysis
   // AOI and the genuine provider cells so coverage complaints can be
   // attributed correctly:
   //   rendering bug (CASE A) vs honest provider gap (CASE B) vs provider
   // overshoot beyond the requested AOI (CASE D).
-  // Logs in development only; stripped from the production bundle by the
-  // NODE_ENV guard below.
+  //
+  // Also proves the pipeline invariant at the MAP stage: the features pushed
+  // into the MapLibre `thermal-tiles` GeoJSON source (mapSourceFeatures) must
+  // EQUAL the provider_response / client_spatial_field stage counts. Once the
+  // map goes idle, a follow-up line counts the features MapLibre actually
+  // holds (querySourceFeatures). Logs in development only.
   // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development') return;
@@ -1045,10 +1051,42 @@ export function ThermalMap({
       if (coverage) {
         console.info('[thermal-coverage]', formatCoverageLine(coverage), coverage);
       }
+
+      // MAP-SOURCE stage — features pushed into the MapLibre GeoJSON source.
+      // Source inference (dev-log only): the capture label is passed ONLY in
+      // DEMO mode with a genuine capture, so its presence identifies FIXTURE.
+      const dbgSource: 'FIXTURE' | 'LIVE' = captureAoiLabel ? 'FIXTURE' : 'LIVE';
+      const aoiB = coverage?.aoiBounds;
+      const aoiCentroid = aoiB
+        ? `(${((aoiB.minLat + aoiB.maxLat) / 2).toFixed(5)},${((aoiB.minLng + aoiB.maxLng) / 2).toFixed(5)})`
+        : null;
+      logThermalFieldStage('map_source', dbgSource, spatialField, {
+        mapSourceFeatures: spatialField.features.length,
+        aoiBounds: aoiB ? `[${aoiB.minLng.toFixed(5)},${aoiB.minLat.toFixed(5)} → ${aoiB.maxLng.toFixed(5)},${aoiB.maxLat.toFixed(5)}]` : null,
+        aoiCentroid,
+        aoiCoverage: coverage ? `${(coverage.coverageRatio * 100).toFixed(1)}% of ${coverage.aoiAreaKm2.toFixed(2)}km²` : null,
+      });
+
+      // Post-idle verification — count what MapLibre actually holds in the
+      // thermal-tiles source after the setData + tile rebuild settle.
+      const map = mapRef.current;
+      if (map && map.getSource('thermal-tiles')) {
+        map.once('idle', () => {
+          try {
+            const rendered = map.querySourceFeatures('thermal-tiles');
+            logThermalDebug('map_source', {
+              mapSourceFeaturesRendered: rendered.length,
+              note: 'MapLibre querySourceFeatures count after idle',
+            });
+          } catch {
+            /* diagnostics only */
+          }
+        });
+      }
     } catch {
       /* diagnostics only — never break rendering */
     }
-  }, [analysisAoi, spatialField]);
+  }, [analysisAoi, spatialField, captureAoiLabel]);
 
   // ─────────────────────────────────────────────────────────────────────
   // Committed AOI validity paint

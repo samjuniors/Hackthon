@@ -12,10 +12,16 @@ import { WhatIfPanel } from '@/components/dashboard/WhatIfPanel';
 import { GroundedExplanation } from '@/components/dashboard/GroundedExplanation';
 import { ErrorBanner } from '@/components/dashboard/ErrorBanner';
 import { MobileAnalysisSheet } from '@/components/dashboard/MobileAnalysisSheet';
+import { HistoryDrawer } from '@/components/dashboard/HistoryDrawer';
 import { SettingsDrawer } from '@/components/SettingsDrawer';
+import { Toaster } from '@/components/ui/toaster';
+import { toast } from '@/hooks/use-toast';
+import { useAnalysisHistory } from '@/hooks/use-analysis-history';
+import type { HistoryRecord } from '@/lib/history/types';
 import { useTheme } from '@/components/ThemeProvider';
 import { formatTemporalForHeader } from '@/lib/temporal/analysis-window';
 import { fmtTemp } from '@/lib/temperature';
+import { History } from 'lucide-react';
 
 import type {
   DecisionResult,
@@ -53,10 +59,14 @@ import {
   FIXTURE_DISPLAY_GRANULARITY,
   FIXTURE_CAPTURE_REQUEST_AOI,
   FIXTURE_CAPTURE_CENTER,
+  FIXTURE_CAPTURED_AT_ISO,
+  FIXTURE_CAPTURE_SPAN_METRES,
   DEMO_CANDIDATE_SITES,
   fixtureCaptureSpanLabel,
   doesAoiIntersectFixtureExtent,
 } from '@/lib/fortyguard/fixture-display';
+import { logThermalFieldStage } from '@/lib/dev/thermal-debug';
+import { isValidAoiSpan, type AoiSpanMetres } from '@/lib/user-preferences';
 import type { WorkflowStage } from '@/lib/workspace/stage';
 import {
   type AnalysisTemporalInput,
@@ -112,6 +122,9 @@ async function safeJsonFetch<T = Record<string, unknown>>(
 
 export default function WorkspacePage() {
   const [prefs, prefSetters] = useUserPreferences();
+  // Destructure the stable setter callbacks used by the restore handler
+  // (the setters OBJECT is fresh each render; the functions are stable).
+  const { setDataSourceMode: setPrefDataSourceMode, setAnalysisAreaShape: setPrefAreaShape, setAnalysisAoiSpanMetres: setPrefAoiSpan } = prefSetters;
   const [unit, setUnit] = useTempUnit();
   const { theme, toggleTheme } = useTheme();
 
@@ -232,6 +245,24 @@ export default function WorkspacePage() {
   // ── UI state ──
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // ── Analysis history (browser-local IndexedDB; completed analyses only) ──
+  // Destructure the stable callbacks (the hook result object itself is fresh
+  // each render — only the functions go into effect/callback deps).
+  const {
+    records: historyRecords,
+    ready: historyReady,
+    persistent: historyPersistent,
+    save: saveHistory,
+    update: updateHistoryRecordById,
+    remove: deleteHistoryById,
+    clear: clearHistoryAll,
+  } = useAnalysisHistory();
+
+  /** The currently restored history record (labels the workspace as a
+   *  “Saved analysis” with its original timestamp). Null = live state. */
+  const [restoredAnalysis, setRestoredAnalysis] = useState<HistoryRecord | null>(null);
 
   // ── Viewport ──
   // lg (1024px) is the desktop/mobile composition boundary. BELOW it the
@@ -264,6 +295,19 @@ export default function WorkspacePage() {
   const regionBoundaryRef = useRef(regionBoundary);
   const regionDisplayNameRef = useRef(regionDisplayName);
 
+  // ── History / restore / toast refs ──
+  /** True while a history RESTORE is committing — the mode/prefs effects skip
+   *  their auto-pipeline side effects for that commit so restoration NEVER
+   *  triggers Generate / a DEMO replay / a LIVE provider request (Phase 10). */
+  const restoringRef = useRef(false);
+  /** Id of the record saved by the most recent COMPLETED analysis (this
+   *  session) — used to attach the late-arriving AI explanation. */
+  const lastSavedRecordIdRef = useRef<string | null>(null);
+  /** Progress-toast handle + deferred-show timer (Phase 6: meaningful
+   *  progress for long-running LIVE requests; instant DEMO runs never flash). */
+  const progressToastRef = useRef<ReturnType<typeof toast> | null>(null);
+  const progressToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Sync refs whenever the source values change
   useEffect(() => {
     modeRef.current = mode;
@@ -291,6 +335,10 @@ export default function WorkspacePage() {
     setSpatialField(null);
     setSpatialFieldMeta(null);
     setErrorDetails(null);
+    // A restored record labels the CURRENT workspace; any state change that
+    // invalidates results also ends the “Saved analysis” presentation.
+    setRestoredAnalysis(null);
+    lastSavedRecordIdRef.current = null;
   }, []);
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -351,12 +399,70 @@ export default function WorkspacePage() {
       if (requestId !== activeRequestIdRef.current) return; // stale — discarded
       if (ok && data?.success && data.explanation) {
         setExplanation(data.explanation);
+        // Attach the (late-arriving) explanation to the history record this
+        // analysis saved — the stored record stays a COMPLETE snapshot.
+        // Restored analyses never re-save (lastSavedRecordIdRef is null then).
+        const savedId = lastSavedRecordIdRef.current;
+        if (savedId) {
+          updateHistoryRecordById(savedId, { explanation: data.explanation });
+        }
       }
     } catch {
       // Silently keep the previous explanation; the deterministic fallback is server-side.
     } finally {
       if (requestId === activeRequestIdRef.current) setExplaining(false);
     }
+  }, [updateHistoryRecordById]);
+
+  /**
+   * Progress / completion toasts (Phase 6 — subtle, in-app, no browser
+   * notification permission, no invented percentages).
+   *   · A progress toast appears ONLY after ~700ms of pending work (long
+   *     LIVE provider processing) — instant DEMO runs never flash it.
+   *   · Completion: “Analysis complete · saved to History”.
+   *   · Failure: the honest provider error code (no DEMO fallback claims).
+   */
+  const showProgressToast = useCallback((isLive: boolean) => {
+    if (progressToastTimerRef.current) clearTimeout(progressToastTimerRef.current);
+    progressToastTimerRef.current = setTimeout(() => {
+      const handle = toast({
+        title: 'Request submitted',
+        description: isLive ? 'FortyGuard processing…' : 'Analyzing captured data…',
+      });
+      progressToastRef.current = handle;
+    }, 700);
+  }, []);
+
+  const dismissProgressToast = useCallback(() => {
+    if (progressToastTimerRef.current) {
+      clearTimeout(progressToastTimerRef.current);
+      progressToastTimerRef.current = null;
+    }
+    if (progressToastRef.current) {
+      progressToastRef.current.dismiss();
+      progressToastRef.current = null;
+    }
+  }, []);
+
+  const showCompletionToast = useCallback((saved: boolean, isLive: boolean) => {
+    const handle = toast({
+      title: 'Analysis complete',
+      description: saved
+        ? isLive ? 'Thermal field received · saved to History' : 'Saved to History'
+        : undefined,
+    });
+    // Subtle: auto-dismiss after ~4.5s (shadcn default delay is effectively
+    // never — an explicit timer keeps the notification quiet).
+    setTimeout(() => handle.dismiss(), 4500);
+  }, []);
+
+  const showErrorToast = useCallback((code: string) => {
+    const handle = toast({
+      title: 'Analysis failed',
+      description: code,
+      variant: 'destructive',
+    });
+    setTimeout(() => handle.dismiss(), 6000);
   }, []);
 
   /**
@@ -509,6 +615,10 @@ export default function WorkspacePage() {
         }));
       }
 
+      // All validation guards passed — a real request is about to be made.
+      // (Phase 6: progress feedback only for genuinely pending work.)
+      showProgressToast(dataSourceMode === 'LIVE');
+
       const { ok, data } = await safeJsonFetch<{
         success: boolean;
         decision?: DecisionResult;
@@ -517,6 +627,8 @@ export default function WorkspacePage() {
         scenarioAnalysis?: ScenarioAnalysisResult;
         spatialField?: PolygonAOI | null;
         spatialFieldMetadata?: typeof spatialFieldMeta;
+        providerActivityId?: string | null;
+        temporalProvenance?: Record<string, unknown> | null;
         error?: ProductionErrorDetails;
       }>('/api/decision', {
         method: 'POST',
@@ -528,6 +640,7 @@ export default function WorkspacePage() {
       if (requestId !== activeRequestIdRef.current) return;
 
       if (!ok || !data || !data.success || data.error) {
+        dismissProgressToast();
         setDecision(null);
         setSpatialDecision(null);
         setJointDecision(null);
@@ -535,11 +648,13 @@ export default function WorkspacePage() {
         setExplanation(null);
         setSpatialField(null);
         setSpatialFieldMeta(null);
+        setRestoredAnalysis(null);
         if (data?.error) {
           setErrorDetails(data.error);
+          showErrorToast(data.error.code ?? 'ANALYSIS_FAILED');
         }
         if (dataSourceMode === 'LIVE') setFgStatus('ERROR');
-        return;
+        return; // failed analysis → NO history record (Phase 5)
       }
 
       setDecision(data.decision ?? null);
@@ -549,6 +664,63 @@ export default function WorkspacePage() {
       setSpatialField(data.spatialField ?? null);
       setSpatialFieldMeta(data.spatialFieldMetadata ?? null);
       setErrorDetails(null);
+      setRestoredAnalysis(null);
+      dismissProgressToast();
+
+      // ── DEV-ONLY pipeline diagnostics (PHASE 1 proof) ──
+      // CLIENT-SPATIAL-FIELD stage: the feature count arriving through the
+      // API boundary must EQUAL the provider_response stage (no silent
+      // filtering between server and client).
+      logThermalFieldStage('client_spatial_field', dataSourceMode, data.spatialField ?? null, {
+        activityId: data.providerActivityId ?? null,
+      });
+
+      // ── Persist the COMPLETED analysis to History (Phase 4–5) ──
+      // Only a successful, current, non-restored analysis is saved — this is
+      // the ONLY save path in the application. Failures, cancellations and
+      // stale responses never reach this line; history.save itself never
+      // throws (persistence failure must not break the analysis).
+      {
+        const evaluatedCandidates = candidates && candidates.length > 0
+          ? candidates
+          : dataSourceMode === 'FIXTURE' ? DEMO_CANDIDATE_SITES : [];
+        const record = await saveHistory({
+          location: {
+            name: loc.name,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            timezone: loc.timezone ?? null,
+            city: loc.city ?? null,
+            state: loc.state ?? null,
+            country: loc.country ?? null,
+          },
+          aoiGeometry: requestAoi,
+          aoiShape: prefs.analysisAreaShape,
+          aoiSpanMetres: dataSourceMode === 'FIXTURE'
+            ? FIXTURE_CAPTURE_SPAN_METRES.width
+            : prefs.analysisAoiSpanMetres,
+          aoiSizeLabel: dataSourceMode === 'FIXTURE'
+            ? fixtureCaptureSpanLabel()
+            : `${prefs.analysisAreaShape === 'circle' ? '⌀' : ''}${(prefs.analysisAoiSpanMetres / 1000).toFixed(prefs.analysisAoiSpanMetres % 1000 === 0 ? 0 : 1)}km`,
+          temporalInput: temporal,
+          timezone: tz,
+          dataSourceMode,
+          providerActivityId: data.providerActivityId ?? null,
+          granularity: body.granularity as number,
+          thermalField: data.spatialField ?? null,
+          spatialFieldMetadata: data.spatialFieldMetadata ?? null,
+          candidates: evaluatedCandidates,
+          decision: data.decision ?? null,
+          spatialDecision: data.spatialDecision ?? null,
+          jointDecision: data.jointDecision ?? null,
+          scenarioAnalysis: data.scenarioAnalysis ?? null,
+          explanation: null, // arrives asynchronously — upserted below
+          temporalProvenance: (data.temporalProvenance as never) ?? null,
+          capturedAt: dataSourceMode === 'FIXTURE' ? FIXTURE_CAPTURED_AT_ISO : null,
+        });
+        lastSavedRecordIdRef.current = record?.id ?? null;
+        showCompletionToast(!!record, dataSourceMode === 'LIVE');
+      }
 
       if (data.jointDecision) {
         const activeScen = data.scenarioAnalysis?.scenarios?.find(
@@ -557,6 +729,7 @@ export default function WorkspacePage() {
         fetchExplanation(data.jointDecision, activeScen);
       }
     } catch {
+      dismissProgressToast();
       if (requestId !== activeRequestIdRef.current) return;
       setDecision(null);
       setSpatialDecision(null);
@@ -565,16 +738,19 @@ export default function WorkspacePage() {
       setExplanation(null);
       setSpatialField(null);
       setSpatialFieldMeta(null);
+      setRestoredAnalysis(null);
       setErrorDetails({
         code: 'PIPELINE_NETWORK_ERROR',
         message: 'Could not reach the decision engine. Please retry.',
         recoverySuggestion: 'Check your connection and try again, or switch to DEMO mode.',
         category: 'PROVIDER',
       });
+      showErrorToast('PIPELINE_NETWORK_ERROR');
     } finally {
+      dismissProgressToast();
       if (requestId === activeRequestIdRef.current) setLoading(false);
     }
-  }, [fetchExplanation, prefs.analysisResolution, prefs.analysisAreaShape]);
+  }, [fetchExplanation, prefs.analysisResolution, prefs.analysisAreaShape, prefs.analysisAoiSpanMetres, saveHistory, showProgressToast, dismissProgressToast, showCompletionToast, showErrorToast]);
 
   /**
    * Location selection (Section 7 + 13) — the DEMO/LIVE data-source semantics:
@@ -910,6 +1086,11 @@ export default function WorkspacePage() {
       didMountRef.current = true;
       return; // initial mount handled above (EMPTY state, nothing loaded)
     }
+    // HISTORY RESTORE in progress: the mode change came from restoring a
+    // saved analysis — the record's own results are the workspace state, so
+    // NO auto-pipeline, NO clearResults, NO provider request may run here
+    // (Phase 10). The restoringRef flag is consumed by the effect below.
+    if (restoringRef.current) return;
     const newMode = mode;
     // Clear model state on mode switch — LIVE never reuses DEMO thermal data
     // and DEMO never reuses LIVE cells.
@@ -977,12 +1158,113 @@ export default function WorkspacePage() {
   //   never pretends a different provider capture exists.
   useEffect(() => {
     if (!didMountRef.current) return;
+    // HISTORY RESTORE in progress: prefs were set to reproduce the record's
+    // AOI — the restored results must NOT be cleared (Phase 10).
+    if (restoringRef.current) return;
     clearResults();
     candidateSites.validateAgainstAoi(
       createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)
     );
      
   }, [prefs.analysisAreaShape, prefs.analysisAoiSpanMetres, prefs.analysisResolution]);
+
+  // ───────────────────────────────────────────────────────────────────────
+  // HISTORY RESTORE (Phase 7 + 10)
+  //
+  // Restoring a saved analysis is PURE LOCAL STATE: it rehydrates the
+  // record's thermal FeatureCollection, decisions, candidates and metadata
+  // into the workspace WITHOUT calling Generate, WITHOUT a FortyGuard
+  // request (zero provider calls), WITHOUT recalculation. The saved thermal
+  // FeatureCollection is AUTHORITATIVE for the restored analysis.
+  // ───────────────────────────────────────────────────────────────────────
+  const handleRestoreHistory = useCallback((record: HistoryRecord) => {
+    // Invalidate any in-flight pipeline first — a restore is atomic.
+    activeRequestIdRef.current++;
+    restoringRef.current = true;
+    setLoading(false);
+    setExplaining(false);
+    dismissProgressToast();
+
+    // Location (the analysis point the record ran at)
+    const loc: NamedLocation = {
+      id: `history-${record.id}`,
+      name: record.location.name,
+      displayName: record.location.name,
+      category: 'Custom Location',
+      latitude: record.location.latitude,
+      longitude: record.location.longitude,
+      timezone: record.location.timezone ?? undefined,
+      city: record.location.city ?? undefined,
+      state: record.location.state ?? undefined,
+      country: record.location.country ?? undefined,
+    };
+    setSelectedLocation(loc);
+    selectedLocationRef.current = loc;
+    setStateLevelSelection(null);
+    setRegionName(record.location.state ?? undefined);
+
+    // AOI center + prefs so the derived analysisAoi equals the record's geometry
+    const center = { latitude: record.location.latitude, longitude: record.location.longitude };
+    setAoiCenter(center);
+    aoiCenterRef.current = center;
+    if (isValidAoiSpan(record.aoiSpanMetres)) {
+      setPrefAoiSpan(record.aoiSpanMetres as AoiSpanMetres);
+    }
+    setPrefAreaShape(record.aoiShape);
+
+    // Mode follows the record (guarded — no auto-pipeline side effects)
+    if (modeRef.current !== record.dataSourceMode) {
+      setPrefDataSourceMode(record.dataSourceMode);
+    }
+    // Commit-epoch bump: the flag-consuming effect below fires in the SAME
+    // commit as the mode/prefs effects (declared after them → runs last).
+    setRestoreEpoch((e) => e + 1);
+
+    // WHEN follows the record exactly
+    setTemporalInput(record.temporalInput);
+    temporalInputRef.current = record.temporalInput;
+
+    // Candidates with their ORIGINAL ids (map highlight contract)
+    if (record.dataSourceMode === 'LIVE') {
+      candidateSites.replaceSites(record.candidates);
+    } else {
+      candidateSites.clearSites(); // DEMO sites are display-only constants
+    }
+
+    // Results — VERBATIM from the record (authoritative; no recalculation)
+    setDecision(record.decision ?? null);
+    setSpatialDecision(record.spatialDecision ?? null);
+    setJointDecision(record.jointDecision ?? null);
+    setScenarioAnalysis(record.scenarioAnalysis ?? null);
+    setExplanation(record.explanation ?? null);
+    setSpatialField(record.thermalField ?? null);
+    setSpatialFieldMeta(record.spatialFieldMetadata ?? null);
+    setErrorDetails(null);
+    setSelectedScenarioId('scenario-temporal-shift');
+    selectedScenarioIdRef.current = 'scenario-temporal-shift';
+
+    // Label the restored workspace (Phase 7) — never implied to be fresh
+    lastSavedRecordIdRef.current = null; // restored records are immutable
+    setRestoredAnalysis(record);
+
+    requestCamera('fit-aoi');
+
+    const handle = toast({
+      title: 'Saved analysis restored',
+      description: `${record.provenance.providerLabel} · analyzed ${new Date(record.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} — no provider request was made.`,
+    });
+    setTimeout(() => handle.dismiss(), 4500);
+  }, [candidateSites, setPrefDataSourceMode, setPrefAreaShape, setPrefAoiSpan, requestCamera, dismissProgressToast]);
+
+  // Consume the restoring flag AFTER the mode/prefs effects of the restore
+  // commit (declared after them — effect order guarantees they ran first).
+  // Bumping a dedicated epoch state makes this fire in the same commit.
+  const [restoreEpoch, setRestoreEpoch] = useState(0);
+  useEffect(() => {
+    if (restoringRef.current) {
+      restoringRef.current = false;
+    }
+  }, [restoreEpoch]);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Derived values
@@ -1170,6 +1452,8 @@ export default function WorkspacePage() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenHistory={() => setHistoryOpen(true)}
+        historyCount={historyRecords.length}
         fortyGuardStatus={fgStatus}
         aiStatus={aiStatus}
         aiProvider={aiProvider}
@@ -1278,6 +1562,29 @@ export default function WorkspacePage() {
 
           {/* MAIN COLUMN — the map dominates; results below (desktop) */}
           <div className="lg:col-span-8 xl:col-span-9 space-y-5 order-first lg:order-none">
+            {/* RESTORED-FROM-HISTORY label (Phase 7) — clearly identifies the
+                workspace as a SAVED analysis and shows the original timestamp;
+                never implies a DEMO replay is fresh provider data. */}
+            {restoredAnalysis && (
+              <div
+                className="flex items-center gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] px-4 py-2.5"
+                data-testid="restored-analysis-banner"
+              >
+                <History className="size-4 shrink-0" style={{ color: '#b45309' }} aria-hidden="true" />
+                <div className="min-w-0 flex-1 text-[11.5px] leading-snug">
+                  <span className="font-semibold text-amber-800 dark:text-amber-200">Saved analysis</span>
+                  <span className="text-text-muted">
+                    {' · '}{restoredAnalysis.provenance.providerLabel} · {restoredAnalysis.thermalCellCount} cells · analyzed{' '}
+                    {new Date(restoredAnalysis.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    {restoredAnalysis.provenance.capturedAt
+                      ? ` · captured ${new Date(restoredAnalysis.provenance.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                      : ''}
+                  </span>
+                </div>
+                <span className="hidden sm:inline text-[10px] text-text-dimmed shrink-0">Restored locally — no provider request</span>
+              </div>
+            )}
+
             {/* Error banner (desktop placement; mobile renders it in the sheet) */}
             {errorDetails && !isMobileViewport && (
               <ErrorBanner
@@ -1544,6 +1851,22 @@ export default function WorkspacePage() {
 
       {/* SETTINGS DRAWER — provider capability + diagnostics */}
       <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} capability={capability} />
+
+      {/* ANALYSIS HISTORY DRAWER — browser-local completed analyses */}
+      <HistoryDrawer
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        records={historyRecords}
+        ready={historyReady}
+        persistent={historyPersistent}
+        onRestore={handleRestoreHistory}
+        onDelete={deleteHistoryById}
+        onClear={clearHistoryAll}
+      />
+
+      {/* In-app toast notifications (Phase 6 — subtle, no browser
+          notification permission, no push infrastructure) */}
+      <Toaster />
     </main>
   );
 }

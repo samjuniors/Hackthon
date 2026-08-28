@@ -35,6 +35,8 @@ import {
   buildHourlyRequestDateTime,
   getFixtureTemporalMetadata,
 } from '@/lib/temporal/server-conversion';
+import { getProviderRuntimeStats } from '@/lib/fortyguard/adapter';
+import { logThermalFieldStage } from '@/lib/dev/thermal-debug';
 import type { AnalysisTemporalInput } from '@/lib/temporal/analysis-window';
 import { buildFixtureTemporalInput, FIXTURE_TIMEZONE } from '@/lib/temporal/analysis-window';
 
@@ -438,6 +440,19 @@ export async function POST(request: Request) {
     const baseTimestamp = hourlyTimestamps[0];
     const baseSpatialField = snapshotsMap.get(baseTimestamp);
 
+    // ── DEV-ONLY pipeline diagnostics (PHASE 1 proof) ──
+    // Logs the PROVIDER-RESPONSE stage of the thermal pipeline invariant:
+    // provider/fixture features → (must equal) → client spatialField →
+    // MapLibre source → pixels. Measurement only; no geometry is altered.
+    const providerActivityId =
+      mode === 'FIXTURE'
+        ? (getFixtureCaptureMetadata()?.activityId ?? null)
+        : (getProviderRuntimeStats().lastHeatmapActivityId ?? null);
+    logThermalFieldStage('provider_response', mode, baseSpatialField, {
+      activityId: providerActivityId,
+      hours: hourlyTimestamps.length,
+    });
+
     // Only send spatialField to the client if it has features with renderable
     // temperature data. An empty FeatureCollection (LIVE fallback when FortyGuard
     // returns an unexpected format) should become null on the client so the map
@@ -459,6 +474,10 @@ export async function POST(request: Request) {
       jointDecision,
       scenarioAnalysis,
       spatialField: renderableSpatialField,
+      // FortyGuard activity ID of the completed analysis (LIVE: the last
+      // completed /v1/heatmap activity; FIXTURE: the original capture's
+      // activity). Used by History provenance — never a secret.
+      providerActivityId,
       spatialFieldMetadata: renderableSpatialField
         ? {
             baseTimestamp,

@@ -76,8 +76,9 @@ export function ErrorBanner({
                 color: 'var(--accent-amber)',
                 background: 'var(--accent-amber-bg)',
               }}
+              title="Switches the data source to the captured DEMO dataset (Manhattan capture only)"
             >
-              Continue with Verified Demo
+              Switch to DEMO mode
             </button>
           )}
           {mode === 'FIXTURE' && onSwitchToLive && (

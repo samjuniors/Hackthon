@@ -6,7 +6,7 @@ import {
   fmtTempDelta,
   fmtTempValue,
   tempUnitSuffix,
-  getThermalLegendTicks,
+  getThermalLegendRampTicks,
   loadTempUnit,
   saveTempUnit,
   DEFAULT_TEMP_UNIT,
@@ -117,38 +117,24 @@ describe('Temperature Unit Conversion & Formatting Utility', () => {
     });
   });
 
-  describe('getThermalLegendTicks (professional continuous ramp redesign)', () => {
-    // The legend is SAMPLED from THERMAL_RAMP_STOPS so it always matches the
-    // rendered thermal-tiles-fill layer (single source of truth).
-    it('returns Celsius band ticks ordered cool → warm', () => {
-      const ticks = getThermalLegendTicks('C');
-      expect(ticks).toHaveLength(5);
-      expect(ticks[0].label).toBe('0–26');
-      expect(ticks[1].label).toBe('26–28');
-      expect(ticks[2].label).toBe('28–30');
-      expect(ticks[3].label).toBe('30–32');
-      expect(ticks[4].label).toBe('>32');
+  describe('getThermalLegendRampTicks (continuous legend bar)', () => {
+    // Tick labels are the ramp VALUES at 0%/50%/100% — positions match the
+    // gradient bar exactly (justify-between with 3 items).
+    it('returns the ramp endpoints and midpoint in Celsius', () => {
+      const ticks = getThermalLegendRampTicks('C');
+      expect(ticks).toHaveLength(3);
+      expect(ticks[0].label).toBe('16');
+      expect(ticks[1].label).toBe('28');
+      expect(ticks[2].label).toBe('40');
     });
 
-    it('returns Fahrenheit ticks with converted integer approximations', () => {
-      const ticks = getThermalLegendTicks('F');
-      expect(ticks).toHaveLength(5);
-      // 26°C = 78.8°F -> 79 ; 28°C = 82.4°F -> 82 ; 30°C = 86°F ; 32°C = 89.6°F -> 90
-      expect(ticks[0].label).toBe('32–79');
-      expect(ticks[1].label).toBe('79–82');
-      expect(ticks[2].label).toBe('82–86');
-      expect(ticks[3].label).toBe('86–90');
-      expect(ticks[4].label).toBe('>90');
-    });
-
-    it('tick colors are sampled from THERMAL_RAMP_STOPS and progress cool → warm', () => {
-      const ticks = getThermalLegendTicks('C');
-      const first = ticks[0].color;
-      const last = ticks[ticks.length - 1].color;
-      // Cool end ≈ the ramp's deep blue; warm end ≈ red/crimson family.
-      expect(first.toLowerCase()).toBe('#2f6bd8');
-      // Warm band (>32°C probed at 34°C) lands between #e2503a and #c02948.
-      expect(last.toLowerCase()).toBe('#cb3643'); // interpolated 34°C between #e2503a and #c02948
+    it('converts to Fahrenheit without offsetting (matches header unit)', () => {
+      const ticks = getThermalLegendRampTicks('F');
+      expect(ticks).toHaveLength(3);
+      // 16°C = 60.8°F → 61 ; 28°C = 82.4°F → 82 ; 40°C = 104°F
+      expect(ticks[0].label).toBe('61');
+      expect(ticks[1].label).toBe('82');
+      expect(ticks[2].label).toBe('104');
     });
   });
 
@@ -172,12 +158,21 @@ describe('Temperature Unit Conversion & Formatting Utility', () => {
       expect(sampleThermalRampColor(99)).toBe(THERMAL_RAMP_STOPS[THERMAL_RAMP_STOPS.length - 1].color);
     });
 
-    it('thermalRampGradientCss includes every stop', () => {
+    it('thermalRampGradientCss includes every stop at valid CSS percentage positions', () => {
       const css = thermalRampGradientCss();
       for (const s of THERMAL_RAMP_STOPS) {
         expect(css).toContain(s.color);
       }
       expect(css.startsWith('linear-gradient(')).toBe(true);
+      // Regression guard: `#2f6bd8 16°C` is INVALID CSS (not a length/%),
+      // which browsers reject by dropping the ENTIRE gradient → invisible
+      // legend bar. Every stop position must be a percentage, and no raw °C
+      // unit may appear in the gradient string.
+      expect(css).not.toContain('°C');
+      const positions = css.match(/\d+(?:\.\d+)?%/g) ?? [];
+      expect(positions).toHaveLength(THERMAL_RAMP_STOPS.length);
+      expect(positions[0]).toBe('0.00%');
+      expect(positions[positions.length - 1]).toBe('100.00%');
     });
   });
 
@@ -264,6 +259,35 @@ describe('Temperature Unit Conversion & Formatting Utility', () => {
       const translated = translateExplanationToUnit(expl, 'F');
       // -0.50 * 1.8 = -0.90
       expect(translated.whyThisPlan).toContain('-0.90°F');
+    });
+
+    it('treats UNSIGNED comparative deltas as deltas (never +32 offset)', () => {
+      // AI narration often writes unsigned deltas: "0.46°C higher".
+      // The absolute formula would display "32.83°F higher" (~40× inflated).
+      const expl = {
+        ...mockExplanation,
+        whyThisPlan: 'The recommended site is 0.46°C higher than the runner-up.',
+        constraintImpact: 'A rise of 1.2°C is expected; it cooled by 0.8°C later.',
+      };
+      const translated = translateExplanationToUnit(expl, 'F');
+      // 0.46 × 1.8 = 0.83 (NOT 32.83)
+      expect(translated.whyThisPlan).toContain('0.83°F higher');
+      expect(translated.whyThisPlan).not.toContain('32.83');
+      // "rise of 1.2°C" → 2.16 (NOT 35.60)
+      expect(translated.constraintImpact).toContain('rise of 2.16°F');
+      // "by 0.8°C" → 1.44 (NOT 33.44)
+      expect(translated.constraintImpact).toContain('by 1.44°F');
+    });
+
+    it('still converts endpoint absolutes with the +32 offset', () => {
+      const expl = {
+        ...mockExplanation,
+        whyThisPlan: 'It increased to 30°C and the mean modeled temperature was 28.40°C.',
+      };
+      const translated = translateExplanationToUnit(expl, 'F');
+      // "increased TO 30°C" is an absolute endpoint → 86.00°F (offset applies).
+      expect(translated.whyThisPlan).toContain('86.00°F');
+      expect(translated.whyThisPlan).toContain('83.12°F');
     });
   });
 });

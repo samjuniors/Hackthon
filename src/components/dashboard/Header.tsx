@@ -108,7 +108,7 @@ export function Header({
           </span>
           <div className="min-w-0">
             {/* Brand text hides below sm so the mobile header (unit toggle ·
-                theme · history · menu — all 44px touch targets) never
+                theme · history · settings · menu — all 44px touch targets) never
                 overflows the viewport at 390/430px. */}
             <div className="hidden sm:block text-[13.5px] font-semibold tracking-tight text-text-primary leading-none">
               Thermal Decision Engine
@@ -126,7 +126,7 @@ export function Header({
               aria-expanded={locationOpen}
               aria-haspopup="dialog"
               data-testid="header-location-btn"
-              className="flex items-center gap-1.5 h-8 pl-2.5 pr-2 rounded-lg border border-border bg-surface-card text-[12.5px] font-medium text-text-primary hover:bg-surface-elevated transition-colors duration-150 max-w-[280px]"
+              className="header-ctl flex items-center gap-1.5 h-8 pl-2.5 pr-2 rounded-lg border border-border bg-surface-card text-[12.5px] font-medium text-text-primary hover:bg-surface-elevated transition-colors duration-150 max-w-[280px]"
               title="Select operating location"
             >
               <MapPin className="size-3.5 shrink-0" style={{ color: 'var(--accent-cyan)' }} aria-hidden="true" />
@@ -187,7 +187,7 @@ export function Header({
                 data-testid={`source-${m === 'LIVE' ? 'live' : 'demo'}`}
                 onClick={() => onModeChange(m)}
                 title={m === 'LIVE' ? 'Live FortyGuard requests (spends credits)' : 'Captured FortyGuard DEMO dataset (no requests)'}
-                className={`h-7 px-2.5 rounded-md text-[11px] font-semibold tracking-wide transition-colors duration-150 ${
+                className={`header-ctl h-7 px-2.5 rounded-md text-[11px] font-semibold tracking-wide transition-colors duration-150 ${
                   mode === m
                     ? m === 'LIVE'
                       ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
@@ -214,7 +214,7 @@ export function Header({
                 aria-pressed={unit === u}
                 data-testid={`temp-unit-${u.toLowerCase()}`}
                 onClick={() => onToggleUnit(u)}
-                className={`h-11 min-w-[44px] sm:h-7 sm:min-w-[34px] px-1.5 sm:px-1.5 rounded-md text-[11px] font-semibold tnum transition-colors duration-150 ${
+                className={`header-ctl h-11 min-w-[44px] sm:h-7 sm:min-w-[34px] px-1.5 sm:px-1.5 rounded-md text-[11px] font-semibold tnum transition-colors duration-150 ${
                   unit === u
                     ? 'bg-slate-900 text-white dark:bg-cyan-400 dark:text-slate-950'
                     : 'text-text-muted hover:text-text-primary'
@@ -231,7 +231,7 @@ export function Header({
             onClick={onToggleTheme}
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            className="flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
+            className="header-ctl flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
           >
             {theme === 'dark' ? (
               <Sun className="size-4" aria-hidden="true" />
@@ -249,7 +249,7 @@ export function Header({
               aria-label={`Analysis history${historyCount > 0 ? ` (${historyCount} saved)` : ''}`}
               title="Analysis history — saved completed analyses"
               data-testid="history-open-btn"
-              className="relative flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
+              className="header-ctl relative flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
             >
               <History className="size-4" aria-hidden="true" />
               {historyCount > 0 && (
@@ -264,13 +264,15 @@ export function Header({
             </button>
           ) : null}
 
-          {/* Settings */}
+          {/* Settings — visible at ALL breakpoints (mobile has room: 5×44px
+              icon controls + brand icon fit 390px); without this, settings
+              was unreachable below 640px. */}
           <button
             type="button"
             onClick={onOpenSettings}
             aria-label="Open settings"
             data-testid="settings-open-btn"
-            className="hidden sm:flex items-center justify-center size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
+            className="header-ctl flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-muted hover:text-text-primary hover:bg-surface-elevated transition-colors duration-150"
           >
             <Settings className="size-4" aria-hidden="true" />
           </button>
@@ -284,7 +286,7 @@ export function Header({
               aria-expanded={mobileSheetOpen}
               aria-label={mobileSheetOpen ? 'Close analysis panel' : 'Open analysis panel'}
               data-testid="mobile-menu-btn"
-              className="md:hidden flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-primary hover:bg-surface-elevated transition-colors duration-150"
+              className="header-ctl md:hidden flex items-center justify-center size-11 sm:size-8 rounded-lg border border-border bg-surface-card text-text-primary hover:bg-surface-elevated transition-colors duration-150"
             >
               {mobileSheetOpen ? (
                 <X className="size-4" aria-hidden="true" />

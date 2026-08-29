@@ -365,7 +365,10 @@ export function analyzeAoiAreaMi2(
  *   circle  400 → "400m diameter" / 1000 → "1km diameter"
  */
 export function aoiSpanLabel(spanMetres: number, shape: AnalysisAreaShape): string {
-  const size = spanMetres >= 1000 ? `${spanMetres / 1000}km` : `${spanMetres}m`;
+  // Round to whole metres — geometry-derived spans (e.g. the DEMO capture ring)
+  // carry floating-point noise (2400.0000000003148) that must never reach the UI.
+  const span = Math.round(spanMetres);
+  const size = span >= 1000 ? `${span / 1000}km` : `${span}m`;
   return shape === 'circle' ? `${size} diameter` : `${size} × ${size}`;
 }
 

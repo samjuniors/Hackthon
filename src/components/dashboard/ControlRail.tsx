@@ -312,181 +312,6 @@ export function ControlRail({
 
       <Separator />
 
-      {/* ── AREA OF INTEREST ── */}
-      <div>
-        <SectionLabel
-          right={
-            <span className="text-[10px] font-medium text-text-dimmed">
-              {mode === 'FIXTURE' ? 'captured · fixed' : 'follows location pin'}
-            </span>
-          }
-        >
-          Area of Interest
-        </SectionLabel>
-        {mode === 'FIXTURE' ? (
-          <div data-testid="captured-analysis-area" className="space-y-1">
-            <div className="flex items-center justify-between text-[12px]">
-              <span className="text-text-muted">Captured analysis area</span>
-              <span className="font-semibold tnum text-text-primary">
-                {fixtureCaptureSpanLabel()}
-              </span>
-            </div>
-            <div className="text-[10px] text-text-dimmed leading-relaxed">
-              The exact area the genuine FortyGuard capture was requested for. Shape and size apply to LIVE only.
-            </div>
-            <div className="text-[10.5px] text-text-dimmed tnum" data-testid="captured-area-label">
-              {aoiAreaLabel(FIXTURE_CAPTURE_REQUEST_AOI)} — computed from the captured request geometry.
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Shape toggle (LIVE) */}
-            <div className="grid grid-cols-2 gap-1.5 mb-2">
-              {(['polygon', 'circle'] as const).map((shape) => (
-                <button
-                  key={shape}
-                  data-testid={`aoi-shape-${shape}`}
-                  onClick={() => setters.setAnalysisAreaShape(shape)}
-                  aria-pressed={prefs.analysisAreaShape === shape}
-                  className={`h-11 sm:h-9 rounded-lg text-xs font-medium border transition-colors duration-150 ${
-                    prefs.analysisAreaShape === shape
-                      ? 'border-primary bg-primary/10 text-text-primary'
-                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  {shape === 'polygon' ? 'Square' : 'Circle'}
-                </button>
-              ))}
-            </div>
-            {/* AOI span presets — the number IS the visible size:
-                polygon → side length, circle → diameter. */}
-            <div className="grid grid-cols-5 gap-1.5" data-testid="aoi-size-presets">
-              {AOI_SPAN_PRESETS_LOCAL.map((size) => {
-                const active = prefs.analysisAoiSpanMetres === size;
-                return (
-                  <button
-                    key={size}
-                    data-testid={`aoi-size-${size}`}
-                    onClick={() => setters.setAnalysisAoiSpanMetres(size)}
-                    aria-pressed={active}
-                    className={`h-11 sm:h-9 rounded-md text-[10.5px] font-medium border tnum transition-colors duration-150 ${
-                      active
-                        ? 'border-primary bg-primary/10 text-text-primary'
-                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
-                    }`}
-                  >
-                    {metresLabel(size)}
-                  </button>
-                );
-              })}
-            </div>
-            {/* Span + AREA — linear span ≠ area: show BOTH (P0).
-                The area is computed from the canonical GEOMETRY (never preset
-                text): square 2km → "2 km × 2 km" + "4.00 km² · 1.54 mi²". */}
-            <div className="mt-1.5 space-y-0.5 text-[10.5px]" data-testid="aoi-dimensions">
-              <div className="flex items-center justify-between">
-                <span className="text-text-dimmed">Span</span>
-                <span className="tnum text-text-muted" data-testid="aoi-span-label">
-                  {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
-                </span>
-              </div>
-              {aoiAreaFacts && (
-                <div className="flex items-center justify-between">
-                  <span className="text-text-dimmed">Area</span>
-                  <span className="tnum text-text-muted" data-testid="aoi-area-label">
-                    {aoiAreaFacts.areaLabel}
-                  </span>
-                </div>
-              )}
-            </div>
-            {/* Provider-limit pre-flight status (P0): within / exceeds the
-                DOCUMENTED plan limit — computed from the same geometry. */}
-            {aoiAreaFacts && (
-              <div className="mt-1.5 flex items-center justify-between gap-2" data-testid="aoi-limit-status">
-                <span
-                  className="text-[10.5px] font-semibold"
-                  style={{ color: aoiAreaFacts.withinLimit ? 'var(--accent-emerald)' : 'var(--destructive)' }}
-                >
-                  {aoiAreaFacts.withinLimit ? 'Within provider limit' : 'Exceeds provider limit'}
-                </span>
-                <span
-                  className="text-[10px] text-text-dimmed tnum"
-                  title="Documented FortyGuard plan limit (public API docs) — the account plan exposes no area limit"
-                >
-                  {aoiAreaFacts.limitLabel} · documented
-                </span>
-              </div>
-            )}
-            {/* Documented US-only coverage note (LIVE) */}
-            {outsideUsCoverage && (
-              <p className="text-[10.5px] mt-1.5 font-medium" style={{ color: 'var(--accent-amber)' }} data-testid="outside-us-coverage-note">
-                Outside documented FortyGuard coverage (United States) — the LIVE request would be rejected before submission.
-              </p>
-            )}
-            <p className="text-[10px] text-text-dimmed mt-1.5 leading-relaxed">
-              Drag the teal operating-location pin on the map to move the area — the moved geometry is exactly what
-              FortyGuard receives.
-            </p>
-          </>
-        )}
-      </div>
-
-      <Separator />
-
-      {/* ── THERMAL RESOLUTION (provider granularity — NOT zoom, NOT AOI size) ── */}
-      <div>
-        <SectionLabel
-          right={
-            <span className="text-[10px] font-medium text-text-dimmed">
-              {mode === 'LIVE' ? 'FortyGuard granularity' : `captured at ${fixtureGranularity ?? 100}m`}
-            </span>
-          }
-        >
-          Thermal Resolution
-        </SectionLabel>
-        {mode === 'FIXTURE' ? (
-          <div
-            className="flex items-center justify-between"
-            data-testid="captured-resolution"
-          >
-            <span className="text-[12px] text-text-muted">Captured resolution:</span>
-            <span className="text-[12px] font-semibold tnum text-text-primary">
-              {fixtureGranularity ?? 100}m × {fixtureGranularity ?? 100}m
-            </span>
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-3 gap-1.5" data-testid="resolution-options">
-              {([60, 80, 100] as const).map((r) => {
-                const active = prefs.analysisResolution === r;
-                return (
-                  <button
-                    key={r}
-                    data-testid={`resolution-${r}`}
-                    onClick={() => setters.setAnalysisResolution(r)}
-                    aria-pressed={active}
-                    title={`FortyGuard thermal-cell granularity ${r}m × ${r}m (does not change map zoom)`}
-                    className={`h-11 sm:h-9 rounded-lg text-[11px] font-medium border tnum transition-colors duration-150 ${
-                      active
-                        ? 'border-primary bg-primary/10 text-text-primary'
-                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
-                    }`}
-                  >
-                    {r}m × {r}m
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[10px] text-text-dimmed mt-1.5 leading-relaxed" data-testid="resolution-hint">
-              Requested provider cell granularity. The provider&apos;s returned coverage/geometry determines the actual
-              cells — no cell count is guaranteed.
-            </p>
-          </>
-        )}
-      </div>
-
-      <Separator />
-
       {/* ── EVALUATION WINDOW ── */}
       <div data-testid="when-section">
         <SectionLabel
@@ -692,6 +517,180 @@ export function ControlRail({
         )}
       </div>
 
+      {/* ── AREA OF INTEREST ── */}
+      <div>
+        <SectionLabel
+          right={
+            <span className="text-[10px] font-medium text-text-dimmed">
+              {mode === 'FIXTURE' ? 'captured · fixed' : 'follows location pin'}
+            </span>
+          }
+        >
+          Area of Interest
+        </SectionLabel>
+        {mode === 'FIXTURE' ? (
+          <div data-testid="captured-analysis-area" className="space-y-1">
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-text-muted">Captured analysis area</span>
+              <span className="font-semibold tnum text-text-primary">
+                {fixtureCaptureSpanLabel()}
+              </span>
+            </div>
+            <div className="text-[10px] text-text-dimmed leading-relaxed">
+              The exact area the genuine FortyGuard capture was requested for. Shape and size apply to LIVE only.
+            </div>
+            <div className="text-[10.5px] text-text-dimmed tnum" data-testid="captured-area-label">
+              {aoiAreaLabel(FIXTURE_CAPTURE_REQUEST_AOI)} — computed from the captured request geometry.
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Shape toggle (LIVE) */}
+            <div className="grid grid-cols-2 gap-1.5 mb-2">
+              {(['polygon', 'circle'] as const).map((shape) => (
+                <button
+                  key={shape}
+                  data-testid={`aoi-shape-${shape}`}
+                  onClick={() => setters.setAnalysisAreaShape(shape)}
+                  aria-pressed={prefs.analysisAreaShape === shape}
+                  className={`h-11 sm:h-9 rounded-lg text-xs font-medium border transition-colors duration-150 ${
+                    prefs.analysisAreaShape === shape
+                      ? 'border-primary bg-primary/10 text-text-primary'
+                      : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
+                  }`}
+                >
+                  {shape === 'polygon' ? 'Square' : 'Circle'}
+                </button>
+              ))}
+            </div>
+            {/* AOI span presets — the number IS the visible size:
+                polygon → side length, circle → diameter. */}
+            <div className="grid grid-cols-5 gap-1.5" data-testid="aoi-size-presets">
+              {AOI_SPAN_PRESETS_LOCAL.map((size) => {
+                const active = prefs.analysisAoiSpanMetres === size;
+                return (
+                  <button
+                    key={size}
+                    data-testid={`aoi-size-${size}`}
+                    onClick={() => setters.setAnalysisAoiSpanMetres(size)}
+                    aria-pressed={active}
+                    className={`h-11 sm:h-9 rounded-md text-[10.5px] font-medium border tnum transition-colors duration-150 ${
+                      active
+                        ? 'border-primary bg-primary/10 text-text-primary'
+                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    {metresLabel(size)}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Span + AREA — linear span ≠ area: show BOTH (P0).
+                The area is computed from the canonical GEOMETRY (never preset
+                text): square 2km → "2 km × 2 km" + "4.00 km² · 1.54 mi²". */}
+            <div className="mt-1.5 space-y-0.5 text-[10.5px]" data-testid="aoi-dimensions">
+              <div className="flex items-center justify-between">
+                <span className="text-text-dimmed">Span</span>
+                <span className="tnum text-text-muted" data-testid="aoi-span-label">
+                  {aoiSpanLabel(prefs.analysisAoiSpanMetres, prefs.analysisAreaShape)}
+                </span>
+              </div>
+              {aoiAreaFacts && (
+                <div className="flex items-center justify-between">
+                  <span className="text-text-dimmed">Area</span>
+                  <span className="tnum text-text-muted" data-testid="aoi-area-label">
+                    {aoiAreaFacts.areaLabel}
+                  </span>
+                </div>
+              )}
+            </div>
+            {/* Provider-limit pre-flight status (P0): within / exceeds the
+                DOCUMENTED plan limit — computed from the same geometry. */}
+            {aoiAreaFacts && (
+              <div className="mt-1.5 flex items-center justify-between gap-2" data-testid="aoi-limit-status">
+                <span
+                  className="text-[10.5px] font-semibold"
+                  style={{ color: aoiAreaFacts.withinLimit ? 'var(--accent-emerald)' : 'var(--destructive)' }}
+                >
+                  {aoiAreaFacts.withinLimit ? 'Within provider limit' : 'Exceeds provider limit'}
+                </span>
+                <span
+                  className="text-[10px] text-text-dimmed tnum"
+                  title="Documented FortyGuard plan limit (public API docs) — the account plan exposes no area limit"
+                >
+                  {aoiAreaFacts.limitLabel} · documented
+                </span>
+              </div>
+            )}
+            {/* Documented US-only coverage note (LIVE) */}
+            {outsideUsCoverage && (
+              <p className="text-[10.5px] mt-1.5 font-medium" style={{ color: 'var(--accent-amber)' }} data-testid="outside-us-coverage-note">
+                Outside documented FortyGuard coverage (United States) — the LIVE request would be rejected before submission.
+              </p>
+            )}
+            <p className="text-[10px] text-text-dimmed mt-1.5 leading-relaxed">
+              Drag the teal operating-location pin on the map to move the area — the moved geometry is exactly what
+              FortyGuard receives.
+            </p>
+          </>
+        )}
+      </div>
+
+      <Separator />
+
+      {/* ── THERMAL RESOLUTION (provider granularity — NOT zoom, NOT AOI size) ── */}
+      <div>
+        <SectionLabel
+          right={
+            <span className="text-[10px] font-medium text-text-dimmed">
+              {mode === 'LIVE' ? 'FortyGuard granularity' : `captured at ${fixtureGranularity ?? 100}m`}
+            </span>
+          }
+        >
+          Thermal Resolution
+        </SectionLabel>
+        {mode === 'FIXTURE' ? (
+          <div
+            className="flex items-center justify-between"
+            data-testid="captured-resolution"
+          >
+            <span className="text-[12px] text-text-muted">Captured resolution:</span>
+            <span className="text-[12px] font-semibold tnum text-text-primary">
+              {fixtureGranularity ?? 100}m × {fixtureGranularity ?? 100}m
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-1.5" data-testid="resolution-options">
+              {([60, 80, 100] as const).map((r) => {
+                const active = prefs.analysisResolution === r;
+                return (
+                  <button
+                    key={r}
+                    data-testid={`resolution-${r}`}
+                    onClick={() => setters.setAnalysisResolution(r)}
+                    aria-pressed={active}
+                    title={`FortyGuard thermal-cell granularity ${r}m × ${r}m (does not change map zoom)`}
+                    className={`h-11 sm:h-9 rounded-lg text-[11px] font-medium border tnum transition-colors duration-150 ${
+                      active
+                        ? 'border-primary bg-primary/10 text-text-primary'
+                        : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    {r}m × {r}m
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-text-dimmed mt-1.5 leading-relaxed" data-testid="resolution-hint">
+              Requested provider cell granularity. The provider&apos;s returned coverage/geometry determines the actual
+              cells — no cell count is guaranteed.
+            </p>
+          </>
+        )}
+      </div>
+
+
       <Separator />
 
       {/* ── CANDIDATE SITES ── */}
@@ -714,9 +713,15 @@ export function ControlRail({
                 FortyGuard provider data (not captured sites, not FortyGuard observations). LIVE lets you place your
                 own sites.
               </p>
-              {['Battery Park Greenway', 'City Hall Civic Center', 'Chinatown / Bowery'].map((n) => (
+              {['Battery Park Greenway', 'City Hall Civic Center', 'Chinatown / Bowery'].map((n, i) => (
                 <div key={n} className="flex items-center gap-2 rounded-md bg-surface-deep px-2.5 py-2">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: 'var(--text-secondary)' }} />
+                  <span
+                    className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-mono font-bold text-white flex-shrink-0"
+                    style={{ backgroundColor: getCandidateColor(i) }}
+                    title={`Site ${i + 1}`}
+                  >
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
                   <span className="text-[12px] text-text-secondary">{n}</span>
                   <span className="ml-auto text-[9px] font-mono uppercase text-text-dimmed">demo</span>
                 </div>
@@ -819,7 +824,7 @@ export function ControlRail({
                         style={{ backgroundColor: getCandidateColor(idx) }}
                         title={`Site ${idx + 1}`}
                       >
-                        {idx + 1}
+                        {String(idx + 1).padStart(2, '0')}
                       </span>
                       {renamingId === site.locationId ? (
                         <input
@@ -848,7 +853,7 @@ export function ControlRail({
                           className="flex-1 min-w-0 text-left text-xs text-text-secondary hover:text-text-primary transition-colors duration-150 truncate"
                           title="Click to rename"
                         >
-                          #{idx + 1} {site.name}
+                          #{String(idx + 1).padStart(2, '0')} {site.name}
                         </button>
                       )}
                       <span

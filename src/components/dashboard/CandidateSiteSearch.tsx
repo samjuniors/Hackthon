@@ -61,6 +61,12 @@ type InlineStatus =
   | { kind: 'outside-aoi'; loc: NamedLocation }
   | null;
 
+/** Positional site number — the SAME zero-padded format the map pin badge and candidate list rows use. */
+function siteNumber(site: CandidateSite, existingSites: CandidateSite[]): string {
+  const idx = existingSites.findIndex((s) => s.locationId === site.locationId);
+  return String((idx >= 0 ? idx : existingSites.length - 1) + 1).padStart(2, '0');
+}
+
 export function CandidateSiteSearch({
   mode,
   existingSites,
@@ -273,7 +279,7 @@ export function CandidateSiteSearch({
         >
           <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="truncate">
-            Added <span className="font-bold">#{status.site.locationId.replace('SITE-', '')}</span> —{' '}
+            Added <span className="font-bold">#{siteNumber(status.site, existingSites)}</span> —{' '}
             {status.site.name}
           </span>
         </div>
@@ -288,7 +294,7 @@ export function CandidateSiteSearch({
           <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="truncate">
             Already added — <span className="font-bold">{status.site.name}</span> is site #
-            {status.site.locationId.replace('SITE-', '')}
+            {siteNumber(status.site, existingSites)}
           </span>
         </div>
       )}
@@ -320,7 +326,7 @@ export function CandidateSiteSearch({
                 setActiveIndex(-1);
                 onMoveAoiHere(loc);
               }}
-              className="min-h-[36px] px-2.5 rounded-md text-[11px] font-semibold border border-accent-cyan/50 text-accent-cyan hover:bg-accent-cyan/10 transition-colors"
+              className="min-h-[44px] px-2.5 rounded-md text-[11px] font-semibold border border-accent-cyan/50 text-accent-cyan hover:bg-accent-cyan/10 transition-colors"
             >
               Move analysis area here
             </button>
@@ -332,7 +338,7 @@ export function CandidateSiteSearch({
                 setIsOpen(true);
                 inputRef.current?.focus();
               }}
-              className="min-h-[36px] px-2.5 rounded-md text-[11px] font-medium border border-border text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
+              className="min-h-[44px] px-2.5 rounded-md text-[11px] font-medium border border-border text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
             >
               Choose another result
             </button>

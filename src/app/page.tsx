@@ -128,7 +128,7 @@ export default function WorkspacePage() {
   const [prefs, prefSetters] = useUserPreferences();
   // Destructure the stable setter callbacks used by the restore handler
   // (the setters OBJECT is fresh each render; the functions are stable).
-  const { setDataSourceMode: setPrefDataSourceMode, setAnalysisAreaShape: setPrefAreaShape, setAnalysisAoiSpanMetres: setPrefAoiSpan } = prefSetters;
+  const { setDataSourceMode: setPrefDataSourceMode, setAnalysisAreaShape: setPrefAreaShape, setAnalysisAoiSpanMetres: setPrefAoiSpan, setAnalysisResolution: setPrefResolution } = prefSetters;
   const [unit, setUnit] = useTempUnit();
   const { theme, toggleTheme } = useTheme();
 
@@ -290,6 +290,18 @@ export default function WorkspacePage() {
     mq.addEventListener('change', update);
     return () => mq.removeEventListener('change', update);
   }, []);
+
+  // Mobile: a NEW error must be VISIBLE. The error banner lives inside the
+  // bottom sheet — with the sheet collapsed, only an error code peeks out and
+  // WHAT failed / WHY / WHAT to do next stays hidden. Auto-expand the sheet
+  // when a fresh error arrives (never for re-renders of the same error).
+  const lastErrorRef = useRef<ProductionErrorDetails | null>(null);
+  useEffect(() => {
+    if (errorDetails && errorDetails !== lastErrorRef.current && isMobileViewport) {
+      setSheetOpen(true);
+    }
+    lastErrorRef.current = errorDetails;
+  }, [errorDetails, isMobileViewport]);
 
   // ── Refs (stable values read inside async callbacks) ──
   const activeRequestIdRef = useRef(0);
@@ -1329,6 +1341,15 @@ export default function WorkspacePage() {
       setPrefAoiSpan(record.aoiSpanMetres as AoiSpanMetres);
     }
     setPrefAreaShape(record.aoiShape);
+    // LIVE records carry the user's actual thermal resolution; DEMO records
+    // carry the fixed capture granularity (100m) which was never a user
+    // choice — restoring it would silently mutate the LIVE preference.
+    if (
+      record.dataSourceMode === 'LIVE' &&
+      (record.granularity === 60 || record.granularity === 80 || record.granularity === 100)
+    ) {
+      setPrefResolution(record.granularity);
+    }
 
     // Mode follows the record (guarded — no auto-pipeline side effects)
     if (modeRef.current !== record.dataSourceMode) {
@@ -1372,7 +1393,7 @@ export default function WorkspacePage() {
       description: `${record.provenance.providerLabel} · analyzed ${new Date(record.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })} — no provider request was made.`,
     });
     setTimeout(() => handle.dismiss(), 4500);
-  }, [candidateSites, setPrefDataSourceMode, setPrefAreaShape, setPrefAoiSpan, requestCamera, dismissProgressToast]);
+  }, [candidateSites, setPrefDataSourceMode, setPrefAreaShape, setPrefAoiSpan, setPrefResolution, requestCamera, dismissProgressToast]);
 
   // Consume the restoring flag AFTER the mode/prefs effects of the restore
   // commit (declared after them — effect order guarantees they ran first).
@@ -1647,19 +1668,23 @@ export default function WorkspacePage() {
             </svg>
             <span className="truncate">{selectedLocation ? selectedLocation.name : 'Select location'}</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setSheetOpen(true)}
-            className="hidden xs:flex items-center h-11 px-2.5 rounded-lg border border-border bg-surface-card text-[11px] text-text-muted tnum transition-colors duration-150"
-            aria-label="Evaluation window"
-          >
-            <span className="truncate max-w-[110px]">{headerTemporalLabel}</span>
-          </button>
-          {/* DEMO/LIVE — compact segmented control */}
+          {headerTemporalLabel ? (
+            <button
+              type="button"
+              onClick={() => setSheetOpen(true)}
+              className="flex items-center h-11 px-2.5 rounded-lg border border-border bg-surface-card text-[11px] text-text-muted tnum transition-colors duration-150"
+              aria-label="Evaluation window"
+            >
+              <span className="truncate max-w-[110px]">{headerTemporalLabel}</span>
+            </button>
+          ) : null}
+          {/* DEMO/LIVE — compact segmented control. Below sm ONLY: the header
+              carries its own toggle from sm up (this avoids two live toggles
+              on screen at 640–767px). */}
           <div
             role="group"
             aria-label="Data source"
-            className="flex items-center p-0.5 rounded-lg border border-border bg-surface-card shrink-0"
+            className="sm:hidden flex items-center p-0.5 rounded-lg border border-border bg-surface-card shrink-0"
           >
             {(['LIVE', 'FIXTURE'] as const).map((m) => (
               <button
@@ -1772,7 +1797,7 @@ export default function WorkspacePage() {
               locationName={selectedLocation?.name ?? 'No location selected'}
               baseTimestamp={spatialFieldMeta?.baseTimestamp}
               thermalCellCount={thermalCellCount}
-              resolution={selectedLocation ? resolutionDisplay : undefined}
+              resolution={fieldReady ? resolutionDisplay : undefined}
               mode={mode}
               loading={loading}
               unit={unit}
@@ -1814,6 +1839,7 @@ export default function WorkspacePage() {
                 layerVisibility={prefs.mapLayerVisibility}
                 onToggleLayer={prefSetters.setMapLayerVisibility}
                 areaShape={prefs.analysisAreaShape}
+                aoiSpanMetres={prefs.analysisAoiSpanMetres}
                 showLocationMarker={!!selectedLocation}
                 emptyMapMessage={
                   workflowStage === 'NO_DEMO_CAPTURE'

@@ -220,7 +220,9 @@ export function TopCandidates({ jointDecision, unit, timezone }: TopCandidatesPr
                   <li>→ recommendation: this plan (the engine, not the AI explainer, determines the result)</li>
                 </ol>
                 <p className="text-[9.5px] text-text-dimmed">
-                  Model {jointDecision.modelVersion} · the AI explanation narrates this result and is grounding-validated — it never alters the ranking.
+                  Model {jointDecision.modelVersion} · The deterministic decision engine determines the result. AI
+                  generates only the explanation — the AI narration is grounding-validated and never alters the
+                  ranking.
                 </p>
               </div>
             </div>

@@ -122,9 +122,20 @@ export const THERMAL_RAMP_STOPS: ReadonlyArray<{ c: number; color: string }> = [
   { c: 40, color: '#8f1d42' }, // deep crimson — extreme
 ];
 
-/** CSS linear-gradient string for the legend bar (left → right = cool → warm). */
+/**
+ * CSS linear-gradient string for the legend bar (left → right = cool → warm).
+ *
+ * Stop positions are PERCENTAGES along the 16–40 °C ramp — CSS rejects
+ * `#2f6bd8 16°C` (not a valid length/percentage), which would silently kill
+ * the whole gradient and render an invisible legend bar. The same stop list
+ * (THERMAL_RAMP_STOPS) drives the MapLibre fill interpolation, so the legend
+ * bar is the exact same ramp as the rendered field.
+ */
 export function thermalRampGradientCss(): string {
-  const stops = THERMAL_RAMP_STOPS.map((s) => `${s.color} ${s.c}°C`).join(', ');
+  const first = THERMAL_RAMP_STOPS[0].c;
+  const last = THERMAL_RAMP_STOPS[THERMAL_RAMP_STOPS.length - 1].c;
+  const pos = (c: number) => `${(((c - first) / (last - first)) * 100).toFixed(2)}%`;
+  const stops = THERMAL_RAMP_STOPS.map((s) => `${s.color} ${pos(s.c)}`).join(', ');
   return `linear-gradient(to right, ${stops})`;
 }
 
@@ -133,29 +144,18 @@ export function thermalRampGradientCss(): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Generate thermal legend tick labels for the current unit.
- * Tick colors are SAMPLED from THERMAL_RAMP_STOPS so the legend always
- * matches the rendered field. The underlying MapLibre color scale always
- * operates in Celsius (FortyGuard data is Celsius); only labels convert.
+ * Ramp-accurate tick labels for the CONTINUOUS legend gradient bar: the values
+ * at 0%, 50% and 100% of THERMAL_RAMP_STOPS. Rendered with justify-between,
+ * the label positions therefore match the gradient bar EXACTLY. The underlying
+ * MapLibre color scale always operates in Celsius (FortyGuard data is Celsius);
+ * only labels convert.
  */
-export function getThermalLegendTicks(unit: TempUnit): { color: string; label: string }[] {
-  const band = (cLow: number, cHigh: number | null): { color: string; label: string } => {
-    // Sample the ramp color at the band's midpoint (or upper edge for open bands).
-    const probe = cHigh === null ? cLow + 2 : (cLow + cHigh) / 2;
-    const color = sampleThermalRampColor(probe);
-    const conv = (c: number) => (unit === 'F' ? Math.round(celsiusToFahrenheit(c)) : c);
-    return cHigh === null
-      ? { color, label: `>${conv(cLow)}` }
-      : { color, label: `${conv(cLow)}–${conv(cHigh)}` };
-  };
-
-  return [
-    band(0, 26),
-    band(26, 28),
-    band(28, 30),
-    band(30, 32),
-    band(32, null),
-  ];
+export function getThermalLegendRampTicks(unit: TempUnit): { label: string }[] {
+  const first = THERMAL_RAMP_STOPS[0].c;
+  const last = THERMAL_RAMP_STOPS[THERMAL_RAMP_STOPS.length - 1].c;
+  const mid = (first + last) / 2;
+  const conv = (c: number) => Math.round(unit === 'F' ? celsiusToFahrenheit(c) : c);
+  return [first, mid, last].map((c) => ({ label: `${conv(c)}` }));
 }
 
 /**
@@ -270,17 +270,29 @@ export function useTempUnit(): [TempUnit, (unit: TempUnit) => void] {
 // Explanation Translation
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Words that mark a °C value as a DELTA (a change in temperature), either
+/// immediately before the number ("a rise of 1.2°C", "lower by 0.5°C") or
+/// immediately after it ("0.46°C higher"). Endpoint phrasing ("increased TO
+/// 30°C") is deliberately NOT matched — those are absolutes.
+const DELTA_BEFORE_RE = /(?:higher|lower|warmer|cooler|increase|decrease|rise|risen|rose|drop|drops|dropped|delta|difference|by)\s+(?:of\s+)?$/i;
+const DELTA_AFTER_RE = /^\s*(?:higher|lower|warmer|cooler|increase|decrease|rise|drop|delta|difference)\b/i;
+
 /**
  * Translates a single explanation text string from Celsius to the target unit.
  */
 function translateTextToUnit(text: string, unit: TempUnit): string {
   if (unit === 'C') return text;
-  
-  return text.replace(/([-+]?)(\d+(?:\.\d+)?)°C/g, (match, sign, numStr) => {
+
+  return text.replace(/([-+]?)(\d+(?:\.\d+)?)°C/g, (match, sign, numStr, offset: number) => {
     const num = parseFloat(numStr);
     if (isNaN(num)) return match;
-    
-    const isDelta = sign !== '';
+
+    // Delta detection: an explicit sign OR a comparative cue adjacent to the
+    // number. Applying the absolute formula (+32 offset) to a delta inflates
+    // it ~40× ("0.46°C higher" → "32.83°F higher") — never offset a delta.
+    const before = text.slice(Math.max(0, offset - 32), offset);
+    const after = text.slice(offset + match.length, offset + match.length + 24);
+    const isDelta = sign !== '' || DELTA_BEFORE_RE.test(before) || DELTA_AFTER_RE.test(after);
     if (isDelta) {
       const converted = celsiusDeltaToFahrenheitDelta(num);
       return `${sign}${converted.toFixed(2)}°F`;

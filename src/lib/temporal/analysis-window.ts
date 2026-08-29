@@ -69,9 +69,9 @@ export const FIXTURE_TIMEZONE = 'UTC' as const;
 /**
  * Produce today's date in YYYY-MM-DD form for the given IANA timezone.
  * Used for the current-day default (Section 7) — the date is always visible.
+ * `now` is injectable so date-dependent logic is deterministic under test.
  */
-export function todayLocalDate(timezone?: string): string {
-  const now = new Date();
+export function todayLocalDate(timezone?: string, now: Date = new Date()): string {
   const opts: Intl.DateTimeFormatOptions = {
     year: 'numeric',
     month: '2-digit',

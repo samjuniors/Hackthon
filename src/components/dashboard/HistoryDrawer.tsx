@@ -25,6 +25,7 @@ import {
 import { History, MapPin, Trash2, Database, Server, FlaskConical, Loader2 } from 'lucide-react';
 import type { HistoryRecord } from '@/lib/history/types';
 import { groupHistoryByDay } from '@/lib/history/record';
+import { aoiSpanLabel } from '@/lib/spatial/aoi';
 import type { DataSourceMode } from '@/types/provenance';
 
 interface HistoryDrawerProps {
@@ -159,6 +160,16 @@ export function HistoryDrawer({
                               <span className="text-[10px] text-text-muted tnum">
                                 {record.granularity}m · {record.thermalCellCount} cells
                               </span>
+                              {/* AOI — the recorded analysis area (span semantics:
+                                  square side × side / circle diameter). */}
+                              {record.aoiSpanMetres != null && (
+                                <span
+                                  className="text-[10px] text-text-muted tnum"
+                                  title="Analysis area used for this analysis"
+                                >
+                                  {aoiSpanLabel(record.aoiSpanMetres, record.aoiShape)}
+                                </span>
+                              )}
                             </div>
                             {recommended && (
                               <div className="text-[11px] text-text-muted mt-1 truncate">
@@ -188,7 +199,7 @@ export function HistoryDrawer({
                           <button
                             type="button"
                             onClick={() => onDelete(record.id)}
-                            className="w-9 shrink-0 flex items-center justify-center text-text-dimmed hover:text-red-500 transition-colors"
+                            className="w-11 self-stretch shrink-0 flex items-center justify-center text-text-dimmed hover:text-red-500 transition-colors"
                             aria-label={`Delete saved analysis for ${record.location.name}`}
                             data-testid={`history-delete-${record.id}`}
                           >
@@ -216,7 +227,7 @@ export function HistoryDrawer({
                 <button
                   type="button"
                   onClick={() => { onClear(); setConfirmClear(false); }}
-                  className="h-7 px-2.5 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 text-[10.5px] font-semibold hover:bg-red-500/20 transition-colors"
+                  className="h-11 sm:h-8 px-2.5 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 text-[10.5px] font-semibold hover:bg-red-500/20 transition-colors"
                   data-testid="history-clear-confirm"
                 >
                   Delete all
@@ -224,7 +235,7 @@ export function HistoryDrawer({
                 <button
                   type="button"
                   onClick={() => setConfirmClear(false)}
-                  className="h-7 px-2.5 rounded-md border border-border text-[10.5px] text-text-muted hover:text-text-primary transition-colors"
+                  className="h-11 sm:h-8 px-2.5 rounded-md border border-border text-[10.5px] text-text-muted hover:text-text-primary transition-colors"
                 >
                   Cancel
                 </button>
@@ -233,7 +244,7 @@ export function HistoryDrawer({
               <button
                 type="button"
                 onClick={() => setConfirmClear(true)}
-                className="h-7 px-2.5 rounded-md border border-border text-[10.5px] text-text-muted hover:text-red-500 hover:border-red-500/40 transition-colors"
+                className="h-11 sm:h-8 px-2.5 rounded-md border border-border text-[10.5px] text-text-muted hover:text-red-500 hover:border-red-500/40 transition-colors"
                 data-testid="history-clear-btn"
               >
                 Clear history

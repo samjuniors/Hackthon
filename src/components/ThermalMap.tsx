@@ -9,7 +9,7 @@ import {
   type TempUnit,
   DEFAULT_TEMP_UNIT,
   THERMAL_RAMP_STOPS,
-  getThermalLegendTicks,
+  getThermalLegendRampTicks,
   tempUnitSuffix,
   thermalRampGradientCss,
 } from '@/lib/temperature';
@@ -226,6 +226,8 @@ interface ThermalMapProps {
   onToggleLayer?: (v: Partial<MapLayerVisibility>) => void;
   /** AOI shape (for the toolbar shape indicator) */
   areaShape?: AnalysisAreaShape;
+  /** Current AOI span in metres (square side / circle diameter) — toolbar active-state truth. */
+  aoiSpanMetres?: number;
   /** Whether to render the operating location marker. */
   showLocationMarker?: boolean;
   /** Message shown by the empty-map overlay (no field AND no AOI). */
@@ -495,6 +497,7 @@ export function ThermalMap({
   layerVisibility = { thermal: true, candidates: true, labels: true, aoi: true },
   onToggleLayer,
   areaShape = 'polygon',
+  aoiSpanMetres = 1000,
   showLocationMarker = true,
   emptyMapMessage = 'Select a location to render the thermal field',
   addSiteMode = false,
@@ -1236,7 +1239,8 @@ export function ThermalMap({
 
       const siteColor = getCandidateColor(index, isWinner);
       // Rank number — rendered in the SEPARATE badge (never inside the icon).
-      const rank = String(index + 1);
+      // Zero-padded ("01") — identical format to the candidate list rows.
+      const rank = String(index + 1).padStart(2, '0');
       const isDark = theme === 'dark';
 
       if (existing) {
@@ -1436,7 +1440,7 @@ export function ThermalMap({
     }
   }, [mapReady, cameraNonce]);
 
-  const legendTicks = getThermalLegendTicks(unit);
+  const legendTicks = getThermalLegendRampTicks(unit);
 
   const toggleLayer = (layer: keyof MapLayerVisibility) => {
     if (onToggleLayer) {
@@ -1509,11 +1513,10 @@ export function ThermalMap({
               label={stateDisplayName ? `${stateDisplayName} boundary` : 'Geographic Region boundary'}
               title="Toggle Geographic Region boundary (context only — never provider coverage)"
               onClick={() => {
-                setShowRegionBoundary((prev) => {
-                  const next = !prev;
-                  if (next) fitToRegion();
-                  return next;
-                });
+                // Toggle the context layer WITHOUT moving the camera — the user
+                // is mid-analysis at AOI scale; re-enabling a context line must
+                // not yank them to a state-wide view.
+                setShowRegionBoundary((prev) => !prev);
               }}
             />
             <LayerToggleRow
@@ -1621,8 +1624,9 @@ export function ThermalMap({
                     <button
                       key={shape}
                       type="button"
+                      aria-pressed={areaShape === shape}
                       onClick={() => prefSetters.setAnalysisAreaShape(shape)}
-                      className={`min-h-[34px] rounded-md text-xs font-medium border transition-colors duration-150 ${
+                      className={`map-menu-row min-h-[34px] rounded-md text-xs font-medium border transition-colors duration-150 ${
                         areaShape === shape
                           ? 'border-primary bg-primary/10 text-text-primary'
                           : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
@@ -1638,9 +1642,10 @@ export function ThermalMap({
                     <button
                       key={size}
                       type="button"
+                      aria-pressed={size === (aoiSpanMetres ?? 1000)}
                       onClick={() => prefSetters.setAnalysisAoiSpanMetres(size)}
-                      className={`min-h-[32px] rounded-md text-[10px] font-medium border tnum transition-colors duration-150 ${
-                        size === 1000
+                      className={`map-menu-row min-h-[32px] rounded-md text-[10px] font-medium border tnum transition-colors duration-150 ${
+                        size === (aoiSpanMetres ?? 1000)
                           ? 'border-primary bg-primary/10 text-text-primary'
                           : 'border-border bg-surface-elevated text-text-muted hover:text-text-primary'
                       }`}
@@ -1752,9 +1757,9 @@ export function ThermalMap({
           aria-hidden="true"
         />
         <div className="flex items-center justify-between mt-1 w-44">
-          <span className="text-[9px] text-text-muted tnum">{legendTicks[0]?.label}</span>
-          <span className="text-[9px] text-text-muted tnum">{legendTicks[2]?.label}</span>
-          <span className="text-[9px] text-text-muted tnum">{legendTicks[legendTicks.length - 1]?.label}</span>
+          {legendTicks.map((t, i) => (
+            <span key={i} className="text-[9px] text-text-muted tnum">{t.label}</span>
+          ))}
         </div>
         <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-border/60">
           <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan flex-shrink-0" />
@@ -1813,7 +1818,7 @@ function LayerToggleRow({
       aria-checked={checked}
       title={title}
       onClick={onClick}
-      className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-[13px] text-text-primary hover:bg-surface-deep text-left transition-colors duration-150"
+      className="map-menu-row flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-[13px] text-text-primary hover:bg-surface-deep text-left transition-colors duration-150"
     >
       <span className="flex h-4 w-4 items-center justify-center shrink-0">
         {checked ? <Check className="size-3.5 text-accent-cyan" aria-hidden="true" /> : null}

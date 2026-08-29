@@ -89,9 +89,12 @@ export function RecommendedOperation({ jointDecision, unit, timezone, mode, temp
               {fmtTempValue(rec.exposureScore, unit)}
               <span className="text-2xl font-medium text-text-muted">{tempUnitSuffix(unit)}</span>
             </span>
-            <span className="text-sm text-text-muted tnum">
-              {secondaryValue.toFixed(2)}
-              {tempUnitSuffix(otherUnit)}
+            <span className="flex flex-col items-start">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-text-dimmed">modeled</span>
+              <span className="text-sm text-text-muted tnum">
+                {secondaryValue.toFixed(2)}
+                {tempUnitSuffix(otherUnit)}
+              </span>
             </span>
           </motion.div>
         </div>

@@ -268,6 +268,11 @@
     width: 44px;
     height: 44px;
   }
+  /* Rows inside map toolbar menus (shape/size presets, layer toggles) —
+     the same floor as the buttons that open them. */
+  .map-menu-row {
+    min-height: 44px;
+  }
   /* MapLibre default zoom/compass buttons are 29px — raise the same floor. */
   .maplibregl-ctrl-group button {
     width: 44px !important;
@@ -278,6 +283,17 @@
   }
   .maplibregl-ctrl-group {
     border-radius: 10px !important;
+  }
+}
+
+/* Header controls: the 44px floor is width-gated (size-11 → sm:size-8) in
+   markup, which leaves 32px targets on wide-but-touch devices (iPads).
+   min-width/min-height win over the fixed size utilities, so this floor
+   applies ONLY on coarse pointers — desktop pointers see the compact 32px. */
+@media (pointer: coarse) {
+  .header-ctl {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 .map-tool-btn:hover {

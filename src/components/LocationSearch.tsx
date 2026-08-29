@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { NamedLocation } from '@/types/provider';
 import type { DataSourceMode } from '@/types/provenance';
+import { resolveSearchKeyAction } from '@/lib/workspace/candidate-search-model';
 import {
   searchLocations,
   getPresetLocations,
@@ -67,13 +68,16 @@ export function LocationSearch({
     ? searchLocations(query, 8, activeStateFilter)
     : getPresetLocations(mode === 'FIXTURE', activeStateFilter);
 
-  // Debounced remote geocoding fetch for arbitrary global addresses and landmarks
+  // Debounced remote geocoding fetch for arbitrary global addresses and landmarks.
+  // Stale results for a PREVIOUS query are cleared immediately so they can
+  // never show under the current one (same contract as the candidate search).
   useEffect(() => {
     const q = query.trim();
     if (!q || q.length < 2) {
+      setRemoteResults([]);
       return;
     }
-
+    setRemoteResults([]);
     const controller = new AbortController();
     const timeout = setTimeout(async () => {
       setIsSearching(true);
@@ -262,30 +266,31 @@ export function LocationSearch({
               }}
               onFocus={() => setIsOpen(true)}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') {
+                // SAME interaction contract as the candidate-site search:
+                // arrows move the highlight (wrapping), Enter selects the
+                // highlighted row or the FIRST row, Escape closes. Keyboard and
+                // mouse are fully equivalent paths into onSelectLocation.
+                const action = resolveSearchKeyAction(e.key, activeIndex, results.length);
+                if (action.type === 'noop') return;
+                e.preventDefault();
+                if (action.type === 'highlight') {
+                  if (!isOpen) setIsOpen(true);
+                  setActiveIndex(action.index);
+                } else if (action.type === 'close') {
                   setIsOpen(false);
                   setActiveIndex(-1);
-                } else if (e.key === 'ArrowDown') {
-                  e.preventDefault();
+                } else if (action.type === 'select') {
                   if (!isOpen) {
+                    // Enter with the results closed re-opens them (nothing selected).
                     setIsOpen(true);
+                    setActiveIndex(action.index);
+                    return;
                   }
-                  if (results.length > 0) {
-                    setActiveIndex((prev) => (prev + 1) % results.length);
-                  }
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  if (results.length > 0) {
-                    setActiveIndex((prev) => (prev - 1 + results.length) % results.length);
-                  }
-                } else if (e.key === 'Enter') {
-                  if (isOpen && activeIndex >= 0 && results[activeIndex]) {
-                    e.preventDefault();
-                    onSelectLocation(results[activeIndex]);
-                    setIsOpen(false);
-                    setQuery('');
-                    setActiveIndex(-1);
-                  }
+                  onSelectLocation(results[action.index]);
+                  setIsOpen(false);
+                  setQuery('');
+                  setRemoteResults([]);
+                  setActiveIndex(-1);
                 }
               }}
               placeholder={compact ? 'Search a site or address…' : isFixture ? 'Search places, streets, addresses…' : 'Search any city, street, address, ZIP…'}

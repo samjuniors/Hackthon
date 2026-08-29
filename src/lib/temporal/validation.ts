@@ -80,7 +80,9 @@ export function classifyTemporalWindow(
   const endUtc = localToUtcIso(endOnDate, end, timezone);
   const hoursFromNow = (new Date(startUtc).getTime() - now.getTime()) / 3600000;
 
-  const today = todayLocalDate(timezone);
+  // "Today" must be derived from the SAME clock as hoursFromNow — otherwise an
+  // injected `now` (tests / server consistency) disagrees with classification.
+  const today = todayLocalDate(timezone, now);
   const classification: TemporalClassification =
     input.date > today ? 'forecast' : input.date < today ? 'historical' : 'current';
 

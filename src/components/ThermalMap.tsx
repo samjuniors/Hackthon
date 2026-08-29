@@ -433,6 +433,16 @@ function applyAoiValidityPaint(
   }
 }
 
+/** Escape untrusted text for safe HTML interpolation (geocoder/user names). */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /** Clean popup card HTML (themed via CSS vars — popups live inside the page tree). */
 function popupCardHtml(opts: {
   eyebrow: string;
@@ -453,16 +463,16 @@ function popupCardHtml(opts: {
       border-radius:10px;
     ">
       <div style="font-size:9px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:${opts.eyebrowColor};margin-bottom:3px;">
-        ${opts.eyebrow}
+        ${escapeHtml(opts.eyebrow)}
       </div>
-      <div style="font-size:13px;font-weight:600;line-height:1.3;">${opts.title}</div>
+      <div style="font-size:13px;font-weight:600;line-height:1.3;">${escapeHtml(opts.title)}</div>
       <div style="font-size:10px;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,monospace;margin-top:3px;">
-        ${opts.coords}
+        ${escapeHtml(opts.coords)}
       </div>
-      ${opts.hint ? `<div style="font-size:10px;color:var(--text-dimmed);margin-top:5px;">${opts.hint}</div>` : ''}
+      ${opts.hint ? `<div style="font-size:10px;color:var(--text-dimmed);margin-top:5px;">${escapeHtml(opts.hint)}</div>` : ''}
       ${
         opts.removeLabel && opts.removeId
-          ? `<button type="button" id="remove-site-btn-${opts.removeId}" data-site-id="${opts.removeId}" style="
+          ? `<button type="button" id="remove-site-btn-${escapeHtml(opts.removeId)}" data-site-id="${escapeHtml(opts.removeId)}" style="
               margin-top:8px;width:100%;padding:5px 8px;font-size:11px;font-weight:600;
               color:var(--accent-red);background:var(--accent-red-bg);
               border:1px solid transparent;border-radius:6px;cursor:pointer;
@@ -1150,6 +1160,11 @@ export function ThermalMap({
         .setPopup(popup)
         .addTo(map);
 
+      // MapLibre's addTo() OVERWRITES the element's aria-label with its
+      // default "Map marker" — re-apply the identity label AFTER the marker
+      // joins the map.
+      el.setAttribute('aria-label', `Operating location ${locName}`);
+
       marker.on('dragstart', () => {
         el.setAttribute('data-dragging', 'true');
       });
@@ -1228,10 +1243,10 @@ export function ThermalMap({
       const existing = candidateMarkersRef.current.get(item.locationId);
 
       const popupHtml = popupCardHtml({
-        eyebrow: isWinner ? 'Recommended Location' : 'Candidate Location',
+        eyebrow: `${isWinner ? 'Recommended Location' : 'Candidate Location'} · ${item.locationId}`,
         eyebrowColor: isWinner ? '#0e7490' : 'var(--text-dimmed)',
         title: cleanName,
-        coords: `${item.location.latitude.toFixed(4)}°, ${item.location.longitude.toFixed(4)}°`,
+        coords: `${item.location.latitude.toFixed(6)}°, ${item.location.longitude.toFixed(6)}°`,
         hint: candidatesDraggable ? 'Drag to move inside the analysis area' : undefined,
         removeLabel: candidatesDraggable && !isWinner,
         removeId: candidatesDraggable && !isWinner ? item.locationId : undefined,
@@ -1306,6 +1321,11 @@ export function ThermalMap({
           .setLngLat([item.location.longitude, item.location.latitude])
           .setPopup(popup)
           .addTo(map);
+
+        // MapLibre's addTo() OVERWRITES the element's aria-label with its
+        // default "Map marker" — re-apply the candidate IDENTITY label
+        // (stable id + real place name) AFTER the marker joins the map.
+        el.setAttribute('aria-label', isWinner ? `Recommended location ${cleanName}` : `Candidate location ${cleanName}`);
 
         const entry = {
           marker,

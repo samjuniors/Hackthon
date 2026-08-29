@@ -47,6 +47,11 @@ const CandidateSchema = z.object({
   name: z.string().min(1),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
+  // Display metadata (search/reverse-geocode identity) — carried through to
+  // the decision result + History so the real-world candidate identity
+  // survives the round trip. NEVER used for spatial analysis.
+  address: z.string().max(200).optional(),
+  state: z.string().max(100).optional(),
 });
 
 /**
@@ -364,6 +369,8 @@ export async function POST(request: Request) {
           locationId: c.locationId,
           name: c.name,
           location: { latitude: c.latitude, longitude: c.longitude },
+          address: c.address,
+          state: c.state,
         }))
       : mode === 'FIXTURE'
         ? DEMO_CANDIDATES

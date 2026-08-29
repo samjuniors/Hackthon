@@ -131,6 +131,14 @@ export interface CandidateLocation {
   locationId: string;
   name: string;
   location: LocationPoint;
+  /**
+   * Display metadata (search/reverse-geocode results) — carried through the
+   * decision pipeline and History so the candidate's real-world identity
+   * survives every transformation. NEVER used for spatial analysis: the
+   * `location` coordinate is the sole spatial authority.
+   */
+  address?: string;
+  state?: string;
 }
 
 export interface HourlyTileTemperature {

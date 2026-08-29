@@ -114,6 +114,56 @@ export function resolveCandidateAdd(
   return { status: 'added', site };
 }
 
+/** Auto-generated fallback name pattern for map-click sites without identity. */
+export const MAP_POINT_FALLBACK_RE = /^Map point \d+$/;
+
+/**
+ * Pure display-identity update (testable without React).
+ *
+ * Applies a reverse-geocoded identity to a map-click candidate WITHOUT ever
+ * touching its coordinates:
+ *   - name/address/state are DISPLAY METADATA — the coordinate is the spatial
+ *     authority and is returned UNCHANGED (bit-identical latitude/longitude).
+ *   - a user- or search-provided name is NEVER overwritten: the identity is
+ *     applied only while the site still carries the auto-generated
+ *     "Map point N" fallback (or the explicit `force` flag, used by History
+ *     restore which must reproduce the saved identity verbatim).
+ */
+export function applySiteIdentity<T extends CandidateSite>(
+  sites: T[],
+  locationId: string,
+  identity: { name?: string; address?: string; state?: string },
+  options?: { force?: boolean },
+): { sites: T[]; applied: boolean; reason?: 'NOT_FOUND' | 'NAME_PROTECTED' | 'NO_NAME' } {
+  const site = sites.find((s) => s.locationId === locationId);
+  if (!site) return { sites, applied: false, reason: 'NOT_FOUND' };
+
+  const cleanName = identity.name?.trim();
+  if (!cleanName) return { sites, applied: false, reason: 'NO_NAME' };
+
+  const hasFallbackName = MAP_POINT_FALLBACK_RE.test(site.name);
+  if (!hasFallbackName && !options?.force) {
+    // Known identity (search result or user rename) — never replaced.
+    return { sites, applied: false, reason: 'NAME_PROTECTED' };
+  }
+
+  return {
+    sites: sites.map((s) =>
+      s.locationId === locationId
+        ? {
+            ...s,
+            name: cleanName,
+            address: identity.address?.trim() || s.address,
+            state: identity.state?.trim() || s.state,
+            // COORDINATES UNTOUCHED — the reverse-geocode result is display
+            // identity only; the clicked point remains the spatial authority.
+          }
+        : s,
+    ),
+    applied: true,
+  };
+}
+
 /**
  * Pure candidate-move application (testable without React).
  *
@@ -197,6 +247,24 @@ export function useCandidateSites() {
     [],
   );
 
+  /**
+   * Apply a reverse-geocoded DISPLAY identity to a map-click candidate.
+   *
+   * The geocoder result is display metadata ONLY: the exact clicked
+   * coordinates are never moved or snapped, and an existing search-result /
+   * user-provided name is never overwritten (pure `applySiteIdentity` guards
+   * both invariants). Returns whether the identity was applied.
+   */
+  const applyIdentity = useCallback(
+    (locationId: string, identity: { name?: string; address?: string; state?: string }, options?: { force?: boolean }): boolean => {
+      const result = applySiteIdentity(sitesRef.current, locationId, identity, options);
+      if (!result.applied) return false;
+      setSites(result.sites);
+      return true;
+    },
+    [],
+  );
+
   const removeSite = useCallback((locationId: string) => {
     setSites((prev) => prev.filter((s) => s.locationId !== locationId));
   }, []);
@@ -228,8 +296,10 @@ export function useCandidateSites() {
 
   /**
    * Replace the entire site list with the given candidates, preserving their
-   * ORIGINAL locationIds (used by History restoration — the saved decision
-   * results reference the original ids, so the map highlight contract
+   * ORIGINAL locationIds AND display identity (name + address + state) —
+   * used by History restoration: the saved decision results reference the
+   * original ids, and the restored candidate list must show the SAME real
+   * names the analysis ran with (the map highlight contract
    * `recommendedLocationId === candidate.locationId` must keep holding).
    */
   const replaceSites = useCallback((sites: CandidateLocation[]) => {
@@ -237,6 +307,8 @@ export function useCandidateSites() {
       locationId: s.locationId,
       name: s.name,
       location: s.location,
+      address: s.address,
+      state: s.state,
       origin: 'search' as const,
       outsideAoi: false,
     })));
@@ -267,5 +339,5 @@ export function useCandidateSites() {
     });
   }, []);
 
-  return { sites, addSiteAt, addSiteFromSearch, removeSite, renameSite, moveSite, clearSites, replaceSites, validateAgainstAoi };
+  return { sites, addSiteAt, addSiteFromSearch, removeSite, renameSite, moveSite, clearSites, replaceSites, applyIdentity, validateAgainstAoi };
 }

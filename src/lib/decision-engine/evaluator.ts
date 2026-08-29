@@ -656,13 +656,16 @@ export function evaluateWhatIfScenarios(
     )
   );
 
-  // Scenario 2: LOCATION_LOCK — Lock operation strictly to Chinatown (LOC-C)
+  // Scenario 2: LOCATION_LOCK — Lock operation strictly to the LAST candidate
+  // (DEMO: Chinatown LOC-C; LIVE: the user's most recently added site). The
+  // scenario label shows the ACTUAL locked site's identity — never a
+  // hard-coded demo name for user-supplied candidates.
   const locCCandidates = candidates.filter((c) => c.locationId === 'LOC-C');
   const locationLockCandidates = locCCandidates.length > 0 ? locCCandidates : [candidates[candidates.length - 1]];
   scenarios.push(
     evaluateSingleScenario(
       'scenario-location-lock',
-      'Site Lock (Chinatown Asphalt Canyon)',
+      `Site Lock (${locationLockCandidates[0].name.split(' (')[0]})`,
       'LOCATION_LOCK',
       `Operational deployment locked strictly to ${locationLockCandidates[0].name} (${locationLockCandidates[0].locationId})`,
       locationLockCandidates,

@@ -665,13 +665,17 @@ export default function WorkspacePage() {
       };
 
       // FIXTURE mode sends NO candidates — the server uses the actual three
-      // captured Manhattan sites. LIVE sends the user's real candidates.
+      // captured Manhattan sites. LIVE sends the user's real candidates
+      // (with their display identity — name + address/state ride along so the
+      // real-world candidate identity survives the round trip).
       if (dataSourceMode === 'LIVE' && candidates && candidates.length > 0) {
         body.candidates = candidates.map((c) => ({
           locationId: c.locationId,
           name: c.name,
           latitude: c.location.latitude,
           longitude: c.location.longitude,
+          address: c.address,
+          state: c.state,
         }));
       }
 
@@ -1064,7 +1068,17 @@ export default function WorkspacePage() {
     handleResetAnalysis();
   }, [handleResetAnalysis]);
 
-  /** Map click while in PLACE_SITE mode. */
+  /**
+   * Map click while in PLACE_SITE mode.
+   *
+   * PATH B candidate creation: the candidate is created IMMEDIATELY at the
+   * exact clicked coordinate (spatial authority — never moved or snapped),
+   * then reverse-geocoded ASYNCHRONOUSLY for a DISPLAY identity only (same
+   * credit-free geocoding endpoint the operating-location drag uses — never
+   * FortyGuard). If the geocoder returns no meaningful name the honest
+   * "Map point N" fallback stays; a search-result or user-provided name is
+   * never overwritten (applySiteIdentity guards both invariants).
+   */
   const handleAddSiteAt = useCallback((lng: number, lat: number) => {
     const loc = selectedLocationRef.current;
     if (!loc) return;
@@ -1085,10 +1099,32 @@ export default function WorkspacePage() {
       return;
     }
     setErrorDetails(null);
-    candidateSites.addSiteAt(lat, lng);
+    const site = candidateSites.addSiteAt(lat, lng);
     activeRequestIdRef.current++;
     clearResults();
     setAddSiteMode(false);
+
+    // ── Asynchronous display-identity resolution (credit-free, never FortyGuard) ──
+    // The geocoder result is DISPLAY metadata ONLY: the exact clicked
+    // coordinate stays the spatial authority (never snapped to the geocoded
+    // point), and an already-named candidate is never relabelled.
+    // (No epoch guard: adding another site must not cancel a pending identity
+    // resolution — applySiteIdentity itself no-ops for removed or renamed
+    // sites, so a late result can never mislabel anything.)
+    fetch(`/api/location/search?lat=${lat}&lon=${lng}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data?.success || !data.location) return; // honest fallback stays
+        const resolved = data.location as NamedLocation;
+        candidateSites.applyIdentity(site.locationId, {
+          name: resolved.name,
+          address: [resolved.city, resolved.state].filter(Boolean).join(', ') || undefined,
+          state: resolved.state,
+        });
+      })
+      .catch(() => {
+        // Geocoder unreachable — the honest "Map point N" fallback stays.
+      });
   }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
 
   const handleRemoveSite = useCallback((locationId: string) => {
@@ -1588,6 +1624,8 @@ export default function WorkspacePage() {
             locationId: s.locationId,
             name: s.name,
             location: s.location,
+            address: s.address,
+            state: s.state,
           }))
         : undefined
     );
@@ -1607,6 +1645,8 @@ export default function WorkspacePage() {
             locationId: s.locationId,
             name: s.name,
             location: s.location,
+            address: s.address,
+            state: s.state,
           }))
         : undefined
     );

@@ -133,8 +133,8 @@ describe('THERMAL PIPELINE PROOF — MapLibre rendering wiring (static contract)
   it('E. the fill layer references the correct source and is driven by average_temperature with fill-opacity > 0', () => {
     expect(thermalMapSource).toContain("id: 'thermal-tiles-fill'");
     expect(thermalMapSource).toMatch(/source:\s*'thermal-tiles',\s*\n\s*paint:\s*\{\s*\n\s*'fill-color':\s*THERMAL_COLOR_EXPRESSION/);
-    // fill-opacity is 0.88 (dark) / 0.8 (light) — strictly positive.
-    expect(thermalMapSource).toMatch(/'fill-opacity':\s*isDark \? 0\.88 : 0\.8/);
+    // fill-opacity is 0.92 (dark) / 0.88 (light) — strictly positive (field stays dominant over the AOI hatch).
+    expect(thermalMapSource).toMatch(/'fill-opacity':\s*isDark \? 0.92 : 0.88/);
     // The thermal ramp expression is driven by the provider temperature field.
     expect(thermalMapSource).toMatch(/'get',\s*'average_temperature'/);
   });

@@ -6,9 +6,11 @@ import {
   resolveCandidateAdd,
   candidateInputFromLocation,
   applySiteIdentity,
+  createPendingIdentityTracker,
   MAP_POINT_FALLBACK_RE,
   type CandidateSite,
 } from '@/hooks/use-candidate-sites';
+import { createAoiFromSpan } from '@/lib/spatial/aoi';
 import { buildHistoryRecord, isValidHistoryRecord } from '@/lib/history/record';
 import { evaluateJointDecision, evaluateWhatIfScenarios } from '@/lib/decision-engine/evaluator';
 import type { CandidateLocation, NormalizedThermalObservation, PolygonAOI } from '@/types/domain';
@@ -483,5 +485,134 @@ describe('candidate identity — separation contracts', () => {
 
     // The location-search route has no FortyGuard import.
     expect(searchRouteSrc).not.toMatch(/@\/lib\/fortyguard/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RACE GUARD — Generate must await pending reverse-geocode identity resolutions
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('candidate identity — Generate race guard', () => {
+  it('a Generate that AWAITS settleIdentities never carries an unresolved "Map point N" (the reported LIVE bug)', async () => {
+    const clicked = { latitude: 37.7841, longitude: -122.4011 };
+
+    // 1. Map-click creation — immediate, fallback name (exact clicked coords).
+    let sites: CandidateSite[] = [makeMapClickSite(1, clicked.latitude, clicked.longitude)];
+    const tracker = createPendingIdentityTracker();
+
+    // 2. The reverse-geocode resolves asynchronously (as the network does).
+    let resolveGeocode!: () => void;
+    const geocode = new Promise<void>((resolve) => { resolveGeocode = resolve; });
+    tracker.track('SITE-01', geocode.then(() => {
+      const result = applySiteIdentity(sites, 'SITE-01', {
+        name: 'Bill Graham Civic Auditorium',
+        address: 'San Francisco, CA',
+        state: 'CA',
+      });
+      sites = result.sites;
+    }));
+    expect(tracker.pendingCount()).toBe(1);
+
+    // 3. Generate WITHOUT waiting (the OLD buggy ordering) sees the fallback…
+    const snapshotBefore = sites.map((s) => s.name);
+    expect(snapshotBefore).toEqual(['Map point 1']);
+
+    // 4. The guarded Generate path: await settleAll FIRST, THEN snapshot.
+    resolveGeocode();
+    await tracker.settleAll();
+    const payloadNames = sites.map((s) => s.name);
+    expect(payloadNames).toEqual(['Bill Graham Civic Auditorium']);
+    expect(MAP_POINT_FALLBACK_RE.test(payloadNames[0])).toBe(false);
+    // Exact clicked coordinate still untouched after identity resolution.
+    expect(sites[0].location).toEqual(clicked);
+  });
+
+  it('settleAll never rejects when the geocoder FAILS — the honest fallback survives', async () => {
+    const tracker = createPendingIdentityTracker();
+    tracker.track('SITE-01', Promise.reject(new Error('geocoder unreachable')));
+    tracker.track('SITE-02', Promise.reject(new Error('network down')));
+    await expect(tracker.settleAll(50)).resolves.toBeUndefined();
+    expect(tracker.pendingCount()).toBe(0);
+  });
+
+  it('settleAll is bounded by a timeout — a dead geocoder never blocks Generate', async () => {
+    const tracker = createPendingIdentityTracker();
+    tracker.track('SITE-01', new Promise(() => undefined)); // never settles
+    const started = Date.now();
+    await tracker.settleAll(60);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(50);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('multiple pending identities all settle before the snapshot', async () => {
+    let sites: CandidateSite[] = [
+      makeMapClickSite(1, 37.78, -122.40),
+      makeMapClickSite(2, 37.79, -122.41),
+    ];
+    const tracker = createPendingIdentityTracker();
+    const resolutions: Array<() => void> = [];
+    for (const site of sites) {
+      let r!: () => void;
+      const p = new Promise<void>((resolve) => { r = resolve; });
+      resolutions.push(r);
+      tracker.track(site.locationId, p.then(() => {
+        sites = applySiteIdentity(sites, site.locationId, { name: `Resolved ${site.locationId}` }).sites;
+      }));
+    }
+    for (const r of resolutions) r();
+    await tracker.settleAll();
+    expect(sites.map((s) => s.name)).toEqual(['Resolved SITE-01', 'Resolved SITE-02']);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GEOMETRY INTEGRITY — the identity/visual work must NOT touch geometry
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('geometry integrity — AOI + provider thermal geometry unchanged', () => {
+  it('13. createAoiFromSpan output is byte-stable (golden values — AOI geometry untouched)', () => {
+    const aoi = createAoiFromSpan({ latitude: 40.7128, longitude: -74.006 }, 1000, 'polygon');
+    expect(aoi.type).toBe('FeatureCollection');
+    expect(aoi.features).toHaveLength(1);
+    const ring = (aoi.features[0].geometry as { coordinates: number[][][] }).coordinates[0];
+    // Golden ring for a 1km square at (40.7128, -74.006) — locked values.
+    expect(ring.map(([lng, lat]) => [Number(lng.toFixed(9)), Number(lat.toFixed(9))])).toEqual([
+      [-74.011925624, 40.708308444],
+      [-74.000074376, 40.708308444],
+      [-74.000074376, 40.717291556],
+      [-74.011925624, 40.717291556],
+      [-74.011925624, 40.708308444],
+    ]);
+    // Circle shape produces the 32-gon approximation — ring of 33 points.
+    const circleAoi = createAoiFromSpan({ latitude: 40.7128, longitude: -74.006 }, 1000, 'circle');
+    const circleRing = (circleAoi.features[0].geometry as { coordinates: number[][][] }).coordinates[0];
+    expect(circleRing).toHaveLength(33);
+    expect(circleRing[0]).toEqual(circleRing[32]); // closed ring
+  });
+
+  it('14. the FIXTURE decision response replays provider thermal geometry VERBATIM (no stretch/clip/interpolation)', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => { throw new Error('UNEXPECTED FETCH — FIXTURE is offline'); }) as typeof fetch;
+    try {
+      const res = await decisionPOST(fixtureRequestWithNamedCandidates());
+      const data = await res.json();
+      expect(res.status).toBe(200);
+
+      // The response spatialField must be the capture's FeatureCollection,
+      // feature-for-feature, geometry-for-geometry.
+      const fixture = JSON.parse(
+        readFileSync(join(process.cwd(), 'tests/fixtures/heatmap_captured_demo.json'), 'utf8'),
+      ) as { hourlySnapshots: Array<{ aoi: PolygonAOI }> };
+      const captured = fixture.hourlySnapshots[0].aoi;
+
+      expect(data.spatialField.features).toHaveLength(captured.features.length); // 425
+      for (let i = 0; i < captured.features.length; i++) {
+        expect(data.spatialField.features[i].geometry).toEqual(captured.features[i].geometry);
+        expect(data.spatialField.features[i].properties.average_temperature)
+          .toBe(captured.features[i].properties.average_temperature);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

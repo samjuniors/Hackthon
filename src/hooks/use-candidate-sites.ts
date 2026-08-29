@@ -15,7 +15,7 @@
  * Containment (Section 9): a candidate outside the analysis AOI is flagged
  * `outsideAoi` — surfaced as an error, never silently moved or clamped.
  */
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { CandidateLocation, LocationPoint, PolygonAOI } from '@/types/domain';
 import { isPointInAoi } from '@/lib/spatial/aoi';
 
@@ -165,6 +165,49 @@ export function applySiteIdentity<T extends CandidateSite>(
 }
 
 /**
+ * Pending display-identity tracker — the Generate race guard (pure, testable).
+ *
+ * A map-click candidate is created INSTEDIATELY at the exact clicked point
+ * with the honest "Map point N" fallback, then reverse-geocoded ASYNC for a
+ * display name. Without a guard, a Generate fired in that window would bake
+ * "Map point N" into the request → decision result → history FOREVER.
+ *
+ * `track()` registers each in-flight identity promise; `settleAll()` lets
+ * Generate (and only Generate) AWAIT every pending resolution (bounded by a
+ * timeout so a dead geocoder never blocks analysis) BEFORE snapshotting the
+ * candidate list. This closes the race at the data-flow boundary — no UI
+ * patching.
+ */
+export interface PendingIdentityTracker {
+  track(locationId: string, resolution: Promise<unknown>): void;
+  settleAll(timeoutMs?: number): Promise<void>;
+  pendingCount(): number;
+}
+
+export function createPendingIdentityTracker(): PendingIdentityTracker {
+  const pending = new Map<string, Promise<unknown>>();
+  return {
+    track(locationId, resolution) {
+      // A rejected geocode must never reject settleAll — the honest fallback
+      // name is the correct outcome for a failed lookup.
+      pending.set(locationId, resolution.catch(() => undefined));
+    },
+    async settleAll(timeoutMs = 2500) {
+      const inFlight = [...pending.values()];
+      if (inFlight.length === 0) return;
+      await Promise.race([
+        Promise.all(inFlight),
+        new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+      ]);
+      pending.clear();
+    },
+    pendingCount() {
+      return pending.size;
+    },
+  };
+}
+
+/**
  * Pure candidate-move application (testable without React).
  *
  * Moving a candidate to a point OUTSIDE the canonical AOI is REJECTED:
@@ -205,21 +248,34 @@ export function useCandidateSites() {
   const [sites, setSites] = useState<CandidateSite[]>([]);
   const nextIdRef = useRef(1);
   const sitesRef = useRef<CandidateSite[]>([]);
-  useEffect(() => {
-    sitesRef.current = sites;
-  }, [sites]);
+  // In-flight reverse-geocode identity resolutions — Generate awaits these
+  // (settleIdentities) so the request payload NEVER carries an unresolved
+  // "Map point N" fallback for a candidate whose name is about to resolve.
+  const identityTrackerRef = useRef<PendingIdentityTracker>(createPendingIdentityTracker());
+
+  /**
+   * Commit the NEXT sites array as the single synchronous source of truth:
+   * sitesRef is updated IMMEDIATELY (not in an effect) so a Generate in the
+   * same tick — or right after an awaited identity resolution — always reads
+   * the CURRENT candidate state, never a stale pre-mutation snapshot.
+   */
+  const commitSites = useCallback((next: CandidateSite[]) => {
+    sitesRef.current = next;
+    setSites(next);
+  }, []);
 
   const addSiteAt = useCallback((lat: number, lng: number, name?: string, origin: CandidateSite['origin'] = 'map-click'): CandidateSite => {
-    const id = `SITE-${String(nextIdRef.current++).padStart(2, '0')}`;
+    const id = `SITE-${String(nextIdRef.current).padStart(2, '0')}`;
+    nextIdRef.current++;
     const site: CandidateSite = {
       locationId: id,
       name: name || `Map point ${nextIdRef.current - 1}`,
       location: { latitude: Number(lat.toFixed(6)), longitude: Number(lng.toFixed(6)) },
       origin,
     };
-    setSites((prev) => [...prev, site]);
+    commitSites([...sitesRef.current, site]);
     return site;
-  }, []);
+  }, [commitSites]);
 
   /**
    * Add a candidate from a SEARCH result.
@@ -240,11 +296,11 @@ export function useCandidateSites() {
       );
       if (outcome.status === 'added') {
         nextIdRef.current++;
-        setSites((prev) => [...prev, outcome.site]);
+        commitSites([...sitesRef.current, outcome.site]);
       }
       return outcome;
     },
-    [],
+    [commitSites],
   );
 
   /**
@@ -259,19 +315,32 @@ export function useCandidateSites() {
     (locationId: string, identity: { name?: string; address?: string; state?: string }, options?: { force?: boolean }): boolean => {
       const result = applySiteIdentity(sitesRef.current, locationId, identity, options);
       if (!result.applied) return false;
-      setSites(result.sites);
+      commitSites(result.sites);
       return true;
     },
-    [],
+    [commitSites],
   );
 
-  const removeSite = useCallback((locationId: string) => {
-    setSites((prev) => prev.filter((s) => s.locationId !== locationId));
+  /**
+   * Register an in-flight reverse-geocode resolution for a candidate. Generate
+   * awaits every tracked resolution (bounded by a timeout) before building its
+   * request payload — see createPendingIdentityTracker.
+   */
+  const trackIdentity = useCallback((locationId: string, resolution: Promise<unknown>) => {
+    identityTrackerRef.current.track(locationId, resolution);
   }, []);
 
+  /** Await all pending identity resolutions (≤ timeoutMs). Call before
+   * snapshotting candidates for a decision request. */
+  const settleIdentities = useCallback((timeoutMs?: number) => identityTrackerRef.current.settleAll(timeoutMs), []);
+
+  const removeSite = useCallback((locationId: string) => {
+    commitSites(sitesRef.current.filter((s) => s.locationId !== locationId));
+  }, [commitSites]);
+
   const renameSite = useCallback((locationId: string, name: string) => {
-    setSites((prev) => prev.map((s) => (s.locationId === locationId ? { ...s, name } : s)));
-  }, []);
+    commitSites(sitesRef.current.map((s) => (s.locationId === locationId ? { ...s, name } : s)));
+  }, [commitSites]);
 
   /**
    * Move a candidate to a new point (drag commit). When an AOI is provided
@@ -286,13 +355,13 @@ export function useCandidateSites() {
       aoi,
     );
     if (!result.accepted) return false;
-    setSites(result.sites as CandidateSite[]);
+    commitSites(result.sites as CandidateSite[]);
     return true;
-  }, []);
+  }, [commitSites]);
 
   const clearSites = useCallback(() => {
-    setSites([]);
-  }, []);
+    commitSites([]);
+  }, [commitSites]);
 
   /**
    * Replace the entire site list with the given candidates, preserving their
@@ -303,7 +372,7 @@ export function useCandidateSites() {
    * `recommendedLocationId === candidate.locationId` must keep holding).
    */
   const replaceSites = useCallback((sites: CandidateLocation[]) => {
-    setSites(sites.map((s) => ({
+    commitSites(sites.map((s) => ({
       locationId: s.locationId,
       name: s.name,
       location: s.location,
@@ -320,24 +389,22 @@ export function useCandidateSites() {
         if (n > nextIdRef.current) nextIdRef.current = n;
       }
     }
-  }, []);
+  }, [commitSites]);
 
   /** Re-validate every site against the current AOI (flags outsideAoi only if changed). */
   const validateAgainstAoi = useCallback((aoi: PolygonAOI | null) => {
     if (!aoi) return;
-    setSites((prev) => {
-      let changed = false;
-      const next = prev.map((s) => {
-        const outside = !isPointInAoi(s.location, aoi);
-        if (s.outsideAoi !== outside) {
-          changed = true;
-          return { ...s, outsideAoi: outside };
-        }
-        return s;
-      });
-      return changed ? next : prev;
+    let changed = false;
+    const next = sitesRef.current.map((s) => {
+      const outside = !isPointInAoi(s.location, aoi);
+      if (s.outsideAoi !== outside) {
+        changed = true;
+        return { ...s, outsideAoi: outside };
+      }
+      return s;
     });
-  }, []);
+    if (changed) commitSites(next);
+  }, [commitSites]);
 
-  return { sites, addSiteAt, addSiteFromSearch, removeSite, renameSite, moveSite, clearSites, replaceSites, applyIdentity, validateAgainstAoi };
+  return { sites, addSiteAt, addSiteFromSearch, removeSite, renameSite, moveSite, clearSites, replaceSites, applyIdentity, trackIdentity, settleIdentities, validateAgainstAoi };
 }

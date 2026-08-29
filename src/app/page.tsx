@@ -1108,10 +1108,11 @@ export default function WorkspacePage() {
     // The geocoder result is DISPLAY metadata ONLY: the exact clicked
     // coordinate stays the spatial authority (never snapped to the geocoded
     // point), and an already-named candidate is never relabelled.
-    // (No epoch guard: adding another site must not cancel a pending identity
-    // resolution — applySiteIdentity itself no-ops for removed or renamed
-    // sites, so a late result can never mislabel anything.)
-    fetch(`/api/location/search?lat=${lat}&lon=${lng}`)
+    // The resolution is TRACKED so Generate AWAITS it (settleIdentities)
+    // before snapshotting candidates — closing the race where a Generate
+    // fired in this window would permanently bake "Map point N" into the
+    // decision result and history.
+    const identityPromise = fetch(`/api/location/search?lat=${lat}&lon=${lng}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data?.success || !data.location) return; // honest fallback stays
@@ -1125,6 +1126,7 @@ export default function WorkspacePage() {
       .catch(() => {
         // Geocoder unreachable — the honest "Map point N" fallback stays.
       });
+    candidateSites.trackIdentity(site.locationId, identityPromise);
   }, [candidateSites, clearResults, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
 
   const handleRemoveSite = useCallback((locationId: string) => {
@@ -1609,10 +1611,15 @@ export default function WorkspacePage() {
     }
   }, [fetchExplanation]);
 
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
     setAddSiteMode(false);
     const m = modeRef.current;
     const loc = selectedLocationRef.current;
+    // RACE GUARD: await any in-flight reverse-geocode identity resolutions
+    // (bounded ≤ 2.5s) BEFORE snapshotting candidates, so the request payload
+    // carries the resolved display name — never a stale "Map point N" for a
+    // candidate whose name is about to resolve.
+    await candidateSites.settleIdentities();
     runDecisionPipeline(
       loc,
       m === 'FIXTURE' ? FIXTURE_CAPTURE_REQUEST_AOI : createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape),
@@ -1629,11 +1636,13 @@ export default function WorkspacePage() {
           }))
         : undefined
     );
-  }, [runDecisionPipeline, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+  }, [candidateSites, runDecisionPipeline, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
 
-  const handleRetry = useCallback(() => {
+  const handleRetry = useCallback(async () => {
     const m = modeRef.current;
     const loc = selectedLocationRef.current;
+    // Same race guard as Generate — retries must also see resolved identities.
+    await candidateSites.settleIdentities();
     runDecisionPipeline(
       loc,
       m === 'FIXTURE' ? FIXTURE_CAPTURE_REQUEST_AOI : createAoiFromSpan(aoiCenterRef.current, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape),
@@ -1650,7 +1659,7 @@ export default function WorkspacePage() {
           }))
         : undefined
     );
-  }, [runDecisionPipeline, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
+  }, [candidateSites, runDecisionPipeline, prefs.analysisAoiSpanMetres, prefs.analysisAreaShape]);
 
   // Alternative-location buttons share the FULL location-selection semantics:
   // DEMO + capture → load the captured dataset (free); DEMO without capture →
@@ -1893,6 +1902,7 @@ export default function WorkspacePage() {
                 cameraBehavior={cameraBehavior}
                 cameraNonce={cameraNonce}
                 cameraRevealPoint={cameraRevealPoint}
+                coverageStatus={coverageStatus?.status}
               />
             </ThermalMapCanvas>
 

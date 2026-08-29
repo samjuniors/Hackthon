@@ -247,6 +247,13 @@ interface ThermalMapProps {
    * point is not already visible (used after a search-added candidate).
    */
   cameraRevealPoint?: { latitude: number; longitude: number } | null;
+  /**
+   * Honest provider-coverage status of the CURRENT field vs the AOI — drives
+   * the "coverage gap" legend row. 'partial' = provider cells cover only part
+   * of the requested area (the hatched gap shows where NO provider data
+   * exists — never fabricated).
+   */
+  coverageStatus?: 'full' | 'partial' | 'none';
 }
 
 /** Empty FeatureCollection sentinel for source initialization / clear. */
@@ -398,6 +405,38 @@ const THERMAL_COLOR_EXPRESSION: unknown[] = [
 //   Invalid → red outline, retained visibly.
 const AOI_LIVE_COLOR = { dark: '#22d3ee', light: '#0e7490' };
 const AOI_CAPTURE_COLOR = { dark: '#f5a524', light: '#b45309' };
+
+/**
+ * Build a seamless 45° diagonal-hatch pattern tile (ImageData) for the AOI
+ * coverage-gap layer. One corner-to-corner diagonal per tile tiles perfectly
+ * into parallel diagonal lines — a quiet "requested, not covered" texture.
+ * DISPLAY ONLY: no geometry is altered, no coverage is fabricated; provider
+ * cells simply paint OVER the hatch wherever genuine data exists.
+ */
+function makeHatchPatternImageData(lineColor: string, tileSize = 14): ImageData | null {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = tileSize;
+  canvas.height = tileSize;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, tileSize, tileSize);
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(tileSize, tileSize);
+  ctx.stroke();
+  return ctx.getImageData(0, 0, tileSize, tileSize);
+}
+
+/** Hatch pattern ids + theme-tinted colors (slate tones; dark theme needs a
+ * BRIGHTER line to read against the dark canvas — the gap must be obvious). */
+const HATCH_IMAGE_DARK = 'aoi-hatch-dark';
+const HATCH_IMAGE_LIGHT = 'aoi-hatch-light';
+const HATCH_LINE_DARK = 'rgba(186, 199, 216, 0.62)';
+const HATCH_LINE_LIGHT = 'rgba(71, 85, 105, 0.42)';
+const hatchPatternFor = (isDark: boolean) => (isDark ? HATCH_IMAGE_DARK : HATCH_IMAGE_LIGHT);
 const AOI_INVALID_COLOR = { dark: '#f97066', light: '#d92d20' };
 
 /** Apply valid/invalid/captured paint to the canonical AOI layers. */
@@ -421,7 +460,9 @@ function applyAoiValidityPaint(
 
     if (map.getLayer('aoi-outline')) {
       map.setPaintProperty('aoi-outline', 'line-color', lineColor);
-      map.setPaintProperty('aoi-outline', 'line-width', invalid ? 3 : 2);
+      // Crisp boundary (2.5px) — the requested analysis area must read at a
+      // glance against both the thermal field and the basemap.
+      map.setPaintProperty('aoi-outline', 'line-width', invalid ? 3.5 : 2.5);
       map.setPaintProperty('aoi-outline', 'line-dasharray', captured && !invalid ? [4, 3] : [1, 0]);
     }
     if (map.getLayer('aoi-fill')) {
@@ -517,6 +558,7 @@ export function ThermalMap({
   cameraBehavior = 'fit-aoi',
   cameraNonce = 0,
   cameraRevealPoint = null,
+  coverageStatus,
 }: ThermalMapProps) {
   const { theme } = useTheme();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -624,7 +666,10 @@ export function ThermalMap({
       }
       if (map.getLayer('region-mask-fill')) {
         map.setPaintProperty('region-mask-fill', 'fill-color', isDark ? '#05070c' : '#344054');
-        map.setPaintProperty('region-mask-fill', 'fill-opacity', isDark ? 0.38 : 0.22);
+        // Quieter dim (was 0.38/0.22): geographic context — streets, blocks,
+        // landmarks — must stay readable OUTSIDE the analysis area in both
+        // themes. The region mask is context, not a blackout.
+        map.setPaintProperty('region-mask-fill', 'fill-opacity', isDark ? 0.26 : 0.16);
       }
       if (map.getLayer('carto-labels-dark-layer')) {
         map.setLayoutProperty('carto-labels-dark-layer', 'visibility', isDark && (layerVisibility.labels !== false) ? 'visible' : 'none');
@@ -633,10 +678,13 @@ export function ThermalMap({
         map.setLayoutProperty('carto-labels-light-layer', 'visibility', !isDark && (layerVisibility.labels !== false) ? 'visible' : 'none');
       }
       if (map.getLayer('thermal-tiles-fill')) {
-        map.setPaintProperty('thermal-tiles-fill', 'fill-opacity', isDark ? 0.88 : 0.8);
+        map.setPaintProperty('thermal-tiles-fill', 'fill-opacity', isDark ? 0.92 : 0.88);
       }
       if (map.getLayer('thermal-tiles-seam')) {
         map.setPaintProperty('thermal-tiles-seam', 'line-opacity', isDark ? 0.88 : 0.8);
+      }
+      if (map.getLayer('aoi-gap-hatch')) {
+        map.setPaintProperty('aoi-gap-hatch', 'fill-pattern', hatchPatternFor(isDark));
       }
       if (map.getLayer('region-boundary-outline')) {
         map.setPaintProperty('region-boundary-outline', 'line-color', isDark ? '#8a94a8' : '#98a2b3');
@@ -717,7 +765,9 @@ export function ThermalMap({
             source: 'carto-base-dark',
             minzoom: 0,
             maxzoom: 22,
-            paint: { 'raster-opacity': isDark ? 0.95 : 0 },
+            // brightness-min lifts the Esri dark canvas off pure black so the
+            // street grid stays readable in dark mode (context, not a void).
+            paint: { 'raster-opacity': isDark ? 0.95 : 0, 'raster-brightness-min': 0.09 },
             layout: { visibility: isDark ? 'visible' : 'none' },
           },
           {
@@ -733,7 +783,7 @@ export function ThermalMap({
             id: 'carto-labels-dark-layer',
             type: 'raster',
             source: 'carto-labels-dark',
-            paint: { 'raster-opacity': isDark ? 0.92 : 0 },
+            paint: { 'raster-opacity': isDark ? 1 : 0 },
             layout: { visibility: isDark ? 'visible' : 'none' },
           },
           {
@@ -796,7 +846,7 @@ export function ThermalMap({
           source: 'region-mask',
           paint: {
             'fill-color': isDark ? '#05070c' : '#344054',
-            'fill-opacity': isDark ? 0.38 : 0.22,
+            'fill-opacity': isDark ? 0.26 : 0.16,
           },
         });
       }
@@ -827,6 +877,33 @@ export function ThermalMap({
         });
       }
 
+      // ── AOI coverage-gap hatch (UNDER the thermal cells) ──
+      // A quiet diagonal-hatch texture fills the REQUESTED analysis area;
+      // genuine provider cells paint OVER it. Wherever the hatch stays
+      // visible, the provider returned NO data — the coverage gap is shown
+      // HONESTLY (never filled, never fabricated). Register both theme
+      // variants of the pattern up front.
+      for (const [imageId, lineColor] of [
+        [HATCH_IMAGE_DARK, HATCH_LINE_DARK],
+        [HATCH_IMAGE_LIGHT, HATCH_LINE_LIGHT],
+      ] as const) {
+        if (!map.hasImage(imageId)) {
+          const pattern = makeHatchPatternImageData(lineColor);
+          if (pattern) map.addImage(imageId, pattern);
+        }
+      }
+      if (!map.getLayer('aoi-gap-hatch')) {
+        map.addLayer({
+          id: 'aoi-gap-hatch',
+          type: 'fill',
+          source: 'analysis-aoi',
+          paint: {
+            'fill-pattern': hatchPatternFor(isDark),
+            'fill-opacity': 1,
+          },
+        });
+      }
+
       // Thermal cells — FILL ONLY (no visible outline). Provider geometry is
       // rendered verbatim; the continuous ramp makes adjacent cells read as
       // one thermal surface while retaining per-cell color variation.
@@ -837,7 +914,7 @@ export function ThermalMap({
           source: 'thermal-tiles',
           paint: {
             'fill-color': THERMAL_COLOR_EXPRESSION as never,
-            'fill-opacity': isDark ? 0.88 : 0.8,
+            'fill-opacity': isDark ? 0.92 : 0.88,
           },
         });
       }
@@ -880,7 +957,7 @@ export function ThermalMap({
           source: 'analysis-aoi',
           paint: {
             'line-color': isDark ? AOI_LIVE_COLOR.dark : AOI_LIVE_COLOR.light,
-            'line-width': 2.0,
+            'line-width': 2.5,
             'line-opacity': 1.0,
           },
         });
@@ -993,6 +1070,11 @@ export function ThermalMap({
       if (map.getLayer('aoi-fill')) {
         map.setLayoutProperty('aoi-fill', 'visibility', showAoi ? 'visible' : 'none');
         map.setLayoutProperty('aoi-outline', 'visibility', showAoi ? 'visible' : 'none');
+      }
+      if (map.getLayer('aoi-gap-hatch')) {
+        // The gap hatch is part of the AOI visual language — hidden when the
+        // AOI layer is toggled off.
+        map.setLayoutProperty('aoi-gap-hatch', 'visibility', showAoi ? 'visible' : 'none');
       }
       if (map.getLayer('thermal-tiles-fill')) {
         map.setLayoutProperty('thermal-tiles-fill', 'visibility', showThermal ? 'visible' : 'none');
@@ -1782,11 +1864,45 @@ export function ThermalMap({
           ))}
         </div>
         <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-border/60">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan flex-shrink-0" />
+          <span
+            className="w-3 h-2.5 rounded-[2px] flex-shrink-0 border-2"
+            style={{ borderColor: 'var(--accent-cyan)', background: 'transparent' }}
+            aria-hidden="true"
+          />
           <span className="text-[9px] text-text-dimmed uppercase tracking-wide">
-            FortyGuard provider cells
+            Requested analysis area
           </span>
         </div>
+        <div className="flex items-center gap-1.5 mt-1">
+          <span
+            className="w-1.5 h-1.5 rounded-full bg-accent-cyan flex-shrink-0"
+            aria-hidden="true"
+          />
+          <span className="text-[9px] text-text-dimmed uppercase tracking-wide">
+            FortyGuard provider coverage
+          </span>
+        </div>
+        {coverageStatus === 'partial' && (
+          <div
+            className="flex items-center gap-1.5 mt-1"
+            data-testid="map-legend-coverage-gap"
+            title="Provider cells cover only part of the requested area. The hatched region marks where FortyGuard returned NO thermal data — never filled or interpolated."
+          >
+            <span
+              className="w-3 h-2.5 rounded-[2px] flex-shrink-0 border"
+              style={{
+                borderColor: 'var(--border)',
+                backgroundImage:
+                  'repeating-linear-gradient(45deg, var(--text-muted) 0 1px, transparent 1px 4px)',
+                opacity: 0.85,
+              }}
+              aria-hidden="true"
+            />
+            <span className="text-[9px] text-text-muted uppercase tracking-wide">
+              Coverage gap · no provider data
+            </span>
+          </div>
+        )}
       </div>
 
       {/* DEMO captured analysis-area label */}

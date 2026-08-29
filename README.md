@@ -132,3 +132,40 @@ GEMINI_API_KEY=...               # optional AI narrator
 ```
 
 See `worklog.md` for the full engineering history and verification evidence.
+
+## Deploy to Vercel
+
+The app is Vercel-ready with **zero configuration**: `next.config.ts` detects
+Vercel automatically (standalone output is only emitted for self-hosted
+Docker), the post-build script no-ops on Vercel, and the DEMO fixture is
+bundled at build time via a static ES import — no database, no extra services.
+
+**Zero-env deploy (DEMO mode):** import the repo in Vercel (framework preset
+*Next.js*, package manager *bun* auto-detected from `bun.lock` + the
+`packageManager` field), keep every environment variable empty, and deploy.
+The app boots in DEMO mode and replays the captured Lower Manhattan thermal
+field with the full deterministic decision pipeline — no FortyGuard key, no
+credits, no cost.
+
+**LIVE mode (real FortyGuard data):** add these environment variables in
+*Project → Settings → Environment Variables* (server-side only — nothing is
+exposed to the browser):
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `FORTYGUARD_API_KEY` | for LIVE | FortyGuard API key (LIVE requests spend credits — see *Credit-safe architecture* above) |
+| `FORTYGUARD_DATA_SOURCE` | no | `FIXTURE` (default) or `LIVE` — boot-time default data source |
+| `FORTYGUARD_API_BASE_URL` | no | Defaults to `https://api.fortyguard.com` |
+| `GEMINI_API_KEY` | no | Optional AI narrator (falls back → Claude → Z.ai → deterministic) |
+| `ANTHROPIC_API_KEY` | no | Optional secondary AI narrator |
+
+Notes:
+
+- **No `DATABASE_URL` needed.** Prisma/SQLite is scaffolded but inert — no
+  route imports it. Analysis history is persisted client-side in IndexedDB,
+  so every deployment (including Vercel's read-only filesystem) works
+  unchanged.
+- Users can switch DEMO ↔ LIVE at runtime from the in-app Settings drawer;
+  the boot-time env var only sets the default.
+- Never commit API keys. `.env` is gitignored; configure secrets in the
+  Vercel dashboard (or `vercel env add FORTYGUARD_API_KEY`).

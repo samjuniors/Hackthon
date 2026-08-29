@@ -61,3 +61,26 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 yarn.lock
 package-lock.json
+.npmrc
+
+# local database (Prisma scaffolded but unused at runtime — never ship the file)
+/db/
+*.db
+
+# sandbox / dev-machine artifacts (not part of the shipped app)
+/skills/
+/tool-results/
+/agent-ctx/
+/.zscripts/
+/mini-services/
+/examples/
+/download/
+/screenshots/
+Caddyfile
+metadata.json
+us-states-raw.json
+state-coords-output.txt
+test_output.txt
+CLAUDE.md
+AGENTS.md
+tool-results/

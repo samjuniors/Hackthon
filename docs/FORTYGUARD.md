@@ -1,7 +1,7 @@
 # FortyGuard Integration & Reconnaissance Specifications
 
 **Status:** VERIFIED LIVE & EVIDENCE GATE LOCKED  
-**Last Updated:** 2026-08-28  
+**Last Updated:** 2026-08-29  
 **Milestone:** M4 — Evidence Gates & Vertical Slice 1  
 
 ---
@@ -67,13 +67,33 @@ limit: 10 mi² (this plan's own area limit is UNKNOWN)" — never a fabricated
 - **Authentication Scheme:** HTTP Header `api-key: <KEY>`.
 - **Base URL:** `https://api.fortyguard.com`
 
+**Current live account state (probed 2026-08-29 via the zero-credit
+`fetch-api-key-usage` endpoint):** the key configured in this environment is
+**credit-exhausted** — `6,994,120` cycle credits used against the `2,000,000`
+allocation (remaining `-4,994,120`), billed across `1,656` heatmap activities
+plus `2` env_params activities. Every `/v1/heatmap` request returns HTTP 402
+verbatim: *"Insufficient credits: this request costs 4220 credits and 0 remain
+on your API key."* The application surfaces this as
+`FORTYGUARD_CREDITS_EXHAUSTED` with the provider text quoted — never a silent
+DEMO fallback, and the failed analysis is never saved to history. (The
+production deployment's key — a separate credited key observed 2026-08-28 —
+verified the LIVE pipeline end-to-end: 1 km AOI @ 60 m → 187 cells; 2 km span
+→ 905 cells.)
+
+Per-call credit costs are **empirical, not documented**: the provider docs
+state only that credits are deducted on Completed activities. Observed:
+heatmap `4,220` per completed call (consistent across three AOI sizes; the
+ledger average `6,988,320 / 1,656 = 4,220.6` agrees); env_params `2,900` per
+call (`5,800` across 2 calls). The earlier `2,000`-per-call figure was an
+unverified assumption and is retired.
+
 ---
 
 ## 2. Evidence Gate Results (Empirical Verification)
 
 ### GATE 1 — `filter_type 2` Schema & Strategy
 - **Observed Behavior:** Multi-hour range queries (`filter_type: 2`) perform asynchronous multi-hour surface aggregation.
-- **Decision:** For candidate-window sliding evaluation (which requires hour-by-hour temporal resolution), single-hour snapshots (`filter_type: 1`) are retained and cached in-memory by `(location, date, hour)` hash.
+- **Decision:** For candidate-window sliding evaluation (which requires hour-by-hour temporal resolution), every evaluated hour is its own single-hour request (`filter_type: 1`, UTC date/hour — the verified wire contract; the default time mode is single-hour, i.e. exactly one heatmap request per Generate). Repeat requests are served from the session-level deterministic request-identity cache (`buildHeatmapCacheKey` in `src/lib/fortyguard/adapter.ts` — AOI geometry + date/time + filter_type + granularity + analytic parameters) instead of creating another billable activity.
 
 ### GATE 2 — `average_temperature` Semantics (Reconciled & Gated)
 - **Property in Payload:** `average_temperature` (accompanied by `min_temperature` and `max_temperature`) in GeoJSON feature properties.
@@ -91,7 +111,12 @@ limit: 10 mi² (this plan's own area limit is UNKNOWN)" — never a fabricated
 
 | Endpoint | Method | Key Capabilities Verified | Credit Cost | Execution Pattern |
 | :--- | :--- | :--- | :--- | :--- |
-| `/v1/heatmap` | `POST` | GeoJSON polygon tiles (`60m`, `80m`, `100m`). Supports single-hour snapshot (`filter_type: 1`), multi-hour range (`filter_type: 2`). Analytic types: `tcm`, `time_of_measure`, `exceedance`, `persistence`. Forecast: Up to +12 hours. | `2,000` / call | Async (`activity_id` $\to$ Polling) |
-| `/v1/env_params` | `POST` | Point metrics: Wet-Bulb Temp (°C), Heat Index (°C), Apparent Temp (°C), Relative Humidity (%), US AQI, Solar Irradiance. Requires `analysis` array. | `2,000` / call | Async (`activity_id` $\to$ Polling) |
+| `/v1/heatmap` | `POST` | GeoJSON polygon tiles (`60m`, `80m`, `100m`). Supports single-hour snapshot (`filter_type: 1`), multi-hour range (`filter_type: 2`). Analytic types: `tcm`, `time_of_measure`, `exceedance`, `persistence`. Forecast: Up to +12 hours. | `4,220` / completed call *(empirical — see §1)* | Async (`activity_id` $\to$ Polling) |
+| `/v1/env_params` | `POST` | Point metrics: Wet-Bulb Temp (°C), Heat Index (°C), Apparent Temp (°C), Relative Humidity (%), US AQI, Solar Irradiance. Requires `analysis` array. | `2,900` / call *(empirical — see §1)* | Async (`activity_id` $\to$ Polling) |
 | `/v1/status/{activity_id}` | `GET` | Universal status polling endpoint (`Processing`, `Completed`, `Failed`). | `0` | Synchronous polling |
 | `/v1/system/fetch-api-key-usage` | `POST` | Credit usage, active plan status, and per-activity usage metrics. Requires `api_key` in request body. | `0` | Synchronous |
+
+Credit costs in this table are **empirically observed** (ledger totals ÷ call
+counts; the verbatim 402 message quotes `4220`), **not documented** — the
+provider docs specify only that credits are deducted on Completed activities
+and that constraint violations (400) are never charged.

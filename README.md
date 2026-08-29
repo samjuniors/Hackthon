@@ -12,16 +12,27 @@ Built for the FortyGuard Hackathon'26.
 
 | | DEMO | LIVE |
 |---|---|---|
-| Source | Captured FortyGuard fixture (`tests/fixtures/heatmap_hourly_fixture.json`) | Real FortyGuard `/v1/heatmap` API |
-| Provider calls | **Zero** — fully offline | Consumes credits (2,000 per successful call per verified plan recon) |
-| Coverage | Manhattan capture only (lat ~40.712, lon ~-74.008) | Anywhere the account has coverage |
-| Temporal label | Honest capture window (August 21, 2026 · 04:00–15:00 EDT, captured FortyGuard) | The exact user-selected date/time |
+| Source | Captured FortyGuard fixture (`tests/fixtures/heatmap_captured_demo.json`) — one real `/v1/heatmap` response, 425 verbatim provider cells at 100 m granularity | Real FortyGuard `/v1/heatmap` API |
+| Provider calls | **Zero** — fully offline replay | Consumes credits (empirically 4,220 per completed heatmap call — see `docs/FORTYGUARD.md`) |
+| Coverage | Lower Manhattan capture only (the captured field's extent) | Anywhere the account has coverage (documented: United States) |
+| Temporal label | Single captured model hour — August 14, 2026 · 12:00 UTC (fetched from FortyGuard on 2026-08-21) | The exact user-selected date/time |
 | UI structure | Identical to LIVE | Identical to DEMO |
+
+DEMO is a verbatim captured replay: the adapter looks up the captured hour by
+**exact UTC timestamp** and returns the captured cells unchanged — never
+subdivided, re-temperatured, or interpolated. An uncaptured hour is honestly
+refused (`IncompleteTemporalCoverageError` — "DEMO never fabricates additional
+hours"); a location outside the captured extent is honestly refused
+(`OutsideCoverageError`). DEMO's WHEN anchors to the captured hour and is
+displayed in UTC — never "Today".
 
 Only provenance differs. There is no fake demo map. A failed LIVE request is
 **never** silently replaced by DEMO data — the UI halts with an explicit
 "Analysis Halted / FortyGuard provider error" banner offering
-**Retry Live** or **Continue with Verified Demo**.
+**Retry Live** or **Switch to DEMO mode**. On this environment's key LIVE is
+currently **credit-exhausted**: every request returns HTTP 402 ("Insufficient
+credits: this request costs 4220 credits and 0 remain"), surfaced verbatim as
+`FORTYGUARD_CREDITS_EXHAUSTED` with no DEMO fallback and no history entry.
 
 ## Credit-safe architecture
 
@@ -49,16 +60,23 @@ August 26, 2026 · 05:00 AM–08:00 AM PDT
 ```
 
 - Date + Start + End are explicit inputs; duration is derived.
-- Time modes map to the verified FortyGuard filter types:
-  1 = single hour, 2 = range of hours (default workflow), 3 = single day.
-- DEMO mode anchors the WHEN to the fixture capture — never "Today".
+- The default time mode is **single-hour** (exactly one heatmap request per
+  Generate). Range-of-hours remains available in Settings; on the wire every
+  evaluated hour is its own single-hour request (`filter_type: 1`, UTC
+  date/hour, bounded concurrency) — the verified wire contract. The provider's
+  `filter_type: 2/3` modes exist in the schema but are not used by this
+  app's workflow.
+- DEMO mode anchors the WHEN to the single captured hour — never "Today".
 - Local→UTC conversion happens at the server adapter boundary
   (`src/lib/temporal/server-conversion.ts`). AI providers never touch dates.
 
 ## Canonical Analysis AOI
 
 One geometry (`src/lib/spatial/aoi.ts`) is both rendered on the map AND sent
-to FortyGuard — polygon (square) or circle (32-gon), 60/80/100 m resolution.
+to FortyGuard — square (side length) or circle (32-gon approximating the
+diameter), span presets 250 / 400 / 1000 / 2000 / 5000 m, and a LIVE
+resolution choice of 60 / 80 / 100 m (DEMO always replays the captured
+100 m field — never a user-selected resolution the capture does not contain).
 There is no separate "display rectangle". Requests exceeding the documented
 AOI limit are rejected with a validation error; nothing is silently shrunk.
 The limit is labelled *documented* (not confirmed by the key's usage
@@ -96,12 +114,12 @@ automatically.
 ## Development
 
 ```bash
-pnpm install        # pnpm v11 (see pnpm-workspace.yaml)
-pnpm dev            # Next.js dev server on :3000
-pnpm typecheck      # tsc --noEmit
-pnpm lint           # eslint .
-pnpm test           # vitest run (offline unit tests)
-pnpm build          # production build + standalone copy
+bun install         # bun is the canonical package manager (bun.lock)
+bun run dev         # Next.js dev server on :3000
+bun run typecheck   # tsc --noEmit
+bun run lint        # eslint .
+bun run test        # vitest run (offline unit tests)
+bun run build       # production build + standalone copy
 ```
 
 Environment (server-side only, `.env.local`, never committed):

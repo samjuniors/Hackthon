@@ -4,10 +4,7 @@ import {
   classifyTemporalWindow,
   ENGINE_MAX_WINDOW_HOURS,
 } from '@/lib/temporal/validation';
-import {
-  buildFixtureTemporalInput,
-  todayLocalDate,
-} from '@/lib/temporal/analysis-window';
+import { buildFixtureTemporalInput } from '@/lib/temporal/analysis-window';
 import { localToUtcIso } from '@/lib/temporal/server-conversion';
 
 /**
@@ -126,8 +123,13 @@ describe('documented provider temporal bounds (pre-flight, zero-credit blocks)',
   });
 
   it('accepts today by default (defaultTemporalInput date == today in the location timezone)', () => {
+    // "Today" is measured against the fixed NOW, not the wall clock — otherwise
+    // this test breaks the moment the real calendar passes LA midnight of NOW.
+    const nowLaDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Los_Angeles',
+    }).format(NOW);
     const r = validateTemporalWindow(
-      input({ date: todayLocalDate('America/Los_Angeles'), startTime: '05:00', endTime: '06:00' }),
+      input({ date: nowLaDate, startTime: '05:00', endTime: '06:00' }),
       'America/Los_Angeles',
       NOW,
     );

@@ -69,15 +69,11 @@ export function LocationSearch({
     : getPresetLocations(mode === 'FIXTURE', activeStateFilter);
 
   // Debounced remote geocoding fetch for arbitrary global addresses and landmarks.
-  // Stale results for a PREVIOUS query are cleared immediately so they can
-  // never show under the current one (same contract as the candidate search).
   useEffect(() => {
     const q = query.trim();
     if (!q || q.length < 2) {
-      setRemoteResults([]);
       return;
     }
-    setRemoteResults([]);
     const controller = new AbortController();
     const timeout = setTimeout(async () => {
       setIsSearching(true);
@@ -89,7 +85,11 @@ export function LocationSearch({
           const data = await res.json();
           if (data?.success && Array.isArray(data.results)) {
             setRemoteResults(data.results);
+          } else {
+            setRemoteResults([]);
           }
+        } else {
+          setRemoteResults([]);
         }
       } catch {
         // Ignore aborts

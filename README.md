@@ -114,17 +114,30 @@ automatically.
 ## Development
 
 ```bash
-bun install         # bun is the canonical package manager (bun.lock)
+# Using Bun (recommended — matches bun.lock):
+bun install
 bun run dev         # Next.js dev server on :3000
 bun run typecheck   # tsc --noEmit
 bun run lint        # eslint .
-bun run test        # vitest run (offline unit tests)
-bun run build       # production build + standalone copy
+bun run test        # vitest run (441 offline unit & integration tests)
+bun run build       # production build + postbuild verification
+
+# Or using npm:
+npm install
+npm run dev
+npm run typecheck
+npm run lint
+npm run test
+npm run build
 ```
 
-Environment (server-side only, `.env.local`, never committed):
+Environment setup (server-side only, `.env.local`, never committed — template provided in `.env.example`):
 
+```bash
+cp .env.example .env.local
 ```
+
+```env
 FORTYGUARD_API_BASE_URL=https://api.fortyguard.com
 FORTYGUARD_API_KEY=...
 FORTYGUARD_DATA_SOURCE=FIXTURE   # FIXTURE (demo) | LIVE

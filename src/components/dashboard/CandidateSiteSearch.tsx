@@ -91,15 +91,12 @@ export function CandidateSiteSearch({
     : getPresetLocations(mode === 'FIXTURE', activeStateFilter);
 
   // Debounced remote geocoding (same credit-free endpoint as the
-  // operating-location search — never FortyGuard). Stale results for a previous
-  // query are cleared immediately so they can never show for the current one.
+  // operating-location search — never FortyGuard).
   useEffect(() => {
     const q = query.trim();
     if (!q || q.length < 2) {
-      setRemoteResults([]);
       return;
     }
-    setRemoteResults([]);
     const controller = new AbortController();
     const timeout = setTimeout(async () => {
       setIsSearching(true);
@@ -111,7 +108,11 @@ export function CandidateSiteSearch({
           const data = await res.json();
           if (data?.success && Array.isArray(data.results)) {
             setRemoteResults(data.results as NamedLocation[]);
+          } else {
+            setRemoteResults([]);
           }
+        } else {
+          setRemoteResults([]);
         }
       } catch {
         // Abort/network errors keep the (filtered) catalog results — honest.

@@ -1345,6 +1345,10 @@ export default function WorkspacePage() {
   // request (zero provider calls), WITHOUT recalculation. The saved thermal
   // FeatureCollection is AUTHORITATIVE for the restored analysis.
   // ───────────────────────────────────────────────────────────────────────
+
+  // Bumping a dedicated epoch state makes this fire in the same commit.
+  const [restoreEpoch, setRestoreEpoch] = useState(0);
+
   const handleRestoreHistory = useCallback((record: HistoryRecord) => {
     // Invalidate any in-flight pipeline first — a restore is atomic.
     activeRequestIdRef.current++;
@@ -1435,8 +1439,6 @@ export default function WorkspacePage() {
 
   // Consume the restoring flag AFTER the mode/prefs effects of the restore
   // commit (declared after them — effect order guarantees they ran first).
-  // Bumping a dedicated epoch state makes this fire in the same commit.
-  const [restoreEpoch, setRestoreEpoch] = useState(0);
   useEffect(() => {
     if (restoringRef.current) {
       restoringRef.current = false;

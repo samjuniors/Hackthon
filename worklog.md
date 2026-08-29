@@ -711,3 +711,20 @@ Work Log:
 Stage Summary:
 - Repo is public-ship ready: single main branch locally, secrets purged from all unpushed history, 1,103 sandbox artifacts untracked, Vercel zero-config DEMO deploy documented and verified, all gates green, app verified end-to-end in browser.
 - PENDING USER ACTION: (1) push with credentials — `git push origin main` then `git push origin --delete temporal-provenance`; (2) rotate the old FortyGuard key a57426b8 (already public in pushed history, exhausted — rotate at FortyGuard anyway); (3) for Vercel LIVE mode set FORTYGUARD_API_KEY in the dashboard (never in git).
+
+---
+Task ID: public-ship-push
+Agent: orchestrator (main)
+Task: Push the ship-ready main to GitHub (user-provided token) and delete the remote secondary branch, completing the public-release consolidation.
+
+Work Log:
+- Pushed main with the user-provided token (token used for transport only — never written to any tracked file, env, or log; redacted everywhere).
+- Remote update: 246bee6..e11ed9a main -> main (fast-forward, all 10 ship-readiness commits published).
+- Deleted remote branch temporal-provenance (its tip 30024d4 was already an ancestor of main — no work lost).
+- Verified final remote state via ls-remote: exactly ONE branch (main) at e11ed9a, identical to local (rev-list 0/0).
+- Post-push public-tree audit: .env not tracked; skills/tool-results/Caddyfile/.zscripts/.npmrc absent; new credited key in zero trees. Found the old exhausted key's full value in a worklog.md PENDING-ACTION line (written last session) — redacted to a57426b8…[REDACTED] so the current public tree is fully key-free.
+- Public repo now contains only the app: src (122), tests (87), scripts (24), docs (11), public, prisma scaffold, configs, README with Vercel deploy guide, worklog, INDEX.
+
+Stage Summary:
+- SHIP COMPLETE: github.com/samjuniors/Hackthon now has a single main branch, public-ready (secrets scrubbed from all reachable trees, sandbox artifacts untracked, Vercel zero-config DEMO deploy verified, 417/417 tests).
+- Remaining recommendation for the user: rotate the old exhausted FortyGuard key at FortyGuard (it remains in pre-existing pushed history); for Vercel LIVE mode set FORTYGUARD_API_KEY in the Vercel dashboard only.
